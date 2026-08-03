@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
@@ -10,4 +14,32 @@ body {
 code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
+}
+
+@layer utilities {
+  /* Formal table utilities */
+  .table-formal thead th {
+    @apply text-xs font-semibold tracking-widest uppercase;
+  }
+
+  /* Formal status badge */
+  .badge-formal {
+    @apply inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold tracking-wide uppercase;
+  }
+
+  /* Workspace content max width for readability on ultra-wide screens */
+  .workspace-content-inner {
+    @apply max-w-screen-2xl mx-auto w-full;
+  }
+
+  /* Responsive filter row — stacks on small screens */
+  .filter-row {
+    @apply flex flex-wrap gap-3 items-end;
+  }
+
+  /* Card grid — auto-fills with min 260px columns */
+  .card-grid-auto {
+    @apply grid gap-5;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  }
 }
