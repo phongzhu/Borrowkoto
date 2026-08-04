@@ -1,31 +1,43 @@
 .income-analytics-grid {
   display: grid;
-  gap: 12px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
 }
 
 .income-kpi-card {
-  background: #fff;
+  background: var(--ui-background-color, #fff);
   border: 1px solid #dbe3f0;
   border-radius: 12px;
   display: grid;
   gap: 8px;
-  min-height: 132px;
-  padding: 14px;
+  min-height: 124px;
+  padding: 16px;
 }
 
 .income-kpi-head {
   align-items: center;
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
 }
 
-.income-kpi-head span {
+.income-kpi-head .income-kpi-label {
   color: #63768f;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
+}
+
+.income-kpi-icon {
+  align-items: center;
+  background: color-mix(in srgb, var(--ui-primary-color, #1f3f73) 10%, var(--ui-background-color, #fff));
+  border-radius: 14px;
+  color: var(--ui-primary-color, #1f3f73);
+  display: inline-flex;
+  height: 36px;
+  justify-content: center;
+  width: 36px;
 }
 
 .income-kpi-head em {
@@ -49,9 +61,9 @@
 
 .income-kpi-card strong {
   color: #10233f;
-  font-size: 2.2rem;
-  letter-spacing: -0.03em;
-  line-height: 1.05;
+  font-size: 20px;
+  letter-spacing: -0.06em;
+  line-height: 1.02;
 }
 
 .income-kpi-card small {
@@ -66,7 +78,7 @@
 }
 
 .income-analytics-panel {
-  background: #fff;
+  background: var(--ui-background-color, #fff);
   border: 1px solid #dbe3f0;
   border-radius: 12px;
   display: grid;
@@ -200,6 +212,13 @@
 .income-history-section {
   display: grid;
   gap: 14px;
+}
+
+.income-history-panel {
+  background: var(--ui-background-color, #fff) !important;
+  border: 1px solid #dbe3f0 !important;
+  border-radius: 12px !important;
+  box-shadow: none !important;
 }
 
 .income-history-header {

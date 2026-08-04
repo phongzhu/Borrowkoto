@@ -33,11 +33,12 @@ const buttonVariants = {
   },
 };
 
-export function Badge({ children, style, tone = 'neutral' }) {
+export function Badge({ children, className, style, tone = 'neutral' }) {
   const colors = toneMap[tone] || toneMap.neutral;
 
   return (
     <span
+      className={['ui-badge', className].filter(Boolean).join(' ')}
       style={{
         alignItems: 'center',
         background: colors.bg,
@@ -76,6 +77,7 @@ export function Button({
   return (
     <Component
       {...rest}
+      data-variant={variant}
       disabled={disabled}
       type={Component === 'button' ? type || 'button' : undefined}
       style={{

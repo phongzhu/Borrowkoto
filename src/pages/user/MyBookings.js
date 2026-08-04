@@ -535,28 +535,6 @@ function getDamageReportWindowStatus(booking, asOfDate = new Date()) {
   };
 }
 
-function itemStatusTone(status) {
-  if (!status) {
-    return 'info';
-  }
-
-  const normalized = status.toLowerCase();
-
-  if (normalized === 'available') {
-    return 'success';
-  }
-
-  if (['archived', 'cancelled', 'inactive', 'rejected', 'suspended'].includes(normalized)) {
-    return 'danger';
-  }
-
-  if (['draft', 'pending', 'reserved'].includes(normalized)) {
-    return 'warning';
-  }
-
-  return 'info';
-}
-
 function formatListingStatusLabel(status) {
   const normalized = String(status || '').toLowerCase();
 
@@ -3667,6 +3645,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
       <div className="my-bookings-page" style={{ alignContent: 'start', alignItems: 'start', display: 'grid', gap: 10 }}>
         {showManageBooking ? (
         <Panel
+          className="workspace-flat-panel booking-workspace-panel"
           style={{ borderRadius: 0, marginTop: 0 }}
         >
           <div
@@ -3679,6 +3658,14 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
               padding: 12,
             }}
           >
+            <header className="booking-page-header">
+              <div>
+                <span className="workspace-eyebrow">Rental operations</span>
+                <h1>Manage bookings</h1>
+                <p>Review requests, monitor active rentals, and keep every handoff on schedule.</p>
+              </div>
+            </header>
+
             <section className="booking-mobile-overview">
               <div className="booking-mobile-stats-grid">
                 <article className="booking-mobile-stat-card tone-danger">
@@ -3999,7 +3986,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                     overflowX: 'auto',
                   }}
                 >
-                  <table className="booking-table" style={{ background: alpha(theme.colors.panel, 0.74), borderCollapse: 'separate', borderSpacing: 0, minWidth: 1180, width: '100%' }}>
+                  <table className="booking-table borrowed-bookings-table" style={{ background: alpha(theme.colors.panel, 0.74), borderCollapse: 'separate', borderSpacing: 0, minWidth: 1180, width: '100%' }}>
                     <thead style={{ background: alpha(theme.colors.ink, 0.02) }}>
                       <tr>
                         <th style={headerCellStyle}>Item</th>
@@ -4058,7 +4045,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                             <td style={bodyCellStyle}>
                               {booking.addons?.length ? <Badge tone="info">{booking.addons.length} selected</Badge> : <span style={{ color: theme.colors.slate }}>None</span>}
                             </td>
-                            <td style={bodyCellStyle}>
+                            <td className="booking-schedule-cell" style={bodyCellStyle}>
                               <div style={{ display: 'grid', gap: 4 }}>
                                 <span style={{ color: theme.colors.ink }}>{formatDateTime(booking.approved_start || booking.requested_start)}</span>
                                 <span style={{ color: theme.colors.slate }}>to {formatDateTime(booking.approved_end || booking.requested_end)}</span>
@@ -4094,7 +4081,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                                   type="button"
                                   variant="secondary"
                                 >
-                                  {bookingActionBusyId === booking.id ? 'Processing...' : `Pay â‚±${lateFee.total.toFixed(2)} late fee`}
+                                  {bookingActionBusyId === booking.id ? 'Processing...' : `Pay ${currencyFormatter.format(lateFee.total)} late fee`}
                                 </Button>
                               ) : canCancel ? (
                                 <Button
@@ -4556,6 +4543,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
 
         {showRentalItems && !isListingFormPage ? (
         <Panel
+          className="workspace-flat-panel inventory-workspace-panel"
           subtitle=""
           style={{ borderRadius: 0, marginTop: 0 }}
           title=""
@@ -4568,20 +4556,13 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
             ) : null}
 
             <section className="inventory-layout">
-              <div className="inventory-header">
-                <div>
-                  <h2>Rental Item Management</h2>
-                  <p>Manage your active listings, track stock levels, and fulfill rental requests.</p>
+              <header className="inventory-header">
+                <div className="inventory-header-copy">
+                  <span className="workspace-eyebrow">Your inventory</span>
+                  <h2>Rental item management</h2>
+                  <p>Manage listings, update availability, and keep stock information accurate.</p>
                 </div>
-                <div className="inventory-header-actions">
-                  <Button onClick={handleExportListings} type="button" variant="secondary">
-                    Export
-                  </Button>
-                  <Button disabled={!canCreateListing} onClick={openAddListing} type="button">
-                    + Add Product
-                  </Button>
-                </div>
-              </div>
+              </header>
 
               <div className="inventory-stat-grid">
                 <article className="inventory-stat-card">
@@ -4674,8 +4655,16 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                       </select>
                     </FormField>
                     <FormField label="Search listings">
-                      <Input name="listing_search" onChange={(event) => setSearch(event.target.value)} value={search} />
+                      <Input name="listing_search" onChange={(event) => setSearch(event.target.value)} placeholder="Search by product name" value={search} />
                     </FormField>
+                  </div>
+                  <div className="inventory-header-actions inventory-toolbar-actions">
+                    <Button onClick={handleExportListings} type="button" variant="secondary">
+                      Export
+                    </Button>
+                    <Button disabled={!canCreateListing} onClick={openAddListing} type="button">
+                      + Add Product
+                    </Button>
                   </div>
                 </div>
 
@@ -4783,12 +4772,6 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                           />
                         </td>
                         <td style={listingBodyCellStyle}>
-                          <div style={{ display: 'grid', gap: 6 }}>
-                            <Badge tone={itemStatusTone(item.status)}>{formatListingStatusLabel(item.status)}</Badge>
-                            <span style={{ color: theme.colors.slate }}>Updated {formatDate(item.updated_at)}</span>
-                          </div>
-                        </td>
-                        <td style={listingBodyCellStyle}>
                           <div style={{ display: 'grid', gap: 8 }}>
                             <select
                               disabled={savingStatusId === item.id}
@@ -4810,7 +4793,11 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                                 </option>
                               ))}
                             </select>
-                            <div style={{ alignItems: 'center', display: 'flex', gap: 8 }}>
+                            <span style={{ color: theme.colors.slate }}>Updated {formatDate(item.updated_at)}</span>
+                          </div>
+                        </td>
+                        <td style={listingBodyCellStyle}>
+                          <div style={{ alignItems: 'center', display: 'flex', gap: 8 }}>
                               <Button onClick={() => navigate(`/user/rental-items/edit/${item.id}`)} style={listingButtonStyle} type="button" variant="ghost">
                                 Edit
                               </Button>
@@ -4819,7 +4806,6 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                                   Image
                                 </Button>
                               ) : null}
-                            </div>
                           </div>
                         </td>
                       </tr>
@@ -4944,6 +4930,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
             </Button>
           </>
         }
+        contentClassName={isListingFormPage ? 'listing-editor-shell' : undefined}
         contentStyle={isListingFormPage ? { borderRadius: 0 } : undefined}
         inline={isListingFormPage}
         onClose={closeAddListing}
@@ -4992,7 +4979,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                   label="Subcategories (optional)"
                 >
                   {availableSubcategories.length ? (
-                    <div style={{ border: `1px solid ${alpha(theme.colors.ink, 0.1)}`, borderRadius: 16, display: 'grid', gap: 8, maxHeight: 180, overflowY: 'auto', padding: 12 }}>
+                    <div className="listing-choice-box" style={{ border: `1px solid ${alpha(theme.colors.ink, 0.1)}`, borderRadius: 16, display: 'grid', gap: 8, maxHeight: 180, overflowY: 'auto', padding: 12 }}>
                       {availableSubcategories.map((subcategory) => {
                         const isChecked = (listingForm.subcategory_ids || []).includes(subcategory.id);
                         return (
@@ -5008,7 +4995,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                       })}
                     </div>
                   ) : (
-                    <div style={{ border: `1px solid ${alpha(theme.colors.ink, 0.1)}`, borderRadius: 16, color: theme.colors.slate, fontSize: 14, minHeight: 52, padding: '14px 16px' }}>
+                    <div className="listing-choice-box" style={{ border: `1px solid ${alpha(theme.colors.ink, 0.1)}`, borderRadius: 16, color: theme.colors.slate, fontSize: 14, minHeight: 52, padding: '14px 16px' }}>
                       {listingForm.category_id ? 'No active subcategories under this main category.' : 'No main category selected yet.'}
                     </div>
                   )}

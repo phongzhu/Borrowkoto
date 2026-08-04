@@ -5,6 +5,7 @@ import { CatalogIcon, HomeIcon, LogoutIcon, PaletteIcon, ProfileIcon, ReportIcon
 import { WorkspaceLayout } from '../../ui/layouts';
 import { Button, Modal } from '../../ui/primitives';
 import { alpha, theme } from '../../ui/theme';
+import './AdminUI.css';
 
 const navItems = [
   { path: '/admin/dashboard', label: 'Overview', icon: <HomeIcon size={18} /> },
@@ -133,7 +134,7 @@ export default function AdminShell({ children, subtitle, title }) {
         subtitle={subtitle}
         title={title}
       >
-        {children}
+        <div className="admin-page-surface">{children}</div>
       </WorkspaceLayout>
 
       <Modal

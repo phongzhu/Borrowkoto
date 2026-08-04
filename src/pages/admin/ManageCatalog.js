@@ -88,6 +88,7 @@ function normalizeCategoryName(name) {
 }
 
 export default function ManageCatalog() {
+  const [activeCatalogTab, setActiveCatalogTab] = useState('categories');
   const [categories, setCategories] = useState([]);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -494,7 +495,29 @@ export default function ManageCatalog() {
         />
       </SectionGrid>
 
-      <Panel>
+      <div aria-label="Catalog sections" className="admin-inner-tabs" role="tablist">
+        <button
+          aria-selected={activeCatalogTab === 'categories'}
+          className={activeCatalogTab === 'categories' ? 'active' : ''}
+          onClick={() => setActiveCatalogTab('categories')}
+          role="tab"
+          type="button"
+        >
+          Categories
+        </button>
+        <button
+          aria-selected={activeCatalogTab === 'items'}
+          className={activeCatalogTab === 'items' ? 'active' : ''}
+          onClick={() => setActiveCatalogTab('items')}
+          role="tab"
+          type="button"
+        >
+          Items
+        </button>
+      </div>
+
+      {activeCatalogTab === 'categories' ? (
+      <Panel className="catalog-categories-panel">
         <div style={{ display: 'grid', gap: 12 }}>
           <div style={{ alignItems: 'center', display: 'flex', flexWrap: 'wrap', gap: 12, justifyContent: 'space-between' }}>
             <div style={{ display: 'grid', gap: 4 }}>
@@ -512,7 +535,7 @@ export default function ManageCatalog() {
                 Manage parent categories and subcategories from one table.
               </span>
             </div>
-            <div style={{ alignItems: 'center', display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+            <div className="admin-category-toolbar" style={{ alignItems: 'center', display: 'flex', flexWrap: 'wrap', gap: 12 }}>
               <label style={{ display: 'grid', gap: 8, minWidth: 220 }}>
                 <span style={{ color: theme.colors.ink, fontSize: 14, fontWeight: 600 }}>Category type</span>
                 <select
@@ -623,10 +646,12 @@ export default function ManageCatalog() {
           ) : null}
         </div>
       </Panel>
+      ) : null}
 
-      <Panel>
+      {activeCatalogTab === 'items' ? (
+      <Panel className="catalog-items-panel">
         <div style={{ display: 'grid', gap: 14 }}>
-          <div className="form-grid" style={{ alignItems: 'end', display: 'grid', gap: 14, gridTemplateColumns: 'minmax(0, 1fr) 220px auto' }}>
+          <div className="form-grid admin-filter-toolbar" style={{ alignItems: 'end', display: 'grid', gap: 14, gridTemplateColumns: 'minmax(0, 1fr) 220px auto' }}>
             <FormField label="Search items">
               <Input name="item_search" onChange={(event) => setItemSearch(event.target.value)} value={itemSearch} />
             </FormField>
@@ -759,6 +784,7 @@ export default function ManageCatalog() {
           ) : null}
         </div>
       </Panel>
+      ) : null}
 
       <Modal
         actions={

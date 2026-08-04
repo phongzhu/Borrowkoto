@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../api/supabaseClient';
+import { CatalogIcon, CheckIcon, SparkIcon, StarIcon, UploadIcon } from '../../ui/icons';
 import { Badge, Panel, StatusMessage } from '../../ui/primitives';
 import { BOOKING_STATUS, TERMINAL_BOOKING_STATUSES } from '../../utils/bookingEnums';
 import UserShell from './UserShell';
@@ -166,7 +167,7 @@ export default function RentalIncome() {
         .order('created_at', { ascending: false });
       const { data: paymentTransactionsData, error: paymentTransactionsError } = await supabase
         .from('payment_transactions')
-        .select('id, booking_id, amount, status, transaction_type, transaction_at, created_at, payer_id, payee_id, reference_number, notes')
+        .select('id, booking_id, amount, status, transaction_type, transaction_at, payer_id, payee_id, reference_number, notes')
         .or(`payer_id.eq.${user.id},payee_id.eq.${user.id}`)
         .order('transaction_at', { ascending: false });
 
@@ -538,7 +539,8 @@ export default function RentalIncome() {
         <section className="income-analytics-grid">
           <article className="income-kpi-card">
             <div className="income-kpi-head">
-              <span>Total Revenue</span>
+              <span className="income-kpi-icon"><SparkIcon size={18} /></span>
+              <span className="income-kpi-label">Total Revenue</span>
               <em className={analytics.revenueGrowth >= 0 ? 'is-up' : 'is-down'}>{formatSignedPercent(analytics.revenueGrowth)}</em>
             </div>
             <strong>{currencyFormatter.format(wallet.totalEarned)}</strong>
@@ -546,7 +548,8 @@ export default function RentalIncome() {
           </article>
           <article className="income-kpi-card">
             <div className="income-kpi-head">
-              <span>Total Orders</span>
+              <span className="income-kpi-icon"><CatalogIcon size={18} /></span>
+              <span className="income-kpi-label">Total Orders</span>
               <em className={analytics.orderGrowth >= 0 ? 'is-up' : 'is-down'}>{formatSignedPercent(analytics.orderGrowth)}</em>
             </div>
             <strong>{analytics.totalOrders}</strong>
@@ -554,7 +557,8 @@ export default function RentalIncome() {
           </article>
           <article className="income-kpi-card">
             <div className="income-kpi-head">
-              <span>Conversion Rate</span>
+              <span className="income-kpi-icon"><CheckIcon size={18} /></span>
+              <span className="income-kpi-label">Conversion Rate</span>
               <em className={analytics.cancellationRate <= 20 ? 'is-up' : 'is-down'}>{analytics.cancellationRate.toFixed(1)}% cancel</em>
             </div>
             <strong>{analytics.conversionRate.toFixed(1)}%</strong>
@@ -562,7 +566,8 @@ export default function RentalIncome() {
           </article>
           <article className="income-kpi-card">
             <div className="income-kpi-head">
-              <span>Average Order Value</span>
+              <span className="income-kpi-icon"><StarIcon size={18} /></span>
+              <span className="income-kpi-label">Average Order Value</span>
               <em className="is-up">{currencyFormatter.format(analytics.avgOrderValue)}</em>
             </div>
             <strong>{currencyFormatter.format(analytics.avgOrderValue)}</strong>
@@ -570,7 +575,8 @@ export default function RentalIncome() {
           </article>
           <article className="income-kpi-card">
             <div className="income-kpi-head">
-              <span>Deposit Refunds</span>
+              <span className="income-kpi-icon"><UploadIcon size={18} /></span>
+              <span className="income-kpi-label">Deposit Refunds</span>
               <em className={wallet.totalDepositRefunds > 0 ? 'is-up' : ''}>{wallet.totalDepositRefunds > 0 ? 'Returned' : 'None yet'}</em>
             </div>
             <strong>{currencyFormatter.format(wallet.totalDepositRefunds)}</strong>
@@ -655,7 +661,7 @@ export default function RentalIncome() {
           </article>
         </section>
 
-        <Panel>
+        <Panel className="income-history-panel">
           <div className="income-history-section">
             <div className="income-history-header">
               <div>

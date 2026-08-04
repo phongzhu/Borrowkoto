@@ -14,12 +14,21 @@
   gap: 0;
 }
 
+.rentals-calendar-page-embedded .rentals-calendar-panel {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
 .rentals-calendar-page > .panel {
   box-shadow: 0 18px 48px rgba(15, 23, 42, 0.06);
 }
 
 .rentals-calendar-panel {
-  background: rgba(255, 255, 255, 0.94) !important;
+  background: var(--ui-background-color, #fff) !important;
+  border: 1px solid #dbe3f0 !important;
+  box-shadow: none !important;
   gap: 14px !important;
   padding: 18px !important;
 }
@@ -72,10 +81,9 @@
 }
 
 .rentals-calendar-scroll {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(248, 250, 252, 0.72));
-  border: 1px solid var(--calendar-border);
-  border-radius: 10px;
+  background: var(--ui-background-color, #fff);
+  border: 1px solid #dbe3f0;
+  border-radius: 8px;
   min-width: 0;
   overflow: auto;
   padding: 0;
@@ -100,7 +108,7 @@
 }
 
 .rentals-calendar-day {
-  background: rgba(255, 255, 255, 0.72);
+  background: var(--ui-background-color, #fff);
   border: 0;
   border-bottom: 1px solid var(--calendar-border);
   border-right: 1px solid var(--calendar-border);
@@ -168,7 +176,7 @@
 .rentals-calendar-event {
   align-items: center;
   border: 1px solid;
-  border-radius: 999px;
+  border-radius: 6px;
   display: grid;
   gap: 6px;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -222,8 +230,9 @@
 }
 
 .rentals-calendar-side .panel {
-  background: rgba(255, 255, 255, 0.96);
-  border-color: var(--calendar-border);
+  background: var(--ui-background-color, #fff);
+  border-color: #dbe3f0;
+  border-radius: 8px !important;
   box-shadow: none;
   gap: 10px !important;
   padding: 14px !important;
@@ -281,9 +290,9 @@
 
 .rentals-calendar-status-select {
   appearance: none;
-  background: rgba(248, 250, 252, 0.9);
+  background-color: var(--ui-background-color, #fff);
   border: 1px solid var(--calendar-border);
-  border-radius: 10px;
+  border-radius: 8px;
   color: #1f2937;
   font: inherit;
   font-size: 13px;

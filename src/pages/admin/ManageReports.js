@@ -324,6 +324,7 @@ export default function ManageReports() {
   const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
+  const [selectedRecord, setSelectedRecord] = useState(null);
   const [selectedVerification, setSelectedVerification] = useState(null);
   const [reviewRemarks, setReviewRemarks] = useState('');
   const [reviewFeedback, setReviewFeedback] = useState('');
@@ -713,6 +714,53 @@ export default function ManageReports() {
       {error ? <StatusMessage tone="warning">{error}</StatusMessage> : null}
       {reviewFeedback ? <StatusMessage tone={reviewFeedbackTone}>{reviewFeedback}</StatusMessage> : null}
 
+      <Modal
+        actions={<Button onClick={() => setSelectedRecord(null)} type="button" variant="ghost">Close</Button>}
+        onClose={() => setSelectedRecord(null)}
+        open={Boolean(selectedRecord)}
+        title="Report details"
+      >
+        {selectedRecord ? (
+          <div className="admin-report-detail">
+            <div className="admin-report-detail-table-wrap">
+              <table className="admin-report-detail-table">
+                <tbody>
+                  <tr><th>Category</th><td><Badge tone="info">{selectedRecord.categoryLabel}</Badge></td></tr>
+                  <tr><th>Status</th><td><Badge tone={statusTone(selectedRecord.status)}>{getVerificationStatusLabel(selectedRecord.status)}</Badge></td></tr>
+                  <tr><th>Subject</th><td><strong>{selectedRecord.subject}</strong></td></tr>
+                  <tr><th>Date</th><td>{formatDate(selectedRecord.date)}</td></tr>
+                  {(selectedRecord.details || 'No additional details saved.').split(' | ').map((detail, index) => (
+                    <tr key={`${selectedRecord.id}-detail-${index}`}>
+                      <th>{index === 0 ? 'Details' : ''}</th>
+                      <td>{detail}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="admin-report-detail-actions">
+              {selectedRecord.category === 'verifications' ? (
+                <Button onClick={() => { setSelectedRecord(null); openVerificationReview(selectedRecord); }} type="button" variant="secondary">
+                  Review submission
+                </Button>
+              ) : selectedRecord.category === 'damage_claims' ? (
+                <Button onClick={() => { setSelectedRecord(null); openDamageClaimReview(selectedRecord); }} type="button" variant="secondary">
+                  Review damage
+                </Button>
+              ) : (selectedRecord.assets || []).length ? (
+                selectedRecord.assets.map((asset) => (
+                  <Button as="a" href={asset.url} key={`${selectedRecord.id}-${asset.label}`} rel="noreferrer" target="_blank" variant="secondary">
+                    {asset.label}
+                  </Button>
+                ))
+              ) : (
+                <span>No attached files.</span>
+              )}
+            </div>
+          </div>
+        ) : null}
+      </Modal>
+
       <Modal onClose={() => setSelectedVerification(null)} open={Boolean(selectedVerification)} title="Verification review">
         {selectedVerification ? (
           <div style={{ display: 'grid', gap: 18 }}>
@@ -1034,7 +1082,7 @@ export default function ManageReports() {
 
         <Panel style={{ marginTop: 0, padding: '8px 24px 24px', position: 'relative', zIndex: 0 }}>
           <div style={{ display: 'grid', gap: 10 }}>
-            <div className="form-grid" style={{ alignItems: 'end', display: 'grid', gap: 12, gridTemplateColumns: 'minmax(0, 1fr) 280px auto' }}>
+            <div className="form-grid admin-filter-toolbar" style={{ alignItems: 'end', display: 'grid', gap: 12, gridTemplateColumns: 'minmax(0, 1fr) 280px auto' }}>
               <label style={{ display: 'grid', gap: 10 }}>
                 <span style={{ color: theme.colors.ink, fontSize: 14, fontWeight: 600 }}>Search records</span>
                 <Input name="report_search" onChange={(event) => setSearchQuery(event.target.value)} value={searchQuery} />
@@ -1084,16 +1132,14 @@ export default function ManageReports() {
                   overflowX: 'auto',
                 }}
               >
-                <table style={{ background: alpha(theme.colors.panel, 0.74), borderCollapse: 'separate', borderSpacing: 0, minWidth: 1180, width: '100%' }}>
+                <table className="admin-report-table" style={{ background: alpha(theme.colors.panel, 0.74), borderCollapse: 'separate', borderSpacing: 0, minWidth: 760, width: '100%' }}>
                   <thead style={{ background: alpha(theme.colors.ink, 0.02) }}>
                     <tr>
                       <th style={headerCellStyle}>Category</th>
-                      <th style={headerCellStyle}>Reference</th>
                       <th style={headerCellStyle}>Subject</th>
-                      <th style={headerCellStyle}>Details</th>
                       <th style={headerCellStyle}>Status</th>
                       <th style={headerCellStyle}>Date</th>
-                      <th style={headerCellStyle}>Assets</th>
+                      <th style={headerCellStyle}>Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1101,9 +1147,6 @@ export default function ManageReports() {
                       <tr key={record.id}>
                         <td style={bodyCellStyle}>
                           <Badge tone="info">{record.categoryLabel}</Badge>
-                        </td>
-                        <td style={bodyCellStyle}>
-                          <span style={{ color: theme.colors.ink, fontFamily: theme.fonts.mono, fontSize: 12, lineHeight: 1.55 }}>{record.reference || 'Not set'}</span>
                         </td>
                         <td style={bodyCellStyle}>
                           <strong
@@ -1118,34 +1161,13 @@ export default function ManageReports() {
                           </strong>
                         </td>
                         <td style={bodyCellStyle}>
-                          <span style={{ color: theme.colors.ink, lineHeight: 1.65 }}>{record.details || 'No additional details saved.'}</span>
-                        </td>
-                        <td style={bodyCellStyle}>
                           <Badge tone={statusTone(record.status)}>{getVerificationStatusLabel(record.status)}</Badge>
                         </td>
                         <td style={bodyCellStyle}>
                           <span style={{ color: theme.colors.ink }}>{formatDate(record.date)}</span>
                         </td>
                         <td style={bodyCellStyle}>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                            {record.category === 'verifications' ? (
-                              <Button onClick={() => openVerificationReview(record)} type="button" variant="secondary">
-                                Review submission
-                              </Button>
-                            ) : record.category === 'damage_claims' ? (
-                              <Button onClick={() => openDamageClaimReview(record)} type="button" variant="secondary">
-                                Review damage
-                              </Button>
-                            ) : record.assets.length ? (
-                              record.assets.map((asset) => (
-                                <Button as="a" href={asset.url} key={`${record.id}-${asset.label}`} rel="noreferrer" target="_blank" type="button" variant="secondary">
-                                  {asset.label}
-                                </Button>
-                              ))
-                            ) : (
-                              <span style={{ color: theme.colors.slate }}>No files</span>
-                            )}
-                          </div>
+                          <Button onClick={() => setSelectedRecord(record)} type="button" variant="secondary">View</Button>
                         </td>
                       </tr>
                     ))}

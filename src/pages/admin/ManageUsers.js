@@ -174,7 +174,7 @@ export default function ManageUsers() {
 
         <Panel style={{ marginTop: 0, padding: '8px 24px 24px', position: 'relative', zIndex: 0 }}>
           <div style={{ display: 'grid', gap: 10 }}>
-            <div className="form-grid" style={{ alignItems: 'end', display: 'grid', gap: 12, gridTemplateColumns: 'minmax(0, 1fr) 240px auto' }}>
+            <div className="form-grid admin-filter-toolbar" style={{ alignItems: 'end', display: 'grid', gap: 12, gridTemplateColumns: 'minmax(0, 1fr) 240px auto' }}>
               <FormField label="Search users">
                 <Input name="search" onChange={(event) => setSearchQuery(event.target.value)} value={searchQuery} />
               </FormField>

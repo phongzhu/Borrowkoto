@@ -94,6 +94,7 @@ function buildPayload(form, updatedBy, logoUrl) {
 
 export default function UISettings() {
   const { error, hasRecord, loading, refresh, settings } = useUISettings();
+  const [activeTab, setActiveTab] = useState('name');
   const [form, setForm] = useState(toUISettingsForm(settings));
   const [message, setMessage] = useState('');
   const [messageTone, setMessageTone] = useState('success');
@@ -243,11 +244,33 @@ export default function UISettings() {
 
   return (
     <AdminShell subtitle="" title="">
-      <div className="two-column" style={{ alignItems: 'start', display: 'grid', gap: 18, gridTemplateColumns: 'minmax(340px, 430px) minmax(0, 1fr)' }}>
-        <Panel style={{ borderRadius: 14, padding: 18 }}>
+      <div className="ui-settings-page" data-tab={activeTab}>
+        <div aria-label="UI settings sections" className="ui-settings-tabs" role="tablist">
+          {[
+            ['name', 'Name'],
+            ['colors', 'Colors'],
+            ['logo', 'Logo'],
+            ['preview', 'Preview'],
+          ].map(([value, label]) => (
+            <button
+              aria-selected={activeTab === value}
+              className={activeTab === value ? 'active' : ''}
+              key={value}
+              onClick={() => setActiveTab(value)}
+              role="tab"
+              type="button"
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+      <div className="two-column ui-settings-content" style={{ alignItems: 'start', display: 'grid', gap: 18, gridTemplateColumns: '1fr' }}>
+        <Panel className="ui-settings-form-panel" style={{ borderRadius: 14, padding: 18 }}>
           <form onSubmit={handleSubmit} style={{ display: 'grid', gap: 16 }}>
             {error ? <StatusMessage tone="warning">{error}</StatusMessage> : null}
 
+            <div className="ui-settings-section ui-settings-name-section">
             <FormField label="System Name">
                 <Input name="system_name" onChange={handleChange} required value={form.system_name || ''} />
               </FormField>
@@ -258,7 +281,9 @@ export default function UISettings() {
             <FormField label="System Description">
               <Textarea name="system_description" onChange={handleChange} style={{ minHeight: 110 }} value={form.system_description || ''} />
             </FormField>
+            </div>
 
+            <div className="ui-settings-section ui-settings-colors-section">
             <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
               {[['Primary Color', 'primary_color', theme.colors.teal], ['Secondary Color', 'secondary_color', theme.colors.coral], ['Tertiary Color', 'tertiary_color', theme.colors.amber], ['Primary Text', 'primary_text_color', theme.colors.ink]].map(
                 ([label, name, fallback]) => {
@@ -308,7 +333,9 @@ export default function UISettings() {
                   ))}
                 </select>
               </FormField>
+            </div>
 
+            <div className="ui-settings-section ui-settings-logo-section">
             <FormField label="Logo icon">
                 <Input name="logo_icon" onChange={handleChange} value={form.logo_icon || ''} />
               </FormField>
@@ -333,6 +360,7 @@ export default function UISettings() {
                 <FileInput accept="image/*" onChange={(event) => setLogoFile(event.target.files?.[0] || null)} />
               </div>
             </div>
+            </div>
 
             {message ? <StatusMessage tone={messageTone}>{message}</StatusMessage> : null}
 
@@ -349,7 +377,7 @@ export default function UISettings() {
           </form>
         </Panel>
 
-        <Panel className="responsive-sticky-reset" style={{ borderRadius: 14, gap: 14, position: 'sticky', top: 24 }}>
+        <Panel className="responsive-sticky-reset ui-settings-preview-panel" style={{ borderRadius: 14, gap: 14 }}>
           <div style={{ alignItems: 'center', display: 'flex', justifyContent: 'space-between' }}>
             <strong style={{ color: theme.colors.ink, fontFamily: theme.fonts.display, fontSize: 22, letterSpacing: '-0.03em' }}>
               System Preview
@@ -463,6 +491,7 @@ export default function UISettings() {
             </div>
           </div>
         </Panel>
+      </div>
       </div>
     </AdminShell>
   );

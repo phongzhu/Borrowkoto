@@ -5,6 +5,7 @@ import { ArrowRightIcon, SearchIcon, UploadIcon } from '../../ui/icons';
 import { Button, StarRating, StatusMessage } from '../../ui/primitives';
 import { alpha, theme } from '../../ui/theme';
 import UserShell from './UserShell';
+import './Messages.css';
 
 const MESSAGE_ATTACHMENTS_BUCKET = 'item-images';
 const currencyFormatter = new Intl.NumberFormat('en-PH', {
@@ -169,6 +170,7 @@ function ThreadListItem({ active, onSelect, thread }) {
 
   return (
     <button
+      className={`message-thread-card${active ? ' active' : ''}`}
       onClick={onSelect}
       style={{
         alignSelf: 'start',
@@ -293,6 +295,7 @@ function ItemContextCard({ item, items = [], linkedItemCount, onOpenItem, onSele
 
   return (
     <div
+      className="message-item-context"
       style={{
         alignItems: 'center',
         background: `linear-gradient(180deg, ${alpha(theme.colors.panel, 0.98)} 0%, ${alpha(theme.colors.canvas, 0.92)} 100%)`,
@@ -476,6 +479,7 @@ function MessageBubble({ currentUserId, message, showItemReference }) {
         <div style={{ display: 'grid', gap: 8, justifyItems: isOwnMessage ? 'end' : 'start' }}>
           {showItemReference && referencedItem ? (
             <div
+              className={`message-bubble${isOwnMessage ? ' own' : ''}`}
               style={{
                 background: alpha(theme.colors.panel, 0.96),
                 border: `1px solid ${alpha(theme.colors.ink, 0.08)}`,
@@ -1247,7 +1251,7 @@ export default function Messages() {
       {error ? <StatusMessage tone="warning">{error}</StatusMessage> : null}
 
       <div
-        className="two-column"
+        className="two-column messages-shell"
         style={{
           background: `linear-gradient(180deg, ${alpha(theme.colors.panel, 0.98)} 0%, ${alpha(theme.colors.canvas, 0.92)} 100%)`,
           border: `1px solid ${alpha(theme.colors.ink, 0.08)}`,
@@ -1262,6 +1266,7 @@ export default function Messages() {
         }}
       >
         <aside
+          className="messages-sidebar"
           style={{
             background: `linear-gradient(180deg, ${alpha(theme.colors.canvas, 0.86)} 0%, ${alpha(theme.colors.panel, 0.96)} 100%)`,
             borderRight: `1px solid ${alpha(theme.colors.ink, 0.08)}`,
@@ -1296,6 +1301,7 @@ export default function Messages() {
 
           <div style={{ padding: '0 20px 14px' }}>
             <div
+              className="messages-search"
               style={{
                 alignItems: 'center',
                 background: alpha(theme.colors.panel, 0.94),
@@ -1402,6 +1408,7 @@ export default function Messages() {
         </aside>
 
         <section
+          className="messages-conversation"
           style={{
             background: `linear-gradient(180deg, ${alpha(theme.colors.panel, 0.94)} 0%, ${alpha(theme.colors.canvas, 0.9)} 100%)`,
             display: 'grid',
@@ -1414,6 +1421,7 @@ export default function Messages() {
           {selectedThread ? (
             <>
               <div
+                className="messages-conversation-header"
                 style={{
                   alignItems: 'center',
                   background: alpha(theme.colors.panel, 0.94),
@@ -1479,6 +1487,7 @@ export default function Messages() {
               </div>
 
               <div
+                className="messages-feed"
                 ref={messageFeedRef}
                 style={{
                   background: selectedThreadWallpaper,
@@ -1531,6 +1540,7 @@ export default function Messages() {
               </div>
 
               <form
+                className="messages-composer-area"
                 onSubmit={handleSendMessage}
                 style={{
                   background: alpha(theme.colors.panel, 0.96),
@@ -1613,6 +1623,7 @@ export default function Messages() {
                 ) : null}
 
                 <div
+                  className="messages-composer"
                   style={{
                     alignItems: 'center',
                     background: alpha(theme.colors.canvas, 0.72),
@@ -1663,6 +1674,7 @@ export default function Messages() {
                   </div>
 
                   <button
+                    className="messages-send-button"
                     disabled={sending || (!composer.trim() && !attachmentFile)}
                     style={{
                       alignItems: 'center',
