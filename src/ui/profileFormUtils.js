@@ -18,7 +18,6 @@ export const verificationIdTypeOptions = [
   { label: 'Postal ID', value: 'Postal ID' },
   { label: "Voter's ID", value: "Voter's ID" },
   { label: 'Senior Citizen ID', value: 'Senior Citizen ID' },
-  { label: 'Other Government ID', value: 'Other Government ID' },
 ];
 
 const verificationIdTypeRules = {
@@ -77,13 +76,6 @@ const verificationIdTypeRules = {
     maxLength: 20,
     placeholder: 'SC-XXXX-123456',
     regex: /^[A-Z0-9X-]{6,20}$/i,
-  },
-  'Other Government ID': {
-    description: 'Use the official government ID reference. Letters or digits may be hidden with X.',
-    example: 'ID-XXXX-123456',
-    maxLength: 24,
-    placeholder: 'ID-XXXX-123456',
-    regex: /^[A-Z0-9X-]{6,24}$/i,
   },
 };
 

@@ -41,7 +41,7 @@ const defaultLabels = {
   barangay: 'Barangay',
   city: 'City / Municipality',
   country: 'Country',
-  mapDescription: 'Save profile coordinates so other users can see where the item owner is located.',
+  mapDescription: 'Search for your address or use your current location to place the map pin accurately.',
   mapTitle: 'Map location',
   province: 'Province',
   region: 'Region',
@@ -146,7 +146,9 @@ async function fetchPSGC(path) {
 }
 
 export default function PhilippineAddressFields({
+  columnCount = 2,
   fieldMap = defaultFieldMap,
+  flatMap = false,
   form,
   labels: labelOverrides = {},
   profileSource = null,
@@ -155,6 +157,7 @@ export default function PhilippineAddressFields({
   showUseProfileAddress = false,
 }) {
   const labels = { ...defaultLabels, ...labelOverrides };
+  const addressGridStyle = { display: 'grid', gap: 14, gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))` };
   const [regions, setRegions] = useState([]);
   const [provinces, setProvinces] = useState([]);
   const [cities, setCities] = useState([]);
@@ -619,7 +622,7 @@ export default function PhilippineAddressFields({
         </label>
       ) : null}
 
-      <div className="form-grid" style={{ display: 'grid', gap: 14, gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
+      <div className="form-grid" style={addressGridStyle}>
         <FormField label={labels.street}>
           <Input name={fieldMap.street} onChange={handleStreetChange} value={readValue(form, fieldMap, 'street')} />
         </FormField>
@@ -634,9 +637,6 @@ export default function PhilippineAddressFields({
             ))}
           </select>
         </FormField>
-      </div>
-
-      <div className="form-grid" style={{ display: 'grid', gap: 14, gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
         <FormField label={labels.province}>
           <select
             disabled={loadingProvinces || !fixedProvince}
@@ -668,9 +668,6 @@ export default function PhilippineAddressFields({
             ))}
           </select>
         </FormField>
-      </div>
-
-      <div className="form-grid" style={{ display: 'grid', gap: 14, gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
         <FormField label={labels.barangay}>
           <select disabled={!selectedCity || loadingBarangays} onChange={handleBarangayChange} style={selectStyle} value={selectedBarangay?.code || ''}>
             <option value="">{!selectedCity ? 'Select city first' : loadingBarangays ? 'Loading barangays...' : 'Select barangay'}</option>
@@ -688,13 +685,14 @@ export default function PhilippineAddressFields({
       </div>
 
       <div
+        className={flatMap ? 'address-map-section address-map-section-flat' : 'address-map-section'}
         style={{
-          background: alpha(theme.colors.panel, 0.76),
-          border: `1px solid ${alpha(theme.colors.ink, 0.08)}`,
-          borderRadius: 22,
+          background: flatMap ? 'transparent' : alpha(theme.colors.panel, 0.76),
+          border: flatMap ? 0 : `1px solid ${alpha(theme.colors.ink, 0.08)}`,
+          borderRadius: flatMap ? 0 : 22,
           display: 'grid',
           gap: 16,
-          padding: 18,
+          padding: flatMap ? 0 : 18,
         }}
       >
         <div style={{ display: 'grid', gap: 6 }}>

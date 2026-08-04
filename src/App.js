@@ -979,10 +979,14 @@ export default function App() {
               </div>
             ) : (
               <div className="landing-recently-empty">
-                <RentalIcon type="item" />
-                <h2>Your recently viewed items will appear here</h2>
-                <p>Explore the marketplace and open any listing to start your history.</p>
-                <button onClick={() => openCatalogPage({ mode: 'all' })} type="button">Start browsing</button>
+                <span className="landing-recent-eyebrow">Borrow around Baliuag</span>
+                <h2>Useful things, shared<br />closer to home.</h2>
+                <p>Discover items from trusted neighbors, borrow only what you need, and make more room for what matters.</p>
+                <div className="landing-recent-empty-actions">
+                  <button onClick={() => openCatalogPage({ mode: 'all' })} type="button">Explore rentals</button>
+                  <button onClick={() => navigate('/list-item')} type="button">List an item</button>
+                </div>
+                <small>Your recently viewed items will appear here once you start exploring.</small>
               </div>
             )}
           </section>
@@ -1064,6 +1068,14 @@ export default function App() {
             </div>
           </article>
         </section>
+
+        <div className="landing-market-divider" aria-hidden="true">
+          <div className="landing-editorial-rule">
+            <i />
+            <span />
+            <i />
+          </div>
+        </div>
         </>}
 
         {categorySections.length ? (
@@ -1123,7 +1135,7 @@ export default function App() {
         </section>
 
         <section className="landing-trending landing-trending-featured">
-          <div className="landing-section-head">
+          <div className="landing-section-head landing-lined-head">
             <div>
               <span className="landing-section-eyebrow">Popular in the community</span>
               <h2>Discover trending rentals</h2>
@@ -1157,7 +1169,7 @@ export default function App() {
         </section>
 
         <section className="landing-trending landing-most-viewed landing-product-shelf">
-          <div className="landing-section-head">
+          <div className="landing-section-head landing-lined-head">
             <h2>Most Viewed</h2>
           </div>
 
@@ -1182,7 +1194,7 @@ export default function App() {
         </section>
 
         <section className="landing-trending landing-product-shelf">
-          <div className="landing-section-head">
+          <div className="landing-section-head landing-lined-head">
             <h2>Cheapest Rentals</h2>
           </div>
           <div className="landing-trending-grid">
@@ -1205,7 +1217,7 @@ export default function App() {
         </section>
 
         <section className="landing-trending landing-product-shelf">
-          <div className="landing-section-head">
+          <div className="landing-section-head landing-lined-head">
             <h2>Priciest Rentals</h2>
           </div>
           <div className="landing-trending-grid">

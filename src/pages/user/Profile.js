@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../api/supabaseClient';
 import { CalendarIcon, CheckIcon, ProfileIcon, ShieldIcon, UploadIcon } from '../../ui/icons';
 import { SectionGrid } from '../../ui/layouts';
 import { Badge, Button, FileInput, FormField, Input, Modal, Panel, StatusMessage } from '../../ui/primitives';
 import { alpha, theme } from '../../ui/theme';
 import UserShell from './UserShell';
+import './Profile.css';
 import PhilippineAddressFields from '../../ui/PhilippineAddressFields';
 import {
   buildMapEmbedUrl,
@@ -28,6 +30,26 @@ const identityFields = [
   { name: 'username', label: 'Username' },
   { name: 'phone_number', label: 'Phone number' },
 ];
+
+const requiredProfileDetails = [
+  { label: 'first name', name: 'first_name' },
+  { label: 'last name', name: 'last_name' },
+  { label: 'username', name: 'username' },
+  { label: 'phone number', name: 'phone_number' },
+  { label: 'date of birth', name: 'date_of_birth' },
+  { label: 'street address', name: 'street' },
+  { label: 'barangay', name: 'barangay' },
+  { label: 'city', name: 'city' },
+  { label: 'province', name: 'province' },
+  { label: 'region', name: 'region' },
+  { label: 'country', name: 'country' },
+];
+
+function getMissingProfileDetails(profileValue) {
+  return requiredProfileDetails
+    .filter(({ name }) => !sanitizeText(profileValue?.[name]))
+    .map(({ label }) => label);
+}
 
 const selectStyle = {
   background: alpha(theme.colors.panel, 0.92),
@@ -89,24 +111,6 @@ function readValue(value, fallback = 'Not available') {
   }
 
   return value;
-}
-
-function maskSensitiveCredential(value, fallback = 'Not available') {
-  if (typeof value !== 'string') {
-    return fallback;
-  }
-
-  const normalized = value.trim();
-
-  if (!normalized) {
-    return fallback;
-  }
-
-  const prefixLength = normalized.length > 4 ? 2 : 1;
-  const suffixLength = normalized.length > 6 ? 1 : 0;
-  const maskLength = Math.max(2, normalized.length - prefixLength - suffixLength);
-
-  return `${normalized.slice(0, prefixLength)}${'•'.repeat(maskLength)}${suffixLength ? normalized.slice(-suffixLength) : ''}`;
 }
 
 function formatDate(value) {
@@ -205,52 +209,11 @@ function SummaryTile({ icon, label, value }) {
   );
 }
 
-function DetailRow({ label, value }) {
+function RecordItem({ label, value }) {
   return (
-    <div
-      className="responsive-detail-row"
-      style={{
-        alignItems: 'start',
-        borderBottom: `1px solid ${alpha(theme.colors.ink, 0.08)}`,
-        display: 'grid',
-        gap: 10,
-        gridTemplateColumns: '150px minmax(0, 1fr)',
-        padding: '12px 0',
-      }}
-    >
-      <span style={{ color: theme.colors.slate, fontSize: 12, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase' }}>{label}</span>
-      <span style={{ color: theme.colors.ink, lineHeight: 1.75, wordBreak: 'break-word' }}>{value}</span>
-    </div>
-  );
-}
-
-function ContactCard({ label, style, value }) {
-  return (
-    <div
-      style={{
-        background: alpha(theme.colors.panel, 0.82),
-        border: `1px solid ${alpha(theme.colors.ink, 0.08)}`,
-        borderRadius: 0,
-        display: 'grid',
-        gap: 6,
-        minHeight: 106,
-        padding: 16,
-        ...style,
-      }}
-    >
-      <span style={{ color: theme.colors.slate, fontSize: 12, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' }}>{label}</span>
-      <span
-        style={{
-          color: theme.colors.ink,
-          fontFamily: theme.fonts.display,
-          fontSize: 18,
-          letterSpacing: '-0.04em',
-          lineHeight: 1.4,
-          wordBreak: 'break-word',
-        }}
-      >
-        {value}
-      </span>
+    <div className="profile-record-item">
+      <span>{label}</span>
+      <strong>{value}</strong>
     </div>
   );
 }
@@ -276,7 +239,8 @@ function SectionCard({ children, style, title }) {
   );
 }
 
-export default function Profile() {
+export default function Profile({ verificationPage = false }) {
+  const navigate = useNavigate();
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -287,7 +251,6 @@ export default function Profile() {
   const [message, setMessage] = useState('');
   const [messageTone, setMessageTone] = useState('success');
   const [profileCompleteModalOpen, setProfileCompleteModalOpen] = useState(false);
-  const [verificationModalOpen, setVerificationModalOpen] = useState(false);
   const [verification, setVerification] = useState(null);
   const [verifForm, setVerifForm] = useState({ id_type: '', id_number_masked: '' });
   const [idFront, setIdFront] = useState(null);
@@ -444,6 +407,13 @@ export default function Profile() {
         suffix: sanitizeText(form.suffix),
         username: normalizedUsername,
       };
+      const missingDetails = getMissingProfileDetails(updateData);
+
+      if (missingDetails.length) {
+        throw new Error(`Complete these required profile details: ${missingDetails.join(', ')}.`);
+      }
+
+      updateData.is_profile_complete = true;
       const { error } = await supabase.from('profiles').update(updateData).eq('id', profile.id);
 
       if (error) {
@@ -476,6 +446,17 @@ export default function Profile() {
     setVerifMsg('');
 
     if (!profile) {
+      return;
+    }
+
+    const missingDetails = getMissingProfileDetails(profile);
+
+    if (missingDetails.length) {
+      setVerifMsg('');
+      setMessage(`Complete your profile before submitting an ID. Missing: ${missingDetails.join(', ')}.`);
+      setMessageTone('warning');
+      setEditMode(true);
+      navigate('/user/profile');
       return;
     }
 
@@ -541,8 +522,7 @@ export default function Profile() {
   const emailHandle = sanitizeText(user?.email?.split('@')[0]);
   const displayName = formalName || sanitizeText(liveProfile.username) || emailHandle || 'Profile';
   const username = liveProfile.username ? `@${liveProfile.username}` : 'No username saved';
-  const phone = readValue(liveProfile.phone_number);
-  const address = [
+  const fullAddress = [
     liveProfile.street,
     liveProfile.barangay,
     liveProfile.city,
@@ -560,7 +540,9 @@ export default function Profile() {
   const verificationAccepted = isAcceptedVerificationStatus(verification?.status);
   const joinedAt = formatDate(profile.created_at || user?.created_at);
   const lastSignIn = formatDate(user?.last_sign_in_at);
-  const profileCompletion = profile.is_profile_complete ? 'Complete' : 'Needs completion';
+  const missingProfileDetails = getMissingProfileDetails(profile);
+  const profileDetailsComplete = missingProfileDetails.length === 0;
+  const profileCompletion = profileDetailsComplete ? 'Complete' : 'Needs completion';
   const accountStatus = readValue(profile.account_status, 'Active');
   const verificationIdRule = getVerificationIdTypeRule(verifForm.id_type);
   const latestAdultBirthDate = formatDateInputValue(getLatestAdultBirthDate());
@@ -578,6 +560,22 @@ export default function Profile() {
         ? 'Resubmit ID verification'
         : 'ID submission details'
     : 'Submit ID verification';
+
+  function openVerification() {
+    setVerifMsg('');
+
+    const actionWouldSubmitVerification = !verification || canResubmitVerification;
+
+    if (actionWouldSubmitVerification && !profileDetailsComplete) {
+      setMessage(`Complete your profile before submitting an ID. Missing: ${missingProfileDetails.join(', ')}.`);
+      setMessageTone('warning');
+      setEditMode(true);
+      return;
+    }
+
+    setMessage('');
+    navigate('/user/profile/verification');
+  }
 
   return (
     <UserShell subtitle="" title="">
@@ -601,7 +599,13 @@ export default function Profile() {
         </div>
       </Modal>
 
-      <Modal onClose={() => setVerificationModalOpen(false)} open={verificationModalOpen} title={verificationModalTitle}>
+      <Modal
+        contentClassName="profile-verification-page"
+        inline={verificationPage}
+        onClose={() => navigate('/user/profile')}
+        open={verificationPage}
+        title={verificationModalTitle}
+      >
         <div style={{ display: 'grid', gap: 18 }}>
           {verification && !canResubmitVerification ? (
             <div style={{ display: 'grid', gap: 18 }}>
@@ -705,8 +709,8 @@ export default function Profile() {
               {verifMsg ? <StatusMessage tone={verifTone}>{verifMsg}</StatusMessage> : null}
 
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                <Button onClick={() => setVerificationModalOpen(false)} type="button" variant="ghost">
-                  Close
+                <Button onClick={() => navigate('/user/profile')} type="button" variant="ghost">
+                  Back to profile
                 </Button>
               </div>
             </div>
@@ -763,8 +767,8 @@ export default function Profile() {
                 {verifMsg ? <StatusMessage tone={verifTone}>{verifMsg}</StatusMessage> : null}
 
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, justifyContent: 'flex-end' }}>
-                  <Button onClick={() => setVerificationModalOpen(false)} type="button" variant="ghost">
-                    Cancel
+                  <Button onClick={() => navigate('/user/profile')} type="button" variant="ghost">
+                    Back to profile
                   </Button>
                   <Button icon={<CheckIcon size={16} />} type="submit">
                     Submit verification
@@ -776,8 +780,9 @@ export default function Profile() {
         </div>
       </Modal>
 
-      <div style={{ display: 'grid', gap: 20 }}>
+      {!verificationPage ? <div style={{ display: 'grid', gap: 20 }}>
         <Panel
+          className="profile-summary-panel"
           style={{
             borderRadius: 0,
             overflow: 'hidden',
@@ -785,6 +790,7 @@ export default function Profile() {
           }}
         >
           <div
+            className="profile-hero-banner"
             style={{
               background: `
                 linear-gradient(108deg, ${alpha(theme.colors.ink, 0.94)} 0%, ${alpha('#344757', 0.9)} 52%, ${alpha('#7a8d98', 0.74)} 100%)
@@ -827,11 +833,12 @@ export default function Profile() {
             />
           </div>
 
-          <div style={{ marginTop: -32, padding: '0 30px 22px', position: 'relative' }}>
+          <div className="profile-summary-body" style={{ marginTop: -32, padding: '0 30px 22px', position: 'relative' }}>
             <div style={{ display: 'grid', gap: 18 }}>
               <div className="responsive-flex-stack-start" style={{ alignItems: 'center', display: 'flex', flexWrap: 'wrap', gap: 18, justifyContent: 'space-between' }}>
                 <div style={{ alignItems: 'center', display: 'flex', flexWrap: 'wrap', gap: 18, minWidth: 0 }}>
                   <div
+                    className="profile-avatar"
                     style={{
                       alignItems: 'center',
                       background: '#ffffff',
@@ -896,10 +903,7 @@ export default function Profile() {
                 <div className="responsive-action-row" style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                   {!verification ? (
                     <Button
-                      onClick={() => {
-                        setVerifMsg('');
-                        setVerificationModalOpen(true);
-                      }}
+                      onClick={openVerification}
                       style={{ minWidth: 182 }}
                       type="button"
                       variant="secondary"
@@ -908,10 +912,7 @@ export default function Profile() {
                     </Button>
                   ) : (
                     <Button
-                      onClick={() => {
-                        setVerifMsg('');
-                        setVerificationModalOpen(true);
-                      }}
+                      onClick={openVerification}
                       style={{ minWidth: 182 }}
                       type="button"
                       variant="secondary"
@@ -920,7 +921,9 @@ export default function Profile() {
                     </Button>
                   )}
                   <Button
-                    onClick={() => setEditMode((current) => !current)}
+                    onClick={() => {
+                      setEditMode((current) => !current);
+                    }}
                     style={{
                       minWidth: 144,
                     }}
@@ -942,35 +945,9 @@ export default function Profile() {
           </div>
         </Panel>
 
-        <div className="two-column" style={{ alignItems: 'stretch', display: 'grid', gap: 20, gridTemplateColumns: 'minmax(300px, 0.82fr) minmax(0, 1.18fr)' }}>
+        <div className="two-column profile-content" style={{ alignItems: 'stretch', display: 'grid', gap: 20, gridTemplateColumns: '1fr' }}>
           <Panel
-            style={{ borderRadius: 0, height: '100%' }}
-            subtitle="The public-facing member details associated with your account."
-            title="Contact record"
-          >
-            <div style={{ display: 'grid', gap: 14, gridTemplateRows: mapUrl ? 'repeat(3, auto) minmax(286px, 1fr)' : 'repeat(3, auto)' }}>
-              <ContactCard label="Username" value={username} />
-              <ContactCard label="Phone" value={phone} />
-              <ContactCard label="Address" value={readValue(address)} />
-
-              {mapUrl ? (
-                <div
-                  style={{
-                    border: `1px solid ${alpha(theme.colors.ink, 0.08)}`,
-                    borderRadius: 0,
-                    minHeight: 286,
-                    overflow: 'hidden',
-                  }}
-                >
-                  <iframe src={mapUrl} style={{ border: 0, display: 'block', height: '100%', minHeight: 286, width: '100%' }} title="Member location" />
-                </div>
-              ) : (
-                <StatusMessage tone="info">Set your address coordinates to show a member location preview.</StatusMessage>
-              )}
-            </div>
-          </Panel>
-
-          <Panel
+            className="profile-details-panel"
             style={{ borderRadius: 0, height: '100%' }}
             subtitle={
               editMode
@@ -981,8 +958,14 @@ export default function Profile() {
           >
             {editMode ? (
               <form className="responsive-scroll-form" onSubmit={handleSubmit} style={{ display: 'grid', gap: 18, maxHeight: '78vh', overflowY: 'auto', paddingRight: 6 }}>
-                <div className="form-grid" style={{ display: 'grid', gap: 14, gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
-                  {identityFields.map((field) => (
+                <section className="profile-form-section">
+                  <div className="profile-form-section-heading">
+                    <strong>Personal details</strong>
+                    <span>Your identity and account information.</span>
+                  </div>
+
+                  <div className="form-grid profile-three-column-grid">
+                  {identityFields.slice(0, 3).map((field) => (
                     <FormField key={field.name} label={field.label}>
                       <Input name={field.name} onChange={handleChange} value={form[field.name] || ''} />
                     </FormField>
@@ -998,6 +981,12 @@ export default function Profile() {
                     </select>
                   </FormField>
 
+                  {identityFields.slice(3).map((field) => (
+                    <FormField key={field.name} label={field.label}>
+                      <Input name={field.name} onChange={handleChange} value={form[field.name] || ''} />
+                    </FormField>
+                  ))}
+
                   <FormField hint="Borrowers must be at least 18 years old." label="Date of birth">
                     <Input
                       max={latestAdultBirthDate}
@@ -1008,13 +997,20 @@ export default function Profile() {
                       value={form.date_of_birth || ''}
                     />
                   </FormField>
-                </div>
 
-                <PhilippineAddressFields form={form} setForm={setForm} />
+                  <FormField hint="Optional. Upload a new profile image." label="Profile photo">
+                    <FileInput accept="image/*" onChange={(event) => setPhotoFile(event.target.files?.[0] || null)} />
+                  </FormField>
+                  </div>
+                </section>
 
-                <FormField hint="Optional. Upload a new profile image to refresh the formal profile header." label="Profile photo">
-                  <FileInput accept="image/*" onChange={(event) => setPhotoFile(event.target.files?.[0] || null)} />
-                </FormField>
+                <section className="profile-form-section">
+                  <div className="profile-form-section-heading">
+                    <strong>Address</strong>
+                    <span>Your location and community details.</span>
+                  </div>
+                  <PhilippineAddressFields columnCount={3} flatMap form={form} setForm={setForm} showCoordinates={false} />
+                </section>
 
                 {message ? <StatusMessage tone={messageTone}>{message}</StatusMessage> : null}
 
@@ -1029,53 +1025,24 @@ export default function Profile() {
               </form>
             ) : (
               <div style={{ display: 'grid', gap: 14 }}>
-                <SectionCard
-                  style={{
-                    background: alpha(theme.colors.sky, 0.05),
-                    border: `1px solid ${alpha(theme.colors.sky, 0.12)}`,
-                    minHeight: 106,
-                  }}
-                >
-                  <strong
-                    style={{
-                      color: theme.colors.ink,
-                      fontFamily: theme.fonts.display,
-                      fontSize: 20,
-                      letterSpacing: '-0.04em',
-                    }}
-                  >
-                    Trust status
-                  </strong>
-                  <span style={{ color: theme.colors.slate, lineHeight: 1.7 }}>
-                    {verification
-                      ? `Your latest verification is ${verificationStatus}. ${verification.id_type ? `Document type: ${verification.id_type}.` : ''}`
-                      : 'You have not submitted an identity verification yet.'}
-                  </span>
-                </SectionCard>
-
-                <div style={{ display: 'grid', gap: 14, gridTemplateRows: 'repeat(2, minmax(286px, 1fr))' }}>
-                  <SectionCard style={{ minHeight: 286, padding: '14px 18px 10px' }} title="Personal identity">
-                    <div style={{ display: 'grid', maxHeight: 220, overflowY: 'auto' }}>
-                      <DetailRow label="Email" value={readValue(user?.email)} />
-                      <DetailRow label="First name" value={readValue(profile.first_name)} />
-                      <DetailRow label="Middle name" value={readValue(profile.middle_name)} />
-                      <DetailRow label="Last name" value={readValue(profile.last_name)} />
-                      <DetailRow label="Suffix" value={readValue(profile.suffix)} />
-                      <DetailRow label="Date of birth" value={profile.date_of_birth ? new Intl.DateTimeFormat('en-US', { dateStyle: 'medium' }).format(new Date(`${profile.date_of_birth}T00:00:00`)) : 'Not available'} />
+                <div className="profile-record-sections">
+                  <SectionCard title="Personal information">
+                    <div className="profile-record-grid">
+                      <RecordItem label="Username" value={username} />
+                      <RecordItem label="Phone number" value={readValue(profile.phone_number)} />
+                      <RecordItem label="Date of birth" value={profile.date_of_birth ? new Intl.DateTimeFormat('en-US', { dateStyle: 'medium' }).format(new Date(`${profile.date_of_birth}T00:00:00`)) : 'Not available'} />
+                      <div className="profile-record-address">
+                        <RecordItem label="Address" value={readValue(fullAddress)} />
+                      </div>
                     </div>
                   </SectionCard>
 
-                  <SectionCard style={{ minHeight: 286, padding: '14px 18px 10px' }} title="Account timeline">
-                    <div style={{ display: 'grid', maxHeight: 220, overflowY: 'auto' }}>
-                      <DetailRow label="Verification" value={verificationStatus} />
-                      <DetailRow label="Verification ID type" value={readValue(verification?.id_type)} />
-                      <DetailRow label="Masked ID" value={maskSensitiveCredential(verification?.id_number_masked)} />
-                    <DetailRow label="Joined" value={joinedAt} />
-                      <DetailRow label="Last sign-in" value={lastSignIn} />
-                      <DetailRow label="Profile completion" value={profileCompletion} />
-                      <DetailRow label="Account status" value={accountStatus} />
-                      {verification?.remarks ? <DetailRow label="Verification remarks" value={verification.remarks} /> : null}
-                    </div>
+                  <SectionCard title="Location map">
+                    {mapUrl ? (
+                      <iframe className="profile-record-map" src={mapUrl} title="Saved profile location" />
+                    ) : (
+                      <StatusMessage tone="info">Search for your address or use your current location while editing your profile to add the map.</StatusMessage>
+                    )}
                   </SectionCard>
                 </div>
 
@@ -1085,7 +1052,7 @@ export default function Profile() {
           </Panel>
         </div>
 
-      </div>
+      </div> : null}
     </UserShell>
   );
 }

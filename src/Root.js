@@ -50,6 +50,7 @@ export default function Root() {
           <Route path="/user/calendar" element={<UserRentalsCalendar />} />
           <Route path="/user/messages" element={<Messages />} />
           <Route path="/user/profile" element={<Profile />} />
+          <Route path="/user/profile/verification" element={<Profile verificationPage />} />
           <Route path="/admin/login" element={<Navigate to="/login" replace />} />
           <Route path="/admin/dashboard" element={<AdminDashboard />} />
           <Route path="/admin/profile" element={<AdminProfile />} />
