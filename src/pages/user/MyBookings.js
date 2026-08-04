@@ -3658,14 +3658,6 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
               padding: 12,
             }}
           >
-            <header className="booking-page-header">
-              <div>
-                <span className="workspace-eyebrow">Rental operations</span>
-                <h1>Manage bookings</h1>
-                <p>Review requests, monitor active rentals, and keep every handoff on schedule.</p>
-              </div>
-            </header>
-
             <section className="booking-mobile-overview">
               <div className="booking-mobile-stats-grid">
                 <article className="booking-mobile-stat-card tone-danger">
@@ -4556,14 +4548,6 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
             ) : null}
 
             <section className="inventory-layout">
-              <header className="inventory-header">
-                <div className="inventory-header-copy">
-                  <span className="workspace-eyebrow">Your inventory</span>
-                  <h2>Rental item management</h2>
-                  <p>Manage listings, update availability, and keep stock information accurate.</p>
-                </div>
-              </header>
-
               <div className="inventory-stat-grid">
                 <article className="inventory-stat-card">
                   <header>
