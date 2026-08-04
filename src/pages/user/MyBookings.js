@@ -737,7 +737,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
     };
   }, [message]);
 
-  async function loadListings(showLoader = true) {
+  const loadListings = useCallback(async (showLoader = true) => {
     if (loadListingsInFlightRef.current) {
       return;
     }
@@ -1129,11 +1129,11 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
     } finally {
       loadListingsInFlightRef.current = false;
     }
-  }
+  }, []);
 
   useEffect(() => {
     loadListings();
-  }, []);
+  }, [loadListings]);
 
   useEffect(() => {
     if (!listingImageFiles.length) {
@@ -1532,7 +1532,9 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
     }
 
     openEditListing(targetItem);
-  }, [editItemId, isEditPage, items]);
+    // This route effect intentionally runs only when its route/item inputs change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editItemId, isEditPage, items, navigate]);
 
   useEffect(() => {
     if (!isAddPage) {
@@ -1540,6 +1542,8 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
     }
 
     openAddListing();
+    // Opening the add route is controlled by the route flag, not form-state changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAddPage]);
 
   useEffect(() => {
@@ -2380,7 +2384,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
     return () => {
       ignore = true;
     };
-  }, [autoApprovePaidBookings, loading, userId]);
+  }, [autoApprovePaidBookings, loadListings, loading, userId]);
 
   useEffect(() => {
     if (loading || !userId) {

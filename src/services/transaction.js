@@ -1,16 +1,13 @@
 const PAYMONGO_TEST_API_BASE_URL =
   process.env.NODE_ENV === 'development' ? '/api/paymongo/v1' : 'https://api.paymongo.com/v1';
 
-const PAYMONGO_TEST_SECRET_KEY_ENV_KEYS = Object.freeze([
-  'REACT_APP_PAYMONGO_TEST_SECRET_KEY',
-  'REACT_APP_PAYMONGO_SECRET_KEY',
-]);
 const DEFAULT_CHECKOUT_PAYMENT_METHOD_TYPES = Object.freeze(['card', 'qrph']);
 
 function readPayMongoTestSecretKey() {
-  const secretKey = PAYMONGO_TEST_SECRET_KEY_ENV_KEYS.map((envKey) => process.env[envKey]).find(
-    (value) => typeof value === 'string' && value.trim()
-  );
+  const secretKey = [
+    process.env.REACT_APP_PAYMONGO_TEST_SECRET_KEY,
+    process.env.REACT_APP_PAYMONGO_SECRET_KEY,
+  ].find((value) => typeof value === 'string' && value.trim());
 
   if (!secretKey) {
     throw new Error(

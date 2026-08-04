@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, FormField, Input, StatusMessage } from './primitives';
 import { alpha, theme } from './theme';
 import { buildAddressQuery, buildMapEmbedUrl, geocodePhilippineAddress, sanitizeText } from './profileFormUtils';
@@ -170,6 +170,13 @@ export default function PhilippineAddressFields({
   const [locationTone, setLocationTone] = useState('info');
   const [locationSearch, setLocationSearch] = useState('');
   const [useProfileAddress, setUseProfileAddress] = useState(false);
+
+  const updateAddressFields = useCallback((nextFields) => {
+    setForm((current) => ({
+      ...current,
+      ...createMappedFields(fieldMap, nextFields),
+    }));
+  }, [fieldMap, setForm]);
 
   useEffect(() => {
     let mounted = true;
@@ -394,7 +401,7 @@ export default function PhilippineAddressFields({
         region: getRegionLabel(fixedRegion),
       });
     }
-  }, [fieldMap, fixedRegion, form]);
+  }, [fieldMap, fixedRegion, form, updateAddressFields]);
 
   useEffect(() => {
     if (!fixedProvince) {
@@ -409,7 +416,7 @@ export default function PhilippineAddressFields({
         province: fixedProvince.name,
       });
     }
-  }, [fieldMap, fixedProvince, form]);
+  }, [fieldMap, fixedProvince, form, updateAddressFields]);
 
   useEffect(() => {
     if (!fixedCity) {
@@ -423,14 +430,7 @@ export default function PhilippineAddressFields({
         city: fixedCity.name || FIXED_LOCATION.cityCanonical,
       });
     }
-  }, [fieldMap, fixedCity, form]);
-
-  function updateAddressFields(nextFields) {
-    setForm((current) => ({
-      ...current,
-      ...createMappedFields(fieldMap, nextFields),
-    }));
-  }
+  }, [fieldMap, fixedCity, form, updateAddressFields]);
 
   function handleStreetChange(event) {
     updateAddressFields({ street: event.target.value });
