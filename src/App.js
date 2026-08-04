@@ -263,6 +263,8 @@ export default function App() {
   const [recentlyViewedIds, setRecentlyViewedIds] = useState([]);
   const [activeRecentIndex, setActiveRecentIndex] = useState(0);
   const [recentCarouselPaused, setRecentCarouselPaused] = useState(false);
+  const [activeArrival, setActiveArrival] = useState(0);
+  const [arrivalCarouselPaused, setArrivalCarouselPaused] = useState(false);
 
   const brandName = settings.system_name?.trim() || "Borrow Ko 'To";
   const logoUrl = settings.logo_url?.trim() || '';
@@ -726,6 +728,13 @@ export default function App() {
         .filter((entry) => entry.items.length),
     [barangayFilteredItems, categories, parentCategories]
   );
+  const newArrivalItems = useMemo(
+    () =>
+      [...barangayFilteredItems]
+        .sort((first, second) => new Date(second.created_at || 0).getTime() - new Date(first.created_at || 0).getTime())
+        .slice(0, 5),
+    [barangayFilteredItems]
+  );
   const activeFilterCount = selectedFilterCategories.length + selectedConditions.length +
     (minimumPrice !== '' ? 1 : 0) + (maximumPrice !== '' ? 1 : 0) + (Number(minimumRating) > 0 ? 1 : 0);
   const recentlyViewedItems = useMemo(() => {
@@ -745,6 +754,18 @@ export default function App() {
   useEffect(() => {
     if (activeRecentIndex >= recentlyViewedItems.length) setActiveRecentIndex(0);
   }, [activeRecentIndex, recentlyViewedItems.length]);
+
+  useEffect(() => {
+    if (arrivalCarouselPaused || newArrivalItems.length < 2) return undefined;
+    const timer = window.setInterval(() => {
+      setActiveArrival((current) => (current + 1) % newArrivalItems.length);
+    }, 6000);
+    return () => window.clearInterval(timer);
+  }, [arrivalCarouselPaused, newArrivalItems.length]);
+
+  useEffect(() => {
+    if (activeArrival >= newArrivalItems.length) setActiveArrival(0);
+  }, [activeArrival, newArrivalItems.length]);
 
   function toggleFilterValue(value, setter) {
     setter((current) => current.includes(value) ? current.filter((entry) => entry !== value) : [...current, value]);
@@ -1238,6 +1259,67 @@ export default function App() {
             ) : null}
           </div>
         </section>
+
+        {newArrivalItems.length ? (
+          <section
+            aria-label="New arrivals"
+            aria-roledescription="carousel"
+            className="landing-arrivals-carousel"
+            onMouseEnter={() => setArrivalCarouselPaused(true)}
+            onMouseLeave={() => setArrivalCarouselPaused(false)}
+          >
+            {newArrivalItems.map((item, index) => (
+              <article
+                aria-hidden={activeArrival !== index}
+                className={`landing-arrival-slide ${activeArrival === index ? 'active' : ''}`}
+                key={`arrival-${item.id}`}
+              >
+                <ProductImage item={item} />
+                <div className="landing-arrival-shade" />
+                <div className="landing-arrival-copy">
+                  <span>New arrival</span>
+                  <h2>{item.title}</h2>
+                  <p>
+                    Newly available in {detectBaliuagBarangay(item)} for {currencyFormatter.format(Number(item.rental_price_per_day) || 0)} per day.
+                  </p>
+                  <button onClick={() => openPublicItem(item.id)} tabIndex={activeArrival === index ? 0 : -1} type="button">
+                    View item <b aria-hidden="true">→</b>
+                  </button>
+                </div>
+              </article>
+            ))}
+
+            {newArrivalItems.length > 1 ? (
+              <>
+                <button
+                  aria-label="Previous new arrival"
+                  className="landing-carousel-arrow previous"
+                  onClick={() => setActiveArrival((activeArrival - 1 + newArrivalItems.length) % newArrivalItems.length)}
+                  type="button"
+                >‹</button>
+                <button
+                  aria-label="Next new arrival"
+                  className="landing-carousel-arrow next"
+                  onClick={() => setActiveArrival((activeArrival + 1) % newArrivalItems.length)}
+                  type="button"
+                >›</button>
+                <div className="landing-carousel-dots" role="tablist" aria-label="Choose new arrival">
+                  {newArrivalItems.map((item, index) => (
+                    <button
+                      aria-label={`Show ${item.title}`}
+                      aria-selected={activeArrival === index}
+                      className={activeArrival === index ? 'active' : ''}
+                      key={`arrival-dot-${item.id}`}
+                      onClick={() => setActiveArrival(index)}
+                      role="tab"
+                      type="button"
+                    ><i /></button>
+                  ))}
+                </div>
+              </>
+            ) : null}
+          </section>
+        ) : null}
 
         <section className="landing-category-sections">
           {categorySections.map((entry) => (
