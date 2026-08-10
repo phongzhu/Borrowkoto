@@ -1321,35 +1321,37 @@ export default function App() {
           </section>
         ) : null}
 
-        <section className="landing-category-sections">
-          {categorySections.map((entry) => (
-            <article className="landing-category-section landing-product-shelf" key={`section-${entry.category.id}`}>
-              <div className="landing-section-head">
-                <h2>{entry.category.name}</h2>
-              </div>
-              <div className="landing-trending-grid">
-                {entry.items.map((item) => (
-                  <button className="landing-trending-card landing-category-ad-card" key={`category-${entry.category.id}-${item.id}`} onClick={() => openPublicItem(item.id)} type="button">
-                    <div className="landing-item-media">
-                      <ProductImage item={item} />
-                      <span className="landing-category-ad-shade" />
-                    </div>
-                    <span className="landing-category-ad-copy">
-                      <h3>{item.title}</h3>
-                      <strong>{currencyFormatter.format(Number(item.rental_price_per_day) || 0)} / day</strong>
-                      <small>Available in {detectBaliuagBarangay(item)}</small>
-                      <b className="landing-category-ad-action">Rent this item <i aria-hidden="true">→</i></b>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </article>
-          ))}
-          {!loading && categorySections.length === 0 ? (
-            <p className="landing-empty-note">No listed items for rent.</p>
-          ) : null}
-        </section>
       </main>
+
+      <footer className="landing-footer">
+        <div className="landing-footer-brand">
+          <div className="landing-footer-brand-lockup">
+            <span className="landing-brand-mark">
+              <LogoMark brandName={brandName} logoUrl={logoUrl} />
+            </span>
+            <h2>{brandName}</h2>
+          </div>
+          <p>{settings.system_tagline?.trim() || 'Borrow what you need. Share what you have.'}</p>
+          <p className="landing-footer-description">A community rental marketplace for useful items around Baliuag.</p>
+        </div>
+
+        <nav aria-label="Browse all categories" className="landing-footer-categories">
+          <h3>Browse all categories</h3>
+          <div>
+            {quickCategories.map((category) => (
+              <button
+                key={`footer-category-${category.id}`}
+                onClick={() => openCatalogPage({ categoryId: category.id, mode: 'all' })}
+                type="button"
+              >
+                {category.name}
+              </button>
+            ))}
+          </div>
+        </nav>
+
+        <p className="landing-footer-note">© {new Date().getFullYear()} {brandName}. Built for the Baliuag community.</p>
+      </footer>
 
     </div>
   );

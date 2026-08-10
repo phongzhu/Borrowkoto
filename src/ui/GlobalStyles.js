@@ -154,7 +154,6 @@ export default function GlobalStyles() {
         .landing-main,
         .landing-nearby,
         .landing-catalog,
-        .landing-footer,
         .landing-search,
         .landing-controls.inline,
         .landing-trust-row article,
