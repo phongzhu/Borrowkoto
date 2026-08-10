@@ -834,8 +834,8 @@ export default function App() {
         <section className="landing-toolbar landing-toolbar-top">
           <div className="landing-search-row">
             <div className="landing-controls inline">
-              <label htmlFor="barangay-filter">Sort by Baliuag Barangay</label>
               <select
+                aria-label="Filter by Baliuag barangay"
                 id="barangay-filter"
                 onChange={(event) => setBarangayFilter(event.target.value)}
                 value={barangayFilter}
@@ -947,10 +947,10 @@ export default function App() {
         <div className="landing-categories-grid">
           {quickCategories.map((category) => (
             <button
+              aria-pressed={categoryFilter === category.id}
               className={categoryFilter === category.id ? 'active' : ''}
               key={category.id}
-              onClick={() => setCategoryFilter(category.id)}
-              title={category.name}
+              onClick={() => setCategoryFilter((current) => current === category.id ? 'all' : category.id)}
               type="button"
             >
               <span className="landing-category-icon">

@@ -1285,8 +1285,7 @@ export default function RentItem() {
 
         <form className="rent-checkout-header-tools" onSubmit={submitHeaderSearch}>
           <label className="rent-checkout-barangay">
-            <span>Sort by Baliuag Barangay</span>
-            <select onChange={(event) => setHeaderBarangay(event.target.value)} value={headerBarangay}>
+            <select aria-label="Filter by Baliuag barangay" onChange={(event) => setHeaderBarangay(event.target.value)} value={headerBarangay}>
               <option value="all">All barangays</option>
               {['Bagong Nayon', 'Barangca', 'Calantipay', 'Catulinan', 'Concepcion', 'Hinukay', 'Makinabang', 'Matangtubig', 'Pagala', 'Paitan', 'Piel', 'Pinagbarilan', 'Poblacion', 'Sabang', 'San Jose', 'San Roque', 'Santa Barbara', 'Santo Cristo', 'Santo Niño', 'Subic', 'Sulivan', 'Tangós', 'Tarcan', 'Tiaong', 'Tibag', 'Tilapayong', 'Virgen delas Flores'].map((barangay) => (
                 <option key={barangay} value={barangay}>{barangay}</option>

@@ -2026,8 +2026,7 @@ export default function ViewItemList({ publicMode = false }) {
             </button>
 
             <div className="item-detail-public-barangay">
-              <label htmlFor="detail-barangay-filter">Sort by Baliuag Barangay</label>
-              <select id="detail-barangay-filter" onChange={(event) => setHeaderBarangay(event.target.value)} value={headerBarangay}>
+              <select aria-label="Filter by Baliuag barangay" id="detail-barangay-filter" onChange={(event) => setHeaderBarangay(event.target.value)} value={headerBarangay}>
                 <option value="all">All barangays</option>
                 {BALIUAG_BARANGAYS.map((barangay) => <option key={barangay} value={barangay}>{barangay}</option>)}
               </select>

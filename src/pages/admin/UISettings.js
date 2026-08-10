@@ -1,24 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../api/supabaseClient';
-import { toUISettingsForm, useUISettings } from '../../context/UISettingsContext';
+import {
+  bodyFontFallback,
+  headerFontFallback,
+  toUISettingsForm,
+  useUISettings,
+} from '../../context/UISettingsContext';
 import { UploadIcon } from '../../ui/icons';
 import { Button, FileInput, FormField, Input, Panel, StatusMessage, Textarea } from '../../ui/primitives';
 import { alpha, theme } from '../../ui/theme';
 import AdminShell from './AdminShell';
-
-const fontOptions = [
-  { label: 'System default', value: '' },
-  { label: 'Segoe UI Variable', value: '"Segoe UI Variable Text", "Trebuchet MS", "Segoe UI", sans-serif' },
-  { label: 'Arial', value: 'Arial, Helvetica, sans-serif' },
-  { label: 'Verdana', value: 'Verdana, Geneva, sans-serif' },
-  { label: 'Tahoma', value: 'Tahoma, Geneva, sans-serif' },
-  { label: 'Trebuchet MS', value: '"Trebuchet MS", "Segoe UI", sans-serif' },
-  { label: 'Lucida Sans', value: '"Lucida Sans", "Lucida Sans Unicode", Geneva, sans-serif' },
-  { label: 'Georgia', value: 'Georgia, "Times New Roman", serif' },
-  { label: 'Palatino', value: '"Palatino Linotype", "Book Antiqua", Palatino, serif' },
-  { label: 'Garamond', value: 'Garamond, Baskerville, "Times New Roman", serif' },
-  { label: 'Courier New', value: '"Courier New", Courier, monospace' },
-];
 
 function sanitizeText(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -76,7 +67,8 @@ function getContrastText(color, light = '#ffffff', dark = theme.colors.ink) {
 
 function buildPayload(form, updatedBy, logoUrl) {
   return {
-    font_family: sanitizeText(form.font_family),
+    body_font_family: sanitizeText(form.body_font_family) || bodyFontFallback,
+    header_font_family: sanitizeText(form.header_font_family) || headerFontFallback,
     logo_icon: sanitizeText(form.logo_icon),
     logo_url: sanitizeText(logoUrl ?? form.logo_url),
     primary_color: sanitizeText(form.primary_color),
@@ -130,13 +122,15 @@ export default function UISettings() {
     const secondaryTextColor = sanitizeText(form.secondary_text_color) || theme.colors.slate;
     const tertiaryTextColor = sanitizeText(form.tertiary_text_color) || theme.colors.muted;
     const resolvedLogoUrl = logoPreviewUrl || currentLogoUrl;
-    const resolvedFontFamily = sanitizeText(form.font_family) || theme.fonts.body;
+    const resolvedBodyFontFamily = sanitizeText(form.body_font_family) || bodyFontFallback;
+    const resolvedHeaderFontFamily = sanitizeText(form.header_font_family) || headerFontFallback;
     const resolvedSystemName = sanitizeText(form.system_name) || 'System';
     const resolvedLogoLabel = sanitizeText(form.logo_icon) || resolvedSystemName.slice(0, 2).toUpperCase();
 
     return {
       description: sanitizeText(form.system_description),
-      fontFamily: resolvedFontFamily,
+      bodyFontFamily: resolvedBodyFontFamily,
+      headerFontFamily: resolvedHeaderFontFamily,
       logoLabel: resolvedLogoLabel,
       logoUrl: resolvedLogoUrl,
       primaryColor,
@@ -308,31 +302,20 @@ export default function UISettings() {
               )}
             </div>
 
-            <FormField label="Font Family Selector">
-                <select
-                  name="font_family"
-                  onChange={handleChange}
-                  style={{
-                    background: alpha(theme.colors.panel, 0.92),
-                    border: `1px solid ${alpha(theme.colors.ink, 0.1)}`,
-                    borderRadius: 18,
-                    color: theme.colors.ink,
-                    fontFamily: theme.fonts.body,
-                    fontSize: 15,
-                    minHeight: 44,
-                    outline: 'none',
-                    padding: '0 16px',
-                    width: '100%',
-                  }}
-                  value={form.font_family || ''}
-                >
-                  {fontOptions.map((option) => (
-                    <option key={option.label} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </FormField>
+            <FormField label="Header font">
+              <Input
+                name="header_font_family"
+                onChange={handleChange}
+                value={form.header_font_family || headerFontFallback}
+              />
+            </FormField>
+            <FormField label="Body font">
+              <Input
+                name="body_font_family"
+                onChange={handleChange}
+                value={form.body_font_family || bodyFontFallback}
+              />
+            </FormField>
             </div>
 
             <div className="ui-settings-section ui-settings-logo-section">
@@ -397,7 +380,7 @@ export default function UISettings() {
                     {preview.logoUrl ? <img alt="" src={preview.logoUrl} style={{ height: '100%', objectFit: 'cover', width: '100%' }} /> : preview.logoLabel}
                   </div>
                   <div style={{ display: 'grid', gap: 1 }}>
-                    <span style={{ color: theme.colors.ink, fontFamily: preview.fontFamily, fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', lineHeight: 1, textTransform: 'uppercase' }}>
+                    <span style={{ color: theme.colors.ink, fontFamily: preview.headerFontFamily, fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', lineHeight: 1, textTransform: 'uppercase' }}>
                       {preview.systemName}
                     </span>
                     <span style={{ color: theme.colors.slate, fontSize: 8, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
@@ -433,7 +416,7 @@ export default function UISettings() {
                     ) : (
                       <div key={i} style={{ alignItems: 'center', background: item.active ? alpha(preview.primaryColor, 0.1) : 'transparent', border: `1px solid ${item.active ? alpha(preview.primaryColor, 0.18) : 'transparent'}`, borderRadius: 7, display: 'flex', gap: 6, minHeight: 30, padding: '0 6px' }}>
                         <span style={{ background: item.active ? alpha(preview.primaryColor, 0.2) : alpha(theme.colors.ink, 0.07), borderRadius: 5, display: 'inline-block', flexShrink: 0, height: 18, width: 18 }} />
-                        <span style={{ color: item.active ? preview.primaryColor : theme.colors.slate, flex: 1, fontFamily: preview.fontFamily, fontSize: 10, fontWeight: item.active ? 700 : 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <span style={{ color: item.active ? preview.primaryColor : theme.colors.slate, flex: 1, fontFamily: preview.bodyFontFamily, fontSize: 10, fontWeight: item.active ? 700 : 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {item.label}
                         </span>
                         {item.active ? <span style={{ background: preview.primaryColor, borderRadius: 999, flexShrink: 0, height: 16, width: 3 }} /> : null}
@@ -447,10 +430,10 @@ export default function UISettings() {
 
                   {/* Page header */}
                   <div style={{ display: 'grid', gap: 3 }}>
-                    <strong style={{ color: theme.colors.ink, fontFamily: preview.fontFamily, fontSize: 17, fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1.1 }}>
+                    <strong style={{ color: theme.colors.ink, fontFamily: preview.headerFontFamily, fontSize: 17, fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1.1 }}>
                       Browse listings
                     </strong>
-                    <span style={{ color: theme.colors.slate, fontFamily: preview.fontFamily, fontSize: 10, lineHeight: 1.5 }}>
+                    <span style={{ color: theme.colors.slate, fontFamily: preview.bodyFontFamily, fontSize: 10, lineHeight: 1.5 }}>
                       {preview.tagline || 'Find items to borrow in your community.'}
                     </span>
                   </div>
@@ -475,7 +458,7 @@ export default function UISettings() {
                           AVAILABLE
                         </span>
                         <div style={{ display: 'grid', gap: 1 }}>
-                          <span style={{ color: theme.colors.ink, fontFamily: preview.fontFamily, fontSize: 10, fontWeight: 700 }}>{card.name}</span>
+                          <span style={{ color: theme.colors.ink, fontFamily: preview.headerFontFamily, fontSize: 10, fontWeight: 700 }}>{card.name}</span>
                           <span style={{ color: preview.primaryColor, fontSize: 9, fontWeight: 700 }}>{card.price}</span>
                         </div>
                       </div>
@@ -483,7 +466,7 @@ export default function UISettings() {
                   </div>
 
                   {/* CTA */}
-                  <div style={{ background: preview.primaryColor, borderRadius: 7, color: getContrastText(preview.primaryColor), display: 'grid', fontFamily: preview.fontFamily, fontSize: 11, fontWeight: 700, minHeight: 32, placeItems: 'center' }}>
+                  <div style={{ background: preview.primaryColor, borderRadius: 7, color: getContrastText(preview.primaryColor), display: 'grid', fontFamily: preview.bodyFontFamily, fontSize: 11, fontWeight: 700, minHeight: 32, placeItems: 'center' }}>
                     Request Rental
                   </div>
                 </div>

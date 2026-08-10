@@ -648,8 +648,7 @@ export default function PublicItemsCatalogPage() {
         <section className="landing-toolbar landing-toolbar-top">
           <div className="landing-search-row">
             <div className="landing-controls inline">
-              <label htmlFor="catalog-barangay-filter">Sort by Baliuag Barangay</label>
-              <select id="catalog-barangay-filter" onChange={handleBarangayChange} value={barangayFilter}>
+              <select aria-label="Filter by Baliuag barangay" id="catalog-barangay-filter" onChange={handleBarangayChange} value={barangayFilter}>
                 <option value="all">All barangays</option>
                 {BALIUAG_BARANGAYS.map((barangay) => (
                   <option key={barangay} value={barangay}>

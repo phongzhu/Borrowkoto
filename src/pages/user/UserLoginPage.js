@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../../api/supabaseClient';
 import { useUISettings } from '../../context/UISettingsContext';
 import { ArrowRightIcon, EyeIcon, EyeOffIcon, LockIcon, MailIcon } from '../../ui/icons';
@@ -15,6 +15,7 @@ export default function UserLoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const accent = settings.primary_color?.trim() || theme.colors.teal;
 
   function normalizeEmail(value) {
@@ -63,14 +64,15 @@ export default function UserLoginPage() {
       return;
     }
 
-    const userRole = String(profile?.role || user?.user_metadata?.user_role || user?.user_metadata?.role || '').toLowerCase();
+    const userRole = String(profile?.role || '').toLowerCase();
 
     if (userRole === 'admin') {
       navigate('/admin/dashboard');
       return;
     }
 
-    navigate('/');
+    const requestedPath = location.state?.from;
+    navigate(requestedPath?.pathname ? `${requestedPath.pathname}${requestedPath.search || ''}` : '/', { replace: true });
   }
 
   return (

@@ -6,8 +6,8 @@ export default function GlobalStyles() {
     <style>
       {`
         :root {
-          --ui-font-body: "Segoe UI Variable Text", "Trebuchet MS", "Segoe UI", sans-serif;
-          --ui-font-display: "Segoe UI Variable Display", "Aptos Display", "Trebuchet MS", sans-serif;
+          --ui-font-body: "Dustin Sans", "Avenir Next", "Segoe UI", Arial, sans-serif;
+          --ui-font-display: "Gilroy", "Montserrat", "Avenir Next", Arial, sans-serif;
           --ui-font-mono: "Cascadia Code", "Consolas", monospace;
           --ui-unified-bg: var(--ui-background-color, ${theme.colors.canvas});
         }
@@ -18,6 +18,12 @@ export default function GlobalStyles() {
 
         * {
           min-width: 0;
+        }
+
+        html,
+        body,
+        #root {
+          font-family: var(--ui-font-body);
         }
 
         html {
@@ -36,8 +42,35 @@ export default function GlobalStyles() {
         body,
         button,
         input,
+        select,
         textarea {
           font-family: var(--ui-font-body);
+        }
+
+        body :where(*:not(code):not(pre):not(kbd):not(samp)) {
+          font-family: inherit;
+        }
+
+        h1,
+        h2,
+        h3,
+        h4,
+        h5,
+        h6,
+        [role="heading"],
+        [data-ui-font="header"],
+        .workspace-mobile-title,
+        .landing-brand strong,
+        .landing-section-head h2,
+        .landing-category-editorial-copy h2 {
+          font-family: var(--ui-font-display);
+        }
+
+        code,
+        pre,
+        kbd,
+        samp {
+          font-family: var(--ui-font-mono);
         }
 
         img {

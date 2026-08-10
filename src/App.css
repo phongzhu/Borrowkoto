@@ -2419,13 +2419,17 @@
 
 .landing-search {
   align-items: center;
-  background: #fff;
-  border: 1px solid #cdd4e1;
-  border-radius: 10px;
+  background: color-mix(in srgb, var(--ui-background-color, #fff) 96%, #fff);
+  border: 1px solid #c7d1e0;
+  border-radius: 16px;
   display: flex;
-  gap: 8px;
-  min-height: 46px;
-  padding: 0 12px;
+  gap: 12px;
+  min-height: 56px;
+  padding: 6px 8px 6px 18px;
+}
+
+.landing-search:focus-within {
+  border-color: color-mix(in srgb, var(--market-primary) 62%, #94a3b8);
 }
 
 .landing-search-row {
@@ -2439,12 +2443,13 @@
 
 .landing-search svg {
   color: #64748b;
-  height: 20px;
+  flex: 0 0 auto;
+  height: 22px;
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 2;
   stroke: currentColor;
-  width: 20px;
+  width: 22px;
 }
 
 .landing-search input {
@@ -2452,20 +2457,33 @@
   border: 0;
   color: #0f172a;
   flex: 1;
-  font-size: 15px;
+  font-size: 16px;
+  line-height: 1.4;
+  min-width: 0;
   outline: none;
 }
 
+.landing-search input::placeholder {
+  color: #94a3b8;
+  opacity: 1;
+}
+
 .landing-search button {
-  background: color-mix(in srgb, var(--market-primary) 88%, #1d4ed8);
-  border: 1px solid color-mix(in srgb, var(--market-primary) 62%, #1d4ed8);
-  border-radius: 8px;
+  background: var(--market-primary);
+  border: 1px solid color-mix(in srgb, var(--market-primary) 72%, #1e3a8a);
+  border-radius: 11px;
   color: #fff;
+  cursor: pointer;
   flex: 0 0 auto;
-  font-size: 13px;
-  font-weight: 700;
-  min-height: 34px;
-  padding: 0 14px;
+  font-size: 14px;
+  font-weight: 800;
+  min-height: 42px;
+  padding: 0 22px;
+}
+
+.landing-search button:focus-visible {
+  outline: 2px solid #0f172a;
+  outline-offset: 2px;
 }
 
 .landing-nav-links {
@@ -2708,9 +2726,10 @@
 }
 
 .landing-categories-sticky {
-  background: #f2f4f8;
+  background: color-mix(in srgb, var(--ui-background-color, #fff) 96%, #eef2f7);
   border-bottom: 1px solid #dde2ec;
-  padding: 4px 14px;
+  box-shadow: 0 5px 16px rgba(15, 23, 42, 0.04);
+  padding: 8px clamp(10px, 1.5vw, 24px);
   position: sticky;
   top: 66px;
   z-index: 96;
@@ -2726,12 +2745,14 @@
 
 .landing-categories-grid {
   display: grid;
-  gap: 4px;
-  grid-auto-columns: minmax(144px, 210px);
+  gap: 8px;
+  grid-auto-columns: max-content;
   grid-auto-flow: column;
   margin-top: 0;
   overflow-x: auto;
-  padding-bottom: 1px;
+  overscroll-behavior-inline: contain;
+  padding: 1px 0 3px;
+  scroll-snap-type: inline proximity;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
@@ -2742,21 +2763,33 @@
 
 .landing-categories-grid button {
   align-items: center;
-  background: transparent;
-  border: 0;
-  border-radius: 8px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 2px 7px rgba(15, 23, 42, 0.035);
   color: #1f2937;
-  display: grid;
-  gap: 2px;
-  justify-items: center;
-  min-height: 64px;
-  padding: 6px 8px;
-  text-align: center;
+  cursor: pointer;
+  display: flex;
+  gap: 9px;
+  min-height: 48px;
+  min-width: max-content;
+  padding: 6px 10px;
+  scroll-snap-align: start;
+  text-align: left;
+  transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease, color 160ms ease;
   width: 100%;
 }
 
 .landing-categories-grid button.active {
-  background: color-mix(in srgb, var(--market-primary) 12%, transparent);
+  background: color-mix(in srgb, var(--market-primary) 9%, #fff);
+  border-color: color-mix(in srgb, var(--market-primary) 35%, #dbe3ef);
+  box-shadow: 0 5px 14px color-mix(in srgb, var(--market-primary) 12%, transparent);
+  color: color-mix(in srgb, var(--market-primary) 82%, #0f172a);
+}
+
+.landing-categories-grid button:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--market-primary) 20%, transparent);
+  outline-offset: 1px;
 }
 
 .landing-category-icon {
@@ -2765,6 +2798,7 @@
   border-radius: 999px;
   color: #223b66;
   display: inline-flex;
+  flex: 0 0 auto;
   height: 30px;
   justify-content: center;
   width: 30px;
@@ -2776,14 +2810,11 @@
 }
 
 .landing-categories-grid strong {
-  font-size: clamp(9px, 0.72vw, 12px);
+  display: block;
+  font-size: clamp(10px, 0.72vw, 12px);
   font-weight: 700;
-  line-height: 1.15;
-  max-width: 100%;
-  overflow: visible;
-  overflow-wrap: anywhere;
-  text-overflow: clip;
-  white-space: normal;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 .landing-nearby-wrap {
@@ -3148,7 +3179,7 @@
   }
 
   .landing-categories-grid {
-    grid-auto-columns: minmax(132px, 190px);
+    grid-auto-columns: max-content;
   }
 
   .landing-nearby-wrap {
@@ -3214,16 +3245,19 @@
   }
 
   .landing-search {
-    min-height: 38px;
+    border-radius: 12px;
+    min-height: 44px;
+    padding: 4px 5px 4px 12px;
   }
 
   .landing-search button {
-    min-height: 30px;
-    padding: 0 10px;
+    border-radius: 9px;
+    min-height: 34px;
+    padding: 0 13px;
   }
 
   .landing-search input {
-    font-size: 12px;
+    font-size: 14px;
   }
 
   .landing-nav-links {
@@ -3244,17 +3278,19 @@
 
   .landing-categories-sticky {
     top: 126px;
-    padding: 3px 8px;
+    padding: 6px 8px;
   }
 
   .landing-categories-grid {
-    gap: 2px;
-    grid-auto-columns: 116px;
+    gap: 6px;
+    grid-auto-columns: max-content;
   }
 
   .landing-categories-grid button {
-    min-height: 56px;
-    padding: 4px 6px;
+    border-radius: 10px;
+    gap: 7px;
+    min-height: 42px;
+    padding: 5px 8px;
   }
 
   .landing-category-icon {
@@ -3826,7 +3862,7 @@
   border-radius: 50%;
   color: #fff;
   display: flex;
-  font-family: Arial, sans-serif;
+  font-family: var(--ui-font-body);
   font-size: 32px;
   height: 46px;
   justify-content: center;

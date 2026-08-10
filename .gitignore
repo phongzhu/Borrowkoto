@@ -22,3 +22,6 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 dev-server*.log
+
+# Supabase CLI local metadata
+/supabase/.temp/

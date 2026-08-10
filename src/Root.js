@@ -22,12 +22,15 @@ import ManageUsers from './pages/admin/ManageUsers';
 import ManageReports from './pages/admin/ManageReports';
 import UISettings from './pages/admin/UISettings';
 import TransactionsTesting from './services/transactions_testing';
+import ProtectedRoute from './components/ProtectedRoute';
+import { AuthProvider } from './context/AuthContext';
 
 export default function Root() {
   return (
     <UISettingsProvider>
-      <Router>
-        <Routes>
+      <AuthProvider>
+        <Router>
+          <Routes>
           <Route path="/" element={<App />} />
           <Route path="/home" element={<App />} />
           <Route path="/items" element={<PublicItemsCatalogPage />} />
@@ -35,32 +38,37 @@ export default function Root() {
           <Route path="/list-item" element={<ListItemLanding />} />
           <Route path="/login" element={<UserLoginPage />} />
           <Route path="/signup" element={<UserSignupPage />} />
-          <Route path="/user/dashboard" element={<UserDashboard />} />
-          <Route path="/user/browse-listings" element={<Navigate to="/" replace />} />
-          <Route path="/user/saved-listings" element={<SavedListings />} />
-          <Route path="/user/view-item-list/:itemId" element={<ViewItemList />} />
-          <Route path="/user/rent-item/:itemId" element={<RentItem />} />
-          <Route path="/user/rental-items" element={<MyBookings viewMode="rental-items" />} />
-          <Route path="/user/rental-items/add" element={<MyBookings viewMode="rental-items" listingMode="add" />} />
-          <Route path="/user/rental-items/edit/:itemId" element={<MyBookings viewMode="rental-items" />} />
-          <Route path="/user/manage-booking" element={<MyBookings viewMode="manage-booking" />} />
-          <Route path="/user/schedule-booking" element={<Navigate to="/user/manage-booking?tab=schedule" replace />} />
-          <Route path="/user/rental-income" element={<RentalIncome />} />
-          <Route path="/user/bookings" element={<MyBookings viewMode="manage-booking" />} />
-          <Route path="/user/calendar" element={<UserRentalsCalendar />} />
-          <Route path="/user/messages" element={<Messages />} />
-          <Route path="/user/profile" element={<Profile />} />
-          <Route path="/user/profile/verification" element={<Profile verificationPage />} />
+          <Route element={<ProtectedRoute />}>
+            <Route path="/user/dashboard" element={<UserDashboard />} />
+            <Route path="/user/browse-listings" element={<Navigate to="/" replace />} />
+            <Route path="/user/saved-listings" element={<SavedListings />} />
+            <Route path="/user/view-item-list/:itemId" element={<ViewItemList />} />
+            <Route path="/user/rent-item/:itemId" element={<RentItem />} />
+            <Route path="/user/rental-items" element={<MyBookings viewMode="rental-items" />} />
+            <Route path="/user/rental-items/add" element={<MyBookings viewMode="rental-items" listingMode="add" />} />
+            <Route path="/user/rental-items/edit/:itemId" element={<MyBookings viewMode="rental-items" />} />
+            <Route path="/user/manage-booking" element={<MyBookings viewMode="manage-booking" />} />
+            <Route path="/user/schedule-booking" element={<Navigate to="/user/manage-booking?tab=schedule" replace />} />
+            <Route path="/user/rental-income" element={<RentalIncome />} />
+            <Route path="/user/bookings" element={<MyBookings viewMode="manage-booking" />} />
+            <Route path="/user/calendar" element={<UserRentalsCalendar />} />
+            <Route path="/user/messages" element={<Messages />} />
+            <Route path="/user/profile" element={<Profile />} />
+            <Route path="/user/profile/verification" element={<Profile verificationPage />} />
+          </Route>
           <Route path="/admin/login" element={<Navigate to="/login" replace />} />
-          <Route path="/admin/dashboard" element={<AdminDashboard />} />
-          <Route path="/admin/profile" element={<AdminProfile />} />
-          <Route path="/admin/users" element={<ManageUsers />} />
-          <Route path="/admin/catalog" element={<ManageCatalog />} />
-          <Route path="/admin/reports" element={<ManageReports />} />
-          <Route path="/admin/ui-settings" element={<UISettings />} />
-          <Route path="/services/transactions-testing" element={<TransactionsTesting />} />
-        </Routes>
-      </Router>
+          <Route element={<ProtectedRoute adminOnly />}>
+            <Route path="/admin/dashboard" element={<AdminDashboard />} />
+            <Route path="/admin/profile" element={<AdminProfile />} />
+            <Route path="/admin/users" element={<ManageUsers />} />
+            <Route path="/admin/catalog" element={<ManageCatalog />} />
+            <Route path="/admin/reports" element={<ManageReports />} />
+            <Route path="/admin/ui-settings" element={<UISettings />} />
+            <Route path="/services/transactions-testing" element={<TransactionsTesting />} />
+          </Route>
+          </Routes>
+        </Router>
+      </AuthProvider>
     </UISettingsProvider>
   );
 }

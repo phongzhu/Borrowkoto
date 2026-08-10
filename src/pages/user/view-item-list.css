@@ -2296,12 +2296,16 @@
 .item-detail-public-search {
   align-items: center;
   background: #fff;
-  border: 1px solid #cfd7e5;
-  border-radius: 10px;
+  border: 1px solid #c7d1e0;
+  border-radius: 14px;
   display: flex;
-  gap: 8px;
-  min-height: 46px;
-  padding: 0 8px 0 14px;
+  gap: 10px;
+  min-height: 52px;
+  padding: 5px 6px 5px 16px;
+}
+
+.item-detail-public-search:focus-within {
+  border-color: var(--ui-primary-color, #173b88);
 }
 
 .item-detail-public-search svg {
@@ -2327,12 +2331,13 @@
 .item-detail-public-search button {
   background: var(--ui-primary-color, #173b88);
   border: 0;
-  border-radius: 8px;
+  border-radius: 10px;
   color: #fff;
-  font-size: 12px;
+  cursor: pointer;
+  font-size: 13px;
   font-weight: 800;
-  min-height: 34px;
-  padding: 0 15px;
+  min-height: 40px;
+  padding: 0 18px;
 }
 
 .item-detail-public-nav .item-detail-filter-link {

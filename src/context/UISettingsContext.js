@@ -2,10 +2,12 @@ import { createContext, startTransition, useCallback, useContext, useEffect, use
 import { supabase } from '../api/supabaseClient';
 import { theme } from '../ui/theme';
 
-const fontFallback = '"Segoe UI Variable Text", "Trebuchet MS", "Segoe UI", sans-serif';
+export const headerFontFallback = '"Gilroy", "Montserrat", "Avenir Next", Arial, sans-serif';
+export const bodyFontFallback = '"Dustin Sans", "Avenir Next", "Segoe UI", Arial, sans-serif';
 
 export const defaultUISettings = {
-  font_family: '',
+  body_font_family: bodyFontFallback,
+  header_font_family: headerFontFallback,
   logo_icon: '',
   logo_url: '',
   primary_color: '',
@@ -30,7 +32,8 @@ function normalizeUISettings(record) {
   return {
     ...defaultUISettings,
     ...(record || {}),
-    font_family: normalizeText(record?.font_family),
+    body_font_family: normalizeText(record?.body_font_family) || bodyFontFallback,
+    header_font_family: normalizeText(record?.header_font_family) || headerFontFallback,
     logo_icon: normalizeText(record?.logo_icon),
     logo_url: normalizeText(record?.logo_url),
     primary_color: normalizeText(record?.primary_color),
@@ -51,12 +54,13 @@ function applyDocumentStyles(settings) {
   }
 
   const root = document.documentElement;
-  const resolvedFont = settings.font_family || fontFallback;
+  const resolvedBodyFont = settings.body_font_family || bodyFontFallback;
+  const resolvedHeaderFont = settings.header_font_family || headerFontFallback;
   const resolvedBackground = settings.tertiary_color || theme.colors.canvas;
 
   // Font variables
-  root.style.setProperty('--ui-font-body', resolvedFont);
-  root.style.setProperty('--ui-font-display', resolvedFont);
+  root.style.setProperty('--ui-font-body', resolvedBodyFont);
+  root.style.setProperty('--ui-font-display', resolvedHeaderFont);
 
   // Primary, secondary, and tertiary colors
   root.style.setProperty('--ui-primary-color', settings.primary_color || theme.colors.teal);
