@@ -6,6 +6,12 @@ import './Rewards.css';
 
 const money = new Intl.NumberFormat('en-PH', { currency: 'PHP', style: 'currency' });
 
+function voucherDiscount(voucher) {
+  return voucher.discount_type === 'percentage'
+    ? `${Number(voucher.discount_value)}% OFF`
+    : `${money.format(voucher.discount_value || 0)} OFF`;
+}
+
 export default function Rewards() {
   const [account, setAccount] = useState(null);
   const [catalog, setCatalog] = useState([]);
@@ -63,7 +69,21 @@ export default function Rewards() {
 
           {activeTab === 'mine' ? <div aria-labelledby="my-vouchers-tab" className="rewards-tab-content" id="my-vouchers-panel" role="tabpanel">
             <div className="rewards-section-title"><h2>My vouchers</h2><p>View your available, used, and expired rental vouchers.</p></div>
-            <div className="reward-voucher-list">{vouchers.length ? vouchers.map((voucher) => <article key={voucher.id}><div><strong>{voucher.reward_voucher_catalog?.name || 'Rental voucher'}</strong><span>{voucher.code}</span></div><div><b>{voucher.status}</b><small>Expires {new Date(voucher.expires_at).toLocaleDateString('en-PH')}</small></div></article>) : <p className="reward-empty-state">No vouchers redeemed yet.</p>}</div>
+            <div className="reward-voucher-list">{vouchers.length ? vouchers.map((voucher) => <article className={`owned-voucher owned-voucher--${voucher.status}`} key={voucher.id}>
+              <div className="owned-voucher-value" aria-label={voucherDiscount(voucher)}>
+                <span>Borrow Ko 'To</span>
+                <strong>{voucherDiscount(voucher)}</strong>
+                <small>Rental voucher</small>
+              </div>
+              <div className="owned-voucher-details">
+                <div className="owned-voucher-heading">
+                  <div><span className="owned-voucher-eyebrow">Exclusive reward</span><h3>{voucher.reward_voucher_catalog?.name || 'Rental voucher'}</h3></div>
+                  <b className="owned-voucher-status">{voucher.status}</b>
+                </div>
+                <div className="owned-voucher-code"><span>Voucher code</span><strong>{voucher.code}</strong></div>
+                <small className="owned-voucher-expiry">Valid until {new Date(voucher.expires_at).toLocaleDateString('en-PH', { day: 'numeric', month: 'short', year: 'numeric' })}</small>
+              </div>
+            </article>) : <p className="reward-empty-state">No vouchers redeemed yet.</p>}</div>
           </div> : null}
         </section>
       </>}

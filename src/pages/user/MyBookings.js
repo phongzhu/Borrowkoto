@@ -2471,11 +2471,36 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
           throw new Error(updateError.message);
         }
 
+        let returnedBooking = null;
+        let bookingUpdateError = null;
+        for (const status of RETURN_STATUS_CANDIDATES) {
+          const { data: updatedBookings, error: statusUpdateError } = await supabase
+            .from('bookings')
+            .update({ status, updated_at: new Date().toISOString() })
+            .eq('id', bookingId)
+            .eq('borrower_id', userId)
+            .select('id, status')
+            .limit(1);
+          if (statusUpdateError) {
+            bookingUpdateError = statusUpdateError;
+            continue;
+          }
+          if ((updatedBookings || []).length) {
+            returnedBooking = updatedBookings[0];
+            break;
+          }
+        }
+        if (!returnedBooking) {
+          throw new Error(bookingUpdateError?.message || 'Late fee was recorded, but the booking could not be marked as returned.');
+        }
+
         // Reload bookings to reflect updated state
         await loadListings(false);
 
         if (!ignore) {
           const totalAmount = lateFeeTxns.reduce((sum, txn) => sum + Number(txn.amount), 0);
+          setBookings((current) => current.map((booking) => booking.id === bookingId ? { ...booking, status: returnedBooking.status, updated_at: new Date().toISOString() } : booking));
+          setMessage(`Late fee payment of ${currencyFormatter.format(totalAmount)} completed. The item is now marked as returned.`);
           setMessage(`Late fee payment of â‚±${totalAmount.toFixed(2)} completed successfully.`);
           setMessageTone('success');
           setBookingActionBusyId('');
