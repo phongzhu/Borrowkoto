@@ -25,28 +25,26 @@
 .reward-voucher-stub { align-content:center; background:color-mix(in srgb,var(--ui-primary-color) 8%,var(--ui-background-color)); border-left:2px dashed color-mix(in srgb,var(--ui-primary-color) 32%,var(--ui-border-color)); display:grid; gap:12px; justify-items:center; padding:24px 14px; text-align:center; }
 .reward-voucher-stub > span { color:var(--ui-secondary-text-color); font-size:9px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; }
 .reward-voucher-stub > b { color:var(--ui-primary-color); font-family:var(--ui-header-font-family); font-size:16px; line-height:1.15; }
-.reward-voucher-stub button { font-size:12px!important; min-height:34px!important; padding:0 12px!important; width:100%; }
-.reward-voucher-list { display:grid; gap:16px; grid-template-columns:repeat(2,minmax(0,1fr)); }
-.owned-voucher { background:var(--ui-background-color); border:1px solid color-mix(in srgb,var(--ui-primary-color) 30%,var(--ui-border-color)); border-radius:18px; box-shadow:0 10px 26px color-mix(in srgb,var(--ui-primary-color) 8%,transparent); display:grid; grid-template-columns:145px minmax(0,1fr); min-height:190px; overflow:hidden; position:relative; }
-.owned-voucher::before,.owned-voucher::after { background:var(--ui-background-color); border:1px solid var(--ui-border-color); border-radius:50%; content:""; height:26px; left:131px; position:absolute; width:26px; z-index:2; }
-.owned-voucher::before { top:-14px; }
-.owned-voucher::after { bottom:-14px; }
-.owned-voucher-value { align-content:center; background:linear-gradient(145deg,var(--ui-primary-color),color-mix(in srgb,var(--ui-primary-color) 72%,#071332)); color:#fff; display:grid; gap:8px; justify-items:center; padding:24px 16px; position:relative; text-align:center; }
-.owned-voucher-value::after { border-right:2px dashed rgba(255,255,255,.42); bottom:13px; content:""; position:absolute; right:0; top:13px; }
-.owned-voucher-value>span,.owned-voucher-value>small { font-size:9px; font-weight:800; letter-spacing:.13em; text-transform:uppercase; }
-.owned-voucher-value>strong { font-family:var(--ui-header-font-family); font-size:22px; line-height:1.1; }
-.owned-voucher-value>small { opacity:.72; }
-.owned-voucher-details { align-content:center; display:grid; gap:16px; padding:22px 24px; }
+.reward-voucher-stub button { background:var(--ui-primary-color)!important; border-color:var(--ui-primary-color)!important; color:#fff!important; font-size:12px!important; min-height:34px!important; padding:0 12px!important; width:100%; }
+.reward-voucher-list { display:grid; gap:14px; grid-template-columns:repeat(3,minmax(0,1fr)); }
+.owned-voucher { background:var(--ui-background-color); border:1px solid color-mix(in srgb,var(--ui-primary-color) 28%,var(--ui-border-color)); border-radius:18px; display:grid; grid-template-columns:minmax(0,1fr) 150px; min-height:170px; overflow:hidden; position:relative; }
+.owned-voucher::before,.owned-voucher::after { background:var(--ui-background-color); border:1px solid var(--ui-border-color); border-radius:50%; content:""; height:24px; position:absolute; right:137px; width:24px; z-index:2; }
+.owned-voucher::before { top:-13px; }
+.owned-voucher::after { bottom:-13px; }
+.owned-voucher-value { align-content:center; background:color-mix(in srgb,var(--ui-primary-color) 8%,var(--ui-background-color)); border-left:2px dashed color-mix(in srgb,var(--ui-primary-color) 32%,var(--ui-border-color)); color:var(--ui-primary-color); display:grid; gap:9px; grid-column:2; grid-row:1; justify-items:center; padding:20px 12px; text-align:center; }
+.owned-voucher-value>span,.owned-voucher-value>small { color:var(--ui-secondary-text-color); font-size:8px; font-weight:800; letter-spacing:.11em; text-transform:uppercase; }
+.owned-voucher-value>strong { font-family:var(--ui-header-font-family); font-size:17px; line-height:1.15; }
+.owned-voucher-details { align-content:center; display:grid; gap:11px; grid-column:1; grid-row:1; padding:17px 19px; }
 .owned-voucher-heading { align-items:flex-start; display:flex; gap:14px; justify-content:space-between; }
 .owned-voucher-eyebrow { color:var(--ui-primary-color); font-size:10px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; }
-.owned-voucher-heading h3 { font-family:var(--ui-header-font-family); font-size:18px; line-height:1.25; margin:5px 0 0; }
-.owned-voucher-status { background:#e8f7ef; border-radius:999px; color:#16834d; font-size:10px; letter-spacing:.07em; padding:6px 9px; text-transform:uppercase; }
+.owned-voucher-heading h3 { font-family:var(--ui-header-font-family); font-size:16px; line-height:1.25; margin:4px 0 0; }
+.owned-voucher-status { background:#e8f7ef; border-radius:999px; color:#16834d; font-size:9px; letter-spacing:.06em; padding:5px 8px; text-transform:uppercase; }
 .owned-voucher--used,.owned-voucher--expired { filter:saturate(.7); }
 .owned-voucher--used .owned-voucher-status,.owned-voucher--expired .owned-voucher-status { background:color-mix(in srgb,var(--ui-secondary-text-color) 12%,var(--ui-background-color)); color:var(--ui-secondary-text-color); }
-.owned-voucher-code { align-items:center; background:color-mix(in srgb,var(--ui-primary-color) 5%,var(--ui-background-color)); border:1px dashed color-mix(in srgb,var(--ui-primary-color) 28%,var(--ui-border-color)); border-radius:9px; display:flex; gap:12px; justify-content:space-between; padding:9px 11px; }
-.owned-voucher-code span { color:var(--ui-secondary-text-color); font-size:10px; font-weight:700; text-transform:uppercase; }
-.owned-voucher-code strong { font-family:monospace; font-size:14px; letter-spacing:.06em; }
+.owned-voucher-code { align-items:center; background:color-mix(in srgb,var(--ui-primary-color) 4%,var(--ui-background-color)); border:1px dashed color-mix(in srgb,var(--ui-primary-color) 25%,var(--ui-border-color)); border-radius:8px; display:flex; gap:9px; justify-content:space-between; padding:7px 9px; }
+.owned-voucher-code span { color:var(--ui-secondary-text-color); font-size:8px; font-weight:700; text-transform:uppercase; }
+.owned-voucher-code strong { font-family:monospace; font-size:12px; letter-spacing:.04em; }
 .owned-voucher-expiry { color:var(--ui-secondary-text-color); font-size:11px; }
 .reward-empty-state { color:var(--ui-text-secondary); margin:0; padding:28px 0; text-align:center; }
-@media(max-width:1100px){.reward-voucher-list{grid-template-columns:1fr}}
-@media(max-width:760px){.rewards-stats,.reward-card-grid{grid-template-columns:1fr}.reward-card{grid-template-columns:minmax(0,1fr) 132px}.reward-card::before,.reward-card::after{right:119px}.owned-voucher{grid-template-columns:112px minmax(0,1fr)}.owned-voucher::before,.owned-voucher::after{left:98px}.owned-voucher-value{padding:18px 10px}.owned-voucher-value>strong{font-size:17px}.owned-voucher-details{padding:18px 16px}.owned-voucher-heading{gap:8px}.owned-voucher-code{align-items:flex-start;flex-direction:column;gap:3px}}
+@media(max-width:1200px){.reward-voucher-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:760px){.rewards-stats,.reward-card-grid,.reward-voucher-list{grid-template-columns:1fr}.reward-card,.owned-voucher{grid-template-columns:minmax(0,1fr) 132px}.reward-card::before,.reward-card::after,.owned-voucher::before,.owned-voucher::after{right:119px}.owned-voucher-details{padding:16px}.owned-voucher-value{padding:18px 10px}.owned-voucher-heading{gap:8px}.owned-voucher-code{align-items:flex-start;flex-direction:column;gap:3px}}
