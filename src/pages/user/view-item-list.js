@@ -1890,19 +1890,19 @@ export default function ViewItemList({ publicMode = false }) {
           actions={
             <>
               <Button className="buy-request-cancel" onClick={() => setBuyModalOpen(false)} variant="ghost">
-                Cancel
+                Not now
               </Button>
               <Button className="buy-request-confirm" disabled={buyRequestSaving} form="buy-request-form" type="submit">
-                {buyRequestSaving ? 'Submitting...' : 'Confirm purchase request'}
+                {buyRequestSaving ? 'Sending request...' : 'Send purchase request'}
               </Button>
             </>
           }
           contentClassName="buy-request-modal"
-          contentStyle={{ maxWidth: 940, width: 'min(940px, 100%)' }}
+          contentStyle={{ maxWidth: 760, width: 'min(760px, 100%)' }}
           onClose={() => setBuyModalOpen(false)}
           open={buyModalOpen}
           size="compact"
-          title="Purchase request"
+          title="Request to purchase"
         >
           <form className="buy-request-form" id="buy-request-form" onSubmit={handleSubmitBuyRequest}>
             <div className="buy-request-product">
@@ -1910,16 +1910,24 @@ export default function ViewItemList({ publicMode = false }) {
                 {activeImage?.image_url ? <img alt={item?.title || 'Item for sale'} src={activeImage.image_url} /> : <span>{item?.title?.charAt(0) || 'I'}</span>}
               </div>
               <div>
-                <small>Buying from the community</small>
+                <small>Community marketplace</small>
                 <h4>{item?.title || 'Item for sale'}</h4>
                 <strong>{currencyFormatter.format(Number(item?.sale_price || 0))}</strong>
-                <p>The seller will review your requested pickup schedule before confirming the sale.</p>
+                <div className="buy-request-product-meta">
+                  <span>{Number(item?.quantity || 0)} in stock</span>
+                  <span>{formatListingStatusLabel(item?.item_condition || 'new')}</span>
+                </div>
               </div>
+            </div>
+
+            <div className="buy-request-notice">
+              <strong>No payment is collected yet.</strong>
+              <span>The seller reviews your quantity and pickup schedule before approving the sale.</span>
             </div>
 
             <div className="buy-request-fields">
             <label>
-              <span>Quantity to buy</span>
+              <span>Quantity</span>
               <input
                 className="buy-request-input"
                 max={Number(item?.quantity || 1)}
@@ -1930,11 +1938,11 @@ export default function ViewItemList({ publicMode = false }) {
                 value={buyRequestForm.quantity}
               />
               <small>
-                Available quantity: {Number(item?.quantity || 0)}
+                Maximum available: {Number(item?.quantity || 0)}
               </small>
             </label>
             <label>
-              <span>Preferred pickup date and time</span>
+              <span>Preferred pickup</span>
               <input
                 className="buy-request-input"
                 min={formatDateTimeLocalValue(new Date())}
@@ -1944,11 +1952,12 @@ export default function ViewItemList({ publicMode = false }) {
               />
             </label>
             <label className="buy-request-message">
-              <span>Message to seller</span>
+              <span>Message to seller <small>{buyRequestForm.buyer_message.length}/500</small></span>
               <Textarea
+                maxLength={500}
                 onChange={(event) => setBuyRequestForm((current) => ({ ...current, buyer_message: event.target.value }))}
-                placeholder="Share pickup preferences or purchase notes."
-                style={{ minHeight: 112 }}
+                placeholder="Share pickup instructions, availability, or questions for the seller..."
+                rows={4}
                 value={buyRequestForm.buyer_message}
               />
             </label>
@@ -1963,7 +1972,10 @@ export default function ViewItemList({ publicMode = false }) {
             ) : null}
             <div className="buy-request-total">
               <span>Total purchase amount</span>
-              <strong>{currencyFormatter.format((Number(item?.sale_price || 0) * Number(buyRequestForm.quantity || 1)) || 0)}</strong>
+              <div>
+                <small>{Number(buyRequestForm.quantity || 1)} × {currencyFormatter.format(Number(item?.sale_price || 0))}</small>
+                <strong>{currencyFormatter.format((Number(item?.sale_price || 0) * Number(buyRequestForm.quantity || 1)) || 0)}</strong>
+              </div>
             </div>
             </div>
             {buyRequestFeedback ? <StatusMessage tone="warning">{buyRequestFeedback}</StatusMessage> : null}

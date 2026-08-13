@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../../api/supabaseClient';
+import { useAuth } from '../../context/AuthContext';
 import { createDamageClaim, createDamageReport, getDamageClaimWithEvidence, uploadDamageEvidence, userHasActiveDamageHold } from '../../services/damageClaimsService';
 import { approveItemPurchaseRequest } from '../../services/purchaseRequestsService';
 import { createTestCheckoutSession } from '../../services/transaction';
@@ -622,6 +623,7 @@ function revokeAddonPreviews(addons) {
 export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user: authenticatedUser } = useAuth();
   const { itemId: editItemId } = useParams();
   const isEditPage = Boolean(editItemId);
   const isAddPage = listingMode === 'add';
@@ -727,29 +729,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
     }
 
     try {
-      let user = null;
-
-      try {
-        const {
-          data: { user: authUser },
-        } = await supabase.auth.getUser();
-        user = authUser || null;
-      } catch (authError) {
-        const authMessage = String(authError?.message || '').toLowerCase();
-
-        if (
-          authMessage.includes('navigatorlock') ||
-          authMessage.includes('lock broken') ||
-          authMessage.includes('released because another request stole it')
-        ) {
-          const {
-            data: { session },
-          } = await supabase.auth.getSession();
-          user = session?.user || null;
-        } else {
-          throw authError;
-        }
-      }
+      const user = authenticatedUser;
 
       if (!user) {
         setUserId('');
@@ -1107,7 +1087,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
     } finally {
       loadListingsInFlightRef.current = false;
     }
-  }, []);
+  }, [authenticatedUser]);
 
   useEffect(() => {
     loadListings();
@@ -2500,8 +2480,9 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
         if (!ignore) {
           const totalAmount = lateFeeTxns.reduce((sum, txn) => sum + Number(txn.amount), 0);
           setBookings((current) => current.map((booking) => booking.id === bookingId ? { ...booking, status: returnedBooking.status, updated_at: new Date().toISOString() } : booking));
+          setBookingDetailId(bookingId);
+          setActiveBookingFilter('borrowed');
           setMessage(`Late fee payment of ${currencyFormatter.format(totalAmount)} completed. The item is now marked as returned.`);
-          setMessage(`Late fee payment of â‚±${totalAmount.toFixed(2)} completed successfully.`);
           setMessageTone('success');
           setBookingActionBusyId('');
           window.history.replaceState({}, '', window.location.pathname);
@@ -2832,6 +2813,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
     const query = new URLSearchParams(window.location.search);
     const damageClaimId = query.get('damage_claim_id');
     const bookingId = query.get('booking_id');
+    const isPaymentCallback = query.get('payment_status') === 'success';
 
     if (!damageClaimId && !bookingId) {
       return;
@@ -2855,7 +2837,11 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
       }
     }
 
-    window.history.replaceState({}, '', window.location.pathname);
+    // Payment effects clear callback parameters after their updates finish. Keeping
+    // them here also lets React Strict Mode safely replay the callback effect.
+    if (!isPaymentCallback) {
+      window.history.replaceState({}, '', window.location.pathname);
+    }
   }, [bookings, loading]);
 
   useEffect(() => {
@@ -4120,23 +4106,14 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
             ) : null}
 
             {activeBookingFilter === 'returns' ? (
-            <div style={{ display: 'grid', gap: 10 }}>
-              <strong className="booking-section-title" style={{ color: theme.colors.ink, fontSize: 16 }}>Owner return completion</strong>
+            <div style={{ display: 'grid', gap: 14 }}>
+              <strong className="booking-section-title">Owner return completion</strong>
               {!ownerBookings.length ? (
                 <StatusMessage tone="info">No incoming bookings are assigned to your listings.</StatusMessage>
               ) : (
-                <div
-                  className="booking-table-wrap"
-                  style={{
-                    border: `1px solid ${alpha(theme.colors.ink, 0.08)}`,
-                    borderRadius: 0,
-                    maxHeight: 430,
-                    overflow: 'auto',
-                    overflowX: 'auto',
-                  }}
-                >
-                  <table className="booking-table" style={{ background: alpha(theme.colors.panel, 0.74), borderCollapse: 'separate', borderSpacing: 0, minWidth: 1020, width: '100%' }}>
-                    <thead style={{ background: alpha(theme.colors.ink, 0.02) }}>
+                <div className="booking-table-wrap">
+                  <table className="booking-table">
+                    <thead>
                       <tr>
                         <th style={headerCellStyle}>Item</th>
                         <th style={headerCellStyle}>Borrower</th>
@@ -4147,56 +4124,49 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                       </tr>
                     </thead>
                     <tbody>
-                      {ownerBookings.map((booking, index) => {
+                      {ownerBookings.map((booking) => {
                         const canMarkDone = OWNER_RETURNABLE_STATUSES.includes(String(booking.status || '').toLowerCase());
                         const lateFee = calculateLateFee(booking);
 
                         return (
-                          <tr className="booking-row" key={booking.id} style={{ background: index % 2 === 0 ? alpha(theme.colors.panel, 0.56) : 'transparent' }}>
-                            <td style={bodyCellStyle}>
+                          <tr className="booking-row" key={booking.id}>
+                            <td data-label="Item" style={bodyCellStyle}>
                               <div style={{ alignItems: 'center', display: 'flex', gap: 10 }}>
                                 {booking.item?.primaryImage?.image_url ? (
                                   <img
                                     alt={booking.item.title}
                                     className="booking-thumb"
                                     src={booking.item.primaryImage.image_url}
-                                    style={{
-                                      border: `1px solid ${alpha(theme.colors.ink, 0.08)}`,
-                                      height: 44,
-                                      objectFit: 'cover',
-                                      width: 44,
-                                    }}
                                   />
                                 ) : null}
                                 <span style={{ color: theme.colors.ink }}>{booking.item?.title || 'Unknown item'}</span>
                               </div>
                             </td>
-                            <td style={bodyCellStyle}>{buildPersonName(booking.counterpart) || booking.counterpart?.username || 'Borrower'}</td>
-                            <td style={bodyCellStyle}>
+                            <td data-label="Borrower" style={bodyCellStyle}>
+                              {buildPersonName(booking.counterpart) || booking.counterpart?.username || 'Borrower'}
+                            </td>
+                            <td data-label="Approved schedule" style={bodyCellStyle}>
                               <div style={{ display: 'grid', gap: 4 }}>
                                 <span style={{ color: theme.colors.ink }}>{formatDateTime(booking.approved_start || booking.requested_start)}</span>
                                 <span style={{ color: theme.colors.slate }}>to {formatDateTime(booking.approved_end || booking.requested_end)}</span>
                               </div>
                             </td>
-                            <td style={bodyCellStyle}>
+                            <td data-label="Late fee" style={bodyCellStyle}>
                               {lateFee.total > 0 && OWNER_RETURNABLE_STATUSES.includes(String(booking.status || '').toLowerCase()) ? (
                                 <div style={{ display: 'grid', gap: 4 }}>
                                   <strong style={{ color: theme.colors.danger }}>{currencyFormatter.format(lateFee.total)}</strong>
                                   <span style={{ color: theme.colors.slate, fontSize: 12 }}>
                                     {lateFee.daysLate} day{lateFee.daysLate === 1 ? '' : 's'} late
                                   </span>
-                                  <span style={{ color: theme.colors.slate, fontSize: 12 }}>
-                                    Owner {currencyFormatter.format(lateFee.ownerShare)} / Admin {currencyFormatter.format(lateFee.adminShare)}
-                                  </span>
                                 </div>
                               ) : (
                                 <span style={{ color: theme.colors.slate }}>None</span>
                               )}
                             </td>
-                            <td style={bodyCellStyle}>
+                            <td data-label="Status" style={bodyCellStyle}>
                               <Badge tone={bookingStatusTone(booking.status)}>{formatListingStatusLabel(booking.status)}</Badge>
                             </td>
-                            <td style={bodyCellStyle}>
+                            <td data-label="Action" style={bodyCellStyle}>
                               {canMarkDone ? (
                                 <Button
                                   className="booking-action-button"
@@ -4205,7 +4175,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                                   type="button"
                                   variant="secondary"
                                 >
-                                  {bookingActionBusyId === booking.id ? 'Saving...' : 'Mark done'}
+                                  {bookingActionBusyId === booking.id ? 'Saving...' : 'Complete return'}
                                 </Button>
                               ) : isReturnedBookingStatus(booking.status) ? (
                                 <Badge tone="success">Completed</Badge>
@@ -5512,6 +5482,22 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
             </Button>
             {bookingDetail &&
             bookingDetail.borrower_id === userId &&
+            bookingDetailLateFee.total > 0 &&
+            APPROVAL_STATUS_CANDIDATES.includes(String(bookingDetail.status || '').toLowerCase()) ? (
+              <Button
+                className="booking-action-button late-fee-pay-button"
+                disabled={bookingActionBusyId === bookingDetail.id}
+                onClick={() => handlePayLateFee(bookingDetail)}
+                type="button"
+                variant="danger"
+              >
+                {bookingActionBusyId === bookingDetail.id
+                  ? 'Opening secure checkout...'
+                  : `Pay ${currencyFormatter.format(bookingDetailLateFee.total)}`}
+              </Button>
+            ) : null}
+            {bookingDetail &&
+            bookingDetail.borrower_id === userId &&
             bookingDetail.damageClaim &&
             ['pending_admin_review', 'approved', 'awaiting_payment'].includes(String(bookingDetail.damageClaim.status || '').toLowerCase()) ? (
               <Button
@@ -5546,6 +5532,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
         }
         onClose={closeBookingDetail}
         open={Boolean(bookingDetail)}
+        contentClassName="booking-detail-modal"
         title={bookingDetail?.item?.title ? `Booking details: ${bookingDetail.item.title}` : 'Booking details'}
       >
         {bookingDetail ? (
@@ -5672,25 +5659,37 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                 </div>
               </div>
               {bookingDetailLateFee.total > 0 && APPROVAL_STATUS_CANDIDATES.includes(String(bookingDetail.status || '').toLowerCase()) ? (
-                <div
-                  style={{
-                    background: alpha(theme.colors.danger, 0.08),
-                    border: `1px solid ${alpha(theme.colors.danger, 0.18)}`,
-                    display: 'grid',
-                    gap: 4,
-                    padding: 10,
-                  }}
-                >
-                  <strong style={{ color: theme.colors.danger }}>
-                    Late fee: {currencyFormatter.format(bookingDetailLateFee.total)} ({bookingDetailLateFee.daysLate} day
-                    {bookingDetailLateFee.daysLate === 1 ? '' : 's'} overdue)
-                  </strong>
-                  <span style={{ color: theme.colors.slate, fontSize: 13 }}>
-                    Owner share 70%: {currencyFormatter.format(bookingDetailLateFee.ownerShare)}
-                  </span>
-                  <span style={{ color: theme.colors.slate, fontSize: 13 }}>
-                    Admin share 30%: {currencyFormatter.format(bookingDetailLateFee.adminShare)}
-                  </span>
+                <div className="late-fee-payment-panel">
+                  <div className="late-fee-payment-head">
+                    <div>
+                      <span>Payment required</span>
+                      <strong>Late return fee</strong>
+                    </div>
+                    <span className="late-fee-overdue-pill">
+                      {bookingDetailLateFee.daysLate} day{bookingDetailLateFee.daysLate === 1 ? '' : 's'} overdue
+                    </span>
+                  </div>
+                  <div className="late-fee-payment-total">
+                    <span>Amount to pay</span>
+                    <strong>{currencyFormatter.format(bookingDetailLateFee.total)}</strong>
+                  </div>
+                  <div className="late-fee-breakdown">
+                    <div>
+                      <span>Rental owner</span>
+                      <strong>{currencyFormatter.format(bookingDetailLateFee.ownerShare)}</strong>
+                      <small>70% share</small>
+                    </div>
+                    <div>
+                      <span>Platform fee</span>
+                      <strong>{currencyFormatter.format(bookingDetailLateFee.adminShare)}</strong>
+                      <small>30% share</small>
+                    </div>
+                  </div>
+                  {bookingDetail.borrower_id === userId ? (
+                    <div className="late-fee-payment-note">
+                      You’ll be redirected to PayMongo’s secure checkout. The booking updates automatically after payment.
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
               <div className="booking-detail-total-row">
@@ -5815,75 +5814,94 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
         actions={
           <>
             <Button disabled={savingDamageReport} onClick={closeDamageReport} variant="ghost">
-              Cancel
+              Not now
             </Button>
-            <Button className="booking-action-button" disabled={savingDamageReport} form="damage-report-form" type="submit" variant="danger">
-              {savingDamageReport ? 'Submitting...' : 'Submit damage report'}
+            <Button className="booking-action-button damage-report-submit" disabled={savingDamageReport} form="damage-report-form" type="submit" variant="danger">
+              {savingDamageReport ? 'Submitting report...' : 'Submit for admin review'}
             </Button>
           </>
         }
         onClose={closeDamageReport}
         open={Boolean(damageReportBooking)}
-        title={damageReportBooking?.item?.title ? `Report damage: ${damageReportBooking.item.title}` : 'Report damage'}
+        contentClassName="damage-report-modal"
+        title="Report item damage"
       >
         {damageReportBooking ? (
-          <form id="damage-report-form" onSubmit={handleSubmitDamageReport} style={{ display: 'grid', gap: 14 }}>
-            <StatusMessage tone="info">
-              Upload photo evidence first. The borrower can still log in and is only restricted after an admin approves the damage claim.
-            </StatusMessage>
+          <form className="damage-report-form" id="damage-report-form" onSubmit={handleSubmitDamageReport}>
+            <div className="damage-report-item-context">
+              {damageReportBooking.item?.primaryImage?.image_url ? (
+                <img alt="" src={damageReportBooking.item.primaryImage.image_url} />
+              ) : (
+                <span><UploadIcon size={22} /></span>
+              )}
+              <div>
+                <small>Completed rental</small>
+                <strong>{damageReportBooking.item?.title || 'Rented item'}</strong>
+                <p>Borrower: {buildPersonName(damageReportBooking.counterpart) || damageReportBooking.counterpart?.username || 'Borrower'}</p>
+              </div>
+              <div className="damage-report-estimate">
+                <span>Estimated value</span>
+                <strong>{currencyFormatter.format(Number(damageReportBooking.item?.estimated_value) || 0)}</strong>
+              </div>
+            </div>
 
-            <FormField label="Estimated damage/replacement amount">
-              <Input
-                min="0"
-                readOnly
-                step="0.01"
-                type="number"
-                value={Number(damageReportBooking?.item?.estimated_value || 0)}
-              />
-              <p style={{ color: theme.colors.slate, fontSize: 13, margin: '8px 0 0' }}>
-                This amount is based on the item's estimated value and will still be reviewed by the admin.
-              </p>
-            </FormField>
+            <div className="damage-report-review-notice">
+              <strong>Admin review required</strong>
+              <span>The borrower is only restricted if an administrator approves this claim. Your amount may be adjusted after evidence review.</span>
+            </div>
 
-            <FormField label="Damage description">
+            <div className="damage-report-field">
+              <div className="damage-report-field-head">
+                <div>
+                  <strong>Describe the damage</strong>
+                  <span>Include the affected parts, visible condition, and what happened during return.</span>
+                </div>
+                <small>{damageReportForm.description.length}/1000</small>
+              </div>
               <Textarea
+                maxLength={1000}
                 onChange={(event) => setDamageReportForm((current) => ({ ...current, description: event.target.value }))}
-                placeholder="Describe the visible damage, affected parts, and any return condition details."
-                style={{ minHeight: 120 }}
+                placeholder="Example: The screen has a visible crack in the upper-right corner and no longer displays correctly..."
+                rows={5}
                 value={damageReportForm.description}
               />
-            </FormField>
+            </div>
 
-            <FormField label="Photo evidence">
+            <div className="damage-report-field">
+              <div className="damage-report-field-head">
+                <div>
+                  <strong>Upload photo evidence</strong>
+                  <span>Add clear images showing the item and damaged areas.</span>
+                </div>
+                <small>{damageReportForm.files.length} selected</small>
+              </div>
+              <label className="damage-evidence-uploader">
+                <UploadIcon size={24} />
+                <strong>{damageReportForm.files.length ? 'Add or replace photos' : 'Choose evidence photos'}</strong>
+                <span>PNG, JPG, or WEBP · Multiple files allowed</span>
               <input
                 accept="image/*"
                 multiple
                 onChange={(event) => setDamageReportForm((current) => ({ ...current, files: Array.from(event.target.files || []) }))}
                 type="file"
               />
-              <p style={{ color: theme.colors.slate, fontSize: 13, margin: '8px 0 0' }}>
-                Files are only uploaded after you click Submit damage report.
-              </p>
-            </FormField>
+              </label>
+            </div>
 
             {damageReportForm.files.length ? (
-              <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))' }}>
+              <div className="damage-evidence-file-list">
                 {damageReportForm.files.map((file) => (
-                  <div
-                    key={`${file.name}-${file.lastModified}`}
-                    style={{
-                      border: `1px solid ${alpha(theme.colors.ink, 0.08)}`,
-                      color: theme.colors.slate,
-                      fontSize: 12,
-                      overflowWrap: 'break-word',
-                      padding: 10,
-                    }}
-                  >
-                    {file.name}
+                  <div key={`${file.name}-${file.lastModified}`}>
+                    <span><UploadIcon size={15} /></span>
+                    <div>
+                      <strong>{file.name}</strong>
+                      <small>{(file.size / (1024 * 1024)).toFixed(2)} MB</small>
+                    </div>
                   </div>
                 ))}
               </div>
             ) : null}
+            <p className="damage-report-upload-note">Files upload only after you submit the report.</p>
           </form>
         ) : null}
       </Modal>
@@ -5892,78 +5910,85 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
         actions={
           <>
             <Button onClick={closeReviewModal} variant="ghost">
-              Cancel
+              Not now
             </Button>
-            <Button className="booking-action-button" disabled={savingReview} form="booking-review-form" type="submit">
-              {savingReview ? 'Submitting...' : 'Submit review'}
+            <Button className="booking-action-button review-submit-button" disabled={savingReview} form="booking-review-form" type="submit">
+              {savingReview ? 'Publishing review...' : 'Publish review'}
             </Button>
           </>
         }
         onClose={closeReviewModal}
         open={showReviewModal}
-        title={reviewBooking?.item?.title ? `Review ${reviewBooking.item.title}` : 'Submit review'}
+        contentClassName="booking-review-modal"
+        title="Share your rental experience"
       >
-        <form id="booking-review-form" onSubmit={handleSubmitReview} style={{ display: 'grid', gap: 14 }}>
-          <StatusMessage tone="info">
-            Once the item is returned, please submit your review so other borrowers can see your rental experience.
-          </StatusMessage>
+        <form className="booking-review-form" id="booking-review-form" onSubmit={handleSubmitReview}>
+          <div className="review-item-context">
+            {reviewBooking?.item?.primaryImage?.image_url ? (
+              <img alt="" src={reviewBooking.item.primaryImage.image_url} />
+            ) : (
+              <span className="review-item-placeholder"><StarIcon size={22} /></span>
+            )}
+            <div>
+              <span>Completed rental</span>
+              <strong>{reviewBooking?.item?.title || 'Rented item'}</strong>
+              <small>
+                From {buildPersonName(reviewBooking?.counterpart) || reviewBooking?.counterpart?.username || 'the item owner'}
+              </small>
+            </div>
+          </div>
 
-          <FormField label="Rating">
-            <div
-              className="review-stars-wrap"
-              style={{
-                alignItems: 'center',
-                background: alpha(theme.colors.panel, 0.92),
-                border: `1px solid ${alpha(theme.colors.ink, 0.1)}`,
-                borderRadius: 16,
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: 10,
-                minHeight: 64,
-                padding: '10px 12px',
-              }}
-            >
+          <section className="review-rating-section">
+            <div className="review-field-heading">
+              <div>
+                <strong>How was your experience?</strong>
+                <span>Select a rating from 1 to 5 stars.</span>
+              </div>
+              <div className="review-rating-result">
+                <strong>{reviewRating}.0</strong>
+                <span>{ratingLabel(reviewRating)}</span>
+              </div>
+            </div>
+            <div className="review-stars-wrap" role="radiogroup" aria-label="Rental rating">
               {[1, 2, 3, 4, 5].map((star) => {
                 const isActive = star <= reviewRating;
 
                 return (
                   <button
+                    aria-checked={star === reviewRating}
                     aria-label={`Rate ${star} star${star > 1 ? 's' : ''}`}
-                    className="review-star-button"
+                    className={`review-star-button${isActive ? ' active' : ''}`}
                     key={star}
                     onClick={() => setReviewForm((current) => ({ ...current, rating: String(star) }))}
-                    style={{
-                      alignItems: 'center',
-                      background: 'transparent',
-                      border: `1px solid ${alpha(isActive ? theme.colors.coral : theme.colors.ink, isActive ? 0.24 : 0.08)}`,
-                      borderRadius: 12,
-                      color: isActive ? theme.colors.coral : theme.colors.slate,
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      justifyContent: 'center',
-                      minHeight: 42,
-                      minWidth: 42,
-                      transition: 'all 0.2s ease',
-                    }}
+                    role="radio"
                     type="button"
                   >
-                    <StarIcon size={18} />
+                    <StarIcon size={22} />
+                    <span>{star}</span>
                   </button>
                 );
               })}
-              <span style={{ color: theme.colors.ink, fontSize: 14, fontWeight: 600, marginLeft: 6 }}>
-                {reviewRating}/5 - {ratingLabel(reviewRating)}
-              </span>
             </div>
-          </FormField>
+          </section>
 
-          <FormField label="Review notes (optional)">
+          <div className="review-notes-section">
+            <div className="review-field-heading">
+              <div>
+                <strong>Tell others about the rental</strong>
+                <span>Condition, owner communication, pickup, or overall experience.</span>
+              </div>
+              <small>{reviewForm.review_text.length}/500</small>
+            </div>
             <Textarea
+              maxLength={500}
               name="review_text"
               onChange={(event) => setReviewForm((current) => ({ ...current, review_text: event.target.value }))}
+              placeholder="What went well? Add details that would help another borrower..."
+              rows={5}
               value={reviewForm.review_text}
             />
-          </FormField>
+          </div>
+          <p className="review-privacy-note">Your review will be visible to other Borrow Ko 'To users.</p>
         </form>
       </Modal>
 
