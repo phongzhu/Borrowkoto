@@ -1382,6 +1382,7 @@ export default function Messages() {
 
             {!loading && !filteredThreads.length ? (
               <div
+                className="messages-empty-card"
                 style={{
                   alignContent: 'center',
                   background: alpha(theme.colors.panel, 0.9),
@@ -1709,6 +1710,7 @@ export default function Messages() {
             </>
           ) : (
             <div
+              className="messages-empty-state"
               style={{
                 alignContent: 'center',
                 background: `linear-gradient(180deg, ${alpha(theme.colors.panel, 0.96)} 0%, ${alpha(theme.colors.canvas, 0.92)} 100%)`,

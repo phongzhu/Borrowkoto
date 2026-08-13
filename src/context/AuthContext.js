@@ -5,24 +5,31 @@ const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
-  const [role, setRole] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [sessionInitialized, setSessionInitialized] = useState(false);
+  const [resolvedRole, setResolvedRole] = useState({ userId: null, role: null });
   const userId = session?.user?.id;
 
   useEffect(() => {
     let active = true;
 
-    supabase.auth.getSession().then(({ data, error }) => {
-      if (error) console.warn('Unable to restore the Supabase session:', error.message);
-      if (!active) return;
-      setSession(data?.session || null);
-      setLoading(Boolean(data?.session?.user));
-    });
+    supabase.auth.getSession()
+      .then(({ data, error }) => {
+        if (error) console.warn('Unable to restore the Supabase session:', error.message);
+        if (!active) return;
+        setSession(data?.session || null);
+      })
+      .catch((error) => {
+        console.warn('Unable to restore the Supabase session:', error?.message || error);
+        if (active) setSession(null);
+      })
+      .finally(() => {
+        if (active) setSessionInitialized(true);
+      });
 
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       if (!active) return;
-      setLoading(Boolean(nextSession?.user));
       setSession(nextSession);
+      setSessionInitialized(true);
     });
 
     return () => {
@@ -35,12 +42,10 @@ export function AuthProvider({ children }) {
     let active = true;
 
     if (!userId) {
-      setRole(null);
-      setLoading(false);
+      setResolvedRole({ userId: null, role: null });
       return undefined;
     }
 
-    setLoading(true);
     supabase
       .from('profiles')
       .select('role')
@@ -49,14 +54,24 @@ export function AuthProvider({ children }) {
       .then(({ data, error }) => {
         if (!active) return;
         if (error) console.warn('Unable to load the signed-in user role:', error.message);
-        setRole(String(data?.role || '').toLowerCase() || null);
-        setLoading(false);
+        setResolvedRole({
+          userId,
+          role: String(data?.role || '').toLowerCase() || null,
+        });
+      })
+      .catch((error) => {
+        if (!active) return;
+        console.warn('Unable to load the signed-in user role:', error?.message || error);
+        setResolvedRole({ userId, role: null });
       });
 
     return () => {
       active = false;
     };
   }, [userId]);
+
+  const role = resolvedRole.userId === userId ? resolvedRole.role : null;
+  const loading = !sessionInitialized || Boolean(userId && resolvedRole.userId !== userId);
 
   const value = useMemo(() => ({
     loading,

@@ -29,7 +29,7 @@ export const theme = {
   fonts: {
     body: 'var(--ui-font-body)',
     display: 'var(--ui-font-display)',
-    mono: 'var(--ui-font-mono)',
+    mono: 'var(--ui-font-body)',
   },
   gradients: {
     user: 'radial-gradient(circle at top left, rgba(31, 111, 99, 0.18), transparent 32%), linear-gradient(180deg, #f6f1e7 0%, #f0ebe1 100%)',

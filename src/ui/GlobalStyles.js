@@ -8,7 +8,7 @@ export default function GlobalStyles() {
         :root {
           --ui-font-body: "Dustin Sans", "Avenir Next", "Segoe UI", Arial, sans-serif;
           --ui-font-display: "Gilroy", "Montserrat", "Avenir Next", Arial, sans-serif;
-          --ui-font-mono: "Cascadia Code", "Consolas", monospace;
+          --ui-font-mono: var(--ui-font-body);
           --ui-unified-bg: var(--ui-background-color, ${theme.colors.canvas});
         }
 
@@ -70,7 +70,7 @@ export default function GlobalStyles() {
         pre,
         kbd,
         samp {
-          font-family: var(--ui-font-mono);
+          font-family: var(--ui-font-body);
         }
 
         img {

@@ -231,6 +231,8 @@ export default function RentItem() {
   const [addons, setAddons] = useState([]);
   const [availabilityBlocks, setAvailabilityBlocks] = useState([]);
   const [addonSelection, setAddonSelection] = useState({});
+  const [availableVouchers, setAvailableVouchers] = useState([]);
+  const [selectedVoucherId, setSelectedVoucherId] = useState('');
   const [form, setForm] = useState({
     borrower_message: '',
     requested_end: '',
@@ -266,7 +268,7 @@ export default function RentItem() {
 
       setUserId(user.id);
 
-      const [itemResult, addonsResult, blocksResult, imagesResult, damageHoldResult, profileResult] = await Promise.all([
+      const [itemResult, addonsResult, blocksResult, imagesResult, damageHoldResult, profileResult, vouchersResult] = await Promise.all([
         supabase.from('items').select(itemSelectFields).eq('id', itemId).maybeSingle(),
         supabase
           .from('item_addons')
@@ -291,6 +293,13 @@ export default function RentItem() {
           .select('id, first_name, last_name, username, profile_photo_url')
           .eq('id', user.id)
           .maybeSingle(),
+        supabase
+          .from('borrower_vouchers')
+          .select('id, code, discount_type, discount_value, minimum_rental_amount, expires_at, reward_voucher_catalog(name)')
+          .eq('borrower_id', user.id)
+          .eq('status', 'available')
+          .gt('expires_at', new Date().toISOString())
+          .order('expires_at', { ascending: true }),
       ]);
 
       if (!mounted) {
@@ -329,6 +338,7 @@ export default function RentItem() {
       const addonRows = addonsResult.data || [];
       const nextItem = itemResult.data;
       setCurrentUserProfile(profileResult.data || null);
+      setAvailableVouchers(vouchersResult.data || []);
       setActiveDamageHold(Boolean(damageHoldResult));
       const nextImages = (imagesResult.data || [])
         .slice()
@@ -521,6 +531,22 @@ export default function RentItem() {
       totalDue: roundMoney(subtotalBeforeCommission + commissionFee),
     };
   }, [addonSelection, addons, item?.rental_price_per_day, item?.security_deposit, primaryRequestedQuantity, rentalDays, selectedBundleItems]);
+
+  const selectedVoucher = useMemo(
+    () => availableVouchers.find((voucher) => voucher.id === selectedVoucherId) || null,
+    [availableVouchers, selectedVoucherId]
+  );
+  const voucherEligible = Boolean(
+    selectedVoucher && pricing.rentalFeeTotal >= Number(selectedVoucher.minimum_rental_amount || 0)
+  );
+  const voucherDiscount = useMemo(() => {
+    if (!selectedVoucher || !voucherEligible) return 0;
+    const calculated = selectedVoucher.discount_type === 'percentage'
+      ? pricing.rentalFeeTotal * Number(selectedVoucher.discount_value || 0) / 100
+      : Number(selectedVoucher.discount_value || 0);
+    return roundMoney(Math.min(calculated, pricing.rentalFeeTotal, pricing.totalDue));
+  }, [pricing.rentalFeeTotal, pricing.totalDue, selectedVoucher, voucherEligible]);
+  const checkoutTotalDue = roundMoney(pricing.totalDue - voucherDiscount);
 
   const selectedAddonsSummary = useMemo(() => {
     return addons
@@ -903,6 +929,10 @@ export default function RentItem() {
         throw new Error(bundleIssues[0]);
       }
 
+      if (selectedVoucher && !voucherEligible) {
+        throw new Error(`This voucher requires at least ${currencyFormatter.format(Number(selectedVoucher.minimum_rental_amount || 0))} in rental fees.`);
+      }
+
       if (selectedRangeBlocked) {
         throw new Error(`Your selected dates overlap with an owner block: ${formatBlockDateRange(selectedRangeBlocked)}.`);
       }
@@ -1119,6 +1149,21 @@ export default function RentItem() {
         }
       }
 
+      if (selectedVoucherId && createdBookingIds[0]) {
+        const { data: reservedDiscount, error: voucherError } = await supabase.rpc('reserve_reward_voucher_for_booking', {
+          requested_booking_id: createdBookingIds[0],
+          requested_voucher_id: selectedVoucherId,
+        });
+
+        if (voucherError) {
+          throw new Error(`Unable to apply voucher: ${voucherError.message}`);
+        }
+
+        const appliedDiscount = roundMoney(reservedDiscount || 0);
+        createdBookingSummaries[0].voucherDiscount = appliedDiscount;
+        createdBookingSummaries[0].totalDue = roundMoney(createdBookingSummaries[0].totalDue - appliedDiscount);
+      }
+
       const bookingIdsCsv = createdBookingIds.join(',');
       const successUrl = `${window.location.origin}/user/manage-booking?paymongo=success&booking_ids=${encodeURIComponent(bookingIdsCsv)}`;
       const cancelUrl = `${window.location.origin}/user/rent-item/${itemId}?paymongo=cancelled&booking_ids=${encodeURIComponent(bookingIdsCsv)}`;
@@ -1165,20 +1210,22 @@ export default function RentItem() {
           `${formatCheckoutDate(bookingSummary.requestedStart)} to ${formatCheckoutDate(bookingSummary.requestedEnd)}`,
         ].join(' • ');
 
-        const lineItems = [
-          {
-            amount: bookingSummary.rentalFeeTotal,
+        const discountedRentalFee = roundMoney(bookingSummary.rentalFeeTotal - (Number(bookingSummary.voucherDiscount) || 0));
+        const lineItems = [];
+
+        if (discountedRentalFee > 0) lineItems.push({
+            amount: discountedRentalFee,
             description: receiptContext,
             name: `${bookingSummary.title} rental fee`,
             quantity: 1,
-          },
-          {
+          });
+
+        lineItems.push({
             amount: bookingSummary.securityDeposit,
             description: receiptContext,
             name: `${bookingSummary.title} security deposit`,
             quantity: 1,
-          },
-        ];
+          });
 
         if (bookingSummary.itemAddonsTotal > 0) {
           lineItems.push({
@@ -1208,6 +1255,7 @@ export default function RentItem() {
           booking_ids: bookingIdsCsv,
           borrower_id: userId,
           item_id: item.id,
+          voucher_id: selectedVoucherId || '',
         },
         paymentMethodTypes: ['card', 'qrph'],
         showLineItems: true,
@@ -1272,7 +1320,10 @@ export default function RentItem() {
       className="market-page rent-checkout-market-page"
       style={{
         '--market-primary': settings?.primary_color || '#173b8f',
+        '--ui-primary-color': settings?.primary_color || '#173b8f',
+        '--ui-primary-text-color': settings?.primary_text_color || '#ffffff',
         '--ui-background-color': settings?.tertiary_color || '#ffffff',
+        '--ui-text-color': settings?.tertiary_text_color || '#18212e',
       }}
     >
       <header className="landing-nav rent-checkout-header">
@@ -1280,43 +1331,36 @@ export default function RentItem() {
           <span className="landing-brand-mark">
             {settings?.logo_url ? <img alt="" src={settings.logo_url} /> : marketplaceName.slice(0, 2).toUpperCase()}
           </span>
-          <span>{marketplaceName}</span>
+          <strong>{marketplaceName}</strong>
         </button>
 
-        <form className="rent-checkout-header-tools" onSubmit={submitHeaderSearch}>
-          <label className="rent-checkout-barangay">
-            <select aria-label="Filter by Baliuag barangay" onChange={(event) => setHeaderBarangay(event.target.value)} value={headerBarangay}>
-              <option value="all">All barangays</option>
-              {['Bagong Nayon', 'Barangca', 'Calantipay', 'Catulinan', 'Concepcion', 'Hinukay', 'Makinabang', 'Matangtubig', 'Pagala', 'Paitan', 'Piel', 'Pinagbarilan', 'Poblacion', 'Sabang', 'San Jose', 'San Roque', 'Santa Barbara', 'Santo Cristo', 'Santo Niño', 'Subic', 'Sulivan', 'Tangós', 'Tarcan', 'Tiaong', 'Tibag', 'Tilapayong', 'Virgen delas Flores'].map((barangay) => (
-                <option key={barangay} value={barangay}>{barangay}</option>
-              ))}
-            </select>
-          </label>
-          <label className="landing-search">
-            <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /></svg>
-            <input
-              aria-label="Search rentals"
-              onChange={(event) => setHeaderSearch(event.target.value)}
-              placeholder="Search for items to borrow..."
-              value={headerSearch}
-            />
-            <button type="submit">Search</button>
-          </label>
-        </form>
+        <section className="landing-toolbar landing-toolbar-top">
+          <div className="landing-search-row">
+            <div className="landing-controls inline">
+              <select aria-label="Filter by Baliuag barangay" onChange={(event) => setHeaderBarangay(event.target.value)} value={headerBarangay}>
+                <option value="all">All barangays</option>
+                {['Bagong Nayon', 'Barangca', 'Calantipay', 'Catulinan', 'Concepcion', 'Hinukay', 'Makinabang', 'Matangtubig', 'Pagala', 'Paitan', 'Piel', 'Pinagbarilan', 'Poblacion', 'Sabang', 'San Jose', 'San Roque', 'Santa Barbara', 'Santo Cristo', 'Santo Niño', 'Subic', 'Sulivan', 'Tangós', 'Tarcan', 'Tiaong', 'Tibag', 'Tilapayong', 'Virgen delas Flores'].map((barangay) => (
+                  <option key={barangay} value={barangay}>{barangay}</option>
+                ))}
+              </select>
+            </div>
+            <form className="landing-search" onSubmit={submitHeaderSearch}>
+              <svg aria-hidden="true" fill="none" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.4-3.4" /></svg>
+              <input aria-label="Search rentals" onChange={(event) => setHeaderSearch(event.target.value)} placeholder="Search for items to borrow..." value={headerSearch} />
+              <button type="submit">Search</button>
+            </form>
+          </div>
+        </section>
 
-        <button
-          aria-label={profileName}
-          className="rent-checkout-profile"
-          onClick={() => navigate('/user/dashboard')}
-          title={profileName}
-          type="button"
-        >
-          {currentUserProfile?.profile_photo_url ? (
-            <img alt={profileName} src={currentUserProfile.profile_photo_url} />
-          ) : (
-            <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></svg>
-          )}
-        </button>
+        <nav aria-label="Main links" className="landing-nav-links">
+          <button className="landing-filter-trigger" onClick={() => navigate('/?filters=open')} type="button">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 7h16M7 12h10M10 17h4" /></svg>
+            <span>Filters</span>
+          </button>
+          <button aria-label={profileName} className="landing-icon-btn signed-in" onClick={() => navigate('/user/dashboard')} title={profileName} type="button">
+            {currentUserProfile?.profile_photo_url ? <img alt="" src={currentUserProfile.profile_photo_url} /> : <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" /><path d="M4 20a8 8 0 0 1 16 0" /></svg>}
+          </button>
+        </nav>
       </header>
 
       <main className="rent-checkout-public-main">
@@ -1443,6 +1487,19 @@ export default function RentItem() {
                       <span style={{ color: theme.colors.slate, fontSize: 13 }}>Commission fee (15%)</span>
                       <strong style={{ color: theme.colors.ink, fontSize: 13 }}>{currencyFormatter.format(pricing.commissionFee)}</strong>
                     </div>
+                    <div className="rent-voucher-field">
+                      <label htmlFor="checkout-voucher">Reward voucher</label>
+                      <select id="checkout-voucher" onChange={(event) => setSelectedVoucherId(event.target.value)} value={selectedVoucherId}>
+                        <option value="">No voucher</option>
+                        {availableVouchers.map((voucher) => {
+                          const minimum = Number(voucher.minimum_rental_amount || 0);
+                          const eligible = pricing.rentalFeeTotal >= minimum;
+                          return <option disabled={!eligible} key={voucher.id} value={voucher.id}>{voucher.reward_voucher_catalog?.name || voucher.code}{eligible ? '' : ` · Min. ${currencyFormatter.format(minimum)}`}</option>;
+                        })}
+                      </select>
+                      {!availableVouchers.length ? <small>No available vouchers. Redeem one from Rewards.</small> : null}
+                    </div>
+                    {voucherDiscount > 0 ? <div className="rent-voucher-discount"><span>Voucher discount</span><strong>−{currencyFormatter.format(voucherDiscount)}</strong></div> : null}
                     <div
                       style={{
                         alignItems: 'center',
@@ -1458,7 +1515,7 @@ export default function RentItem() {
                         Total due
                       </span>
                       <strong style={{ color: theme.colors.teal, fontFamily: theme.fonts.display, fontSize: 18 }}>
-                        {currencyFormatter.format(pricing.totalDue)}
+                        {currencyFormatter.format(checkoutTotalDue)}
                       </strong>
                     </div>
                   </div>
@@ -2012,15 +2069,15 @@ export default function RentItem() {
         <Modal
           actions={
             <>
-              <Button onClick={closeBundleQuantityModal} type="button" variant="ghost">
+              <Button className="rent-modal-cancel" onClick={closeBundleQuantityModal} type="button" variant="ghost">
                 Cancel
               </Button>
-              <Button disabled={!activeBundleModalItem} onClick={confirmBundleQuantityModal} type="button">
+              <Button className="rent-modal-primary" disabled={!activeBundleModalItem} onClick={confirmBundleQuantityModal} type="button">
                 Add item
               </Button>
             </>
           }
-          contentClassName="rent-mobile-note-modal"
+          contentClassName="rent-bundle-modal"
           onClose={closeBundleQuantityModal}
           open={bundleQuantityModal.open}
           size="compact"
@@ -2033,6 +2090,7 @@ export default function RentItem() {
             </div>
             <FormField label="Quantity">
               <Input
+                className="rent-bundle-quantity-input"
                 max={Math.max(1, Number(activeBundleModalItem?.quantity) || 1)}
                 min={1}
                 onChange={(event) =>

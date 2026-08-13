@@ -179,8 +179,10 @@ function ListingCard({ item, onOpen }) {
           display: 'grid',
           gap: 6,
           padding: 10,
+          position: 'relative',
         }}
       >
+        {item.isPromoted ? <span className="item-promotion-badge">Promoted</span> : null}
         <div style={{ alignSelf: 'end', display: 'grid', gap: 6 }}>
           <strong
             style={{
@@ -428,7 +430,7 @@ export default function UserBrowseListings() {
       const itemIds = rawItems.map((item) => item.id);
       const categoryMap = new Map(nextCategories.map((category) => [category.id, category]));
 
-      const [ownersResult, imagesResult, profileResult, itemSubcategoriesResult, itemViewHistoryResult] = await Promise.all([
+      const [ownersResult, imagesResult, profileResult, itemSubcategoriesResult, itemViewHistoryResult, promotionsResult] = await Promise.all([
         ownerIds.length
           ? supabase
               .from('profiles')
@@ -463,6 +465,7 @@ export default function UserBrowseListings() {
               .order('last_viewed_at', { ascending: false })
               .limit(100)
           : Promise.resolve({ data: [], error: null }),
+        supabase.from('active_item_promotions').select('item_id'),
       ]);
 
       if (!mounted) {
@@ -486,6 +489,11 @@ export default function UserBrowseListings() {
       if (itemViewHistoryResult.error) {
         nextErrors.push(`item_view_history: ${itemViewHistoryResult.error.message}`);
       }
+      if (promotionsResult.error) {
+        nextErrors.push(`active promotions: ${promotionsResult.error.message}`);
+      }
+
+      const promotedItemIds = new Set((promotionsResult.data || []).map((row) => row.item_id));
 
       const ownerMap = new Map((ownersResult.data || []).map((profile) => [profile.id, profile]));
       const imagesByItemId = new Map();
@@ -511,6 +519,7 @@ export default function UserBrowseListings() {
 
         return {
           ...item,
+          isPromoted: promotedItemIds.has(item.id),
           category: categoryMap.get(item.category_id) || null,
           images,
           owner: ownerMap.get(item.owner_id) || null,

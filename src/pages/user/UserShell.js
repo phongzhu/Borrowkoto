@@ -15,6 +15,8 @@ const navItems = [
   { path: '/user/rental-items', label: 'Rental Items', icon: <CatalogIcon size={18} /> },
   { path: '/user/manage-booking', label: 'Manage Booking', icon: <CalendarIcon size={18} /> },
   { path: '/user/rental-income', label: 'Report', icon: <SparkIcon size={18} /> },
+  { path: '/user/promotions', label: 'Promote Listings', icon: <SparkIcon size={18} /> },
+  { path: '/user/rewards', label: 'Rewards', icon: <SparkIcon size={18} /> },
   { type: 'section', label: 'Communication' },
   { path: '/user/messages', label: 'Messages', icon: <MessageIcon size={18} /> },
 ];

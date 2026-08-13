@@ -3,70 +3,8 @@
   min-height: 100vh;
 }
 
-.rent-checkout-header {
-  grid-template-columns: auto minmax(0, 1fr) auto;
-}
-
-.rent-checkout-header-tools {
-  align-items: center;
-  display: grid;
-  gap: 12px;
-  grid-template-columns: minmax(330px, 470px) minmax(360px, 1fr);
-  min-width: 0;
-}
-
-.rent-checkout-barangay {
-  align-items: center;
-  background: var(--ui-background-color, #fff);
-  display: grid;
-  gap: 8px;
-  grid-template-columns: auto minmax(140px, 1fr);
-  min-height: 46px;
-}
-
-.rent-checkout-barangay span {
-  color: #172033;
-  font-size: 13px;
-  font-weight: 800;
-  white-space: nowrap;
-}
-
-.rent-checkout-barangay select {
-  background: var(--ui-background-color, #fff);
-  border: 0;
-  color: #172033;
-  font: inherit;
-  min-height: 42px;
-  outline: none;
-  padding: 0 28px 0 10px;
-  width: 100%;
-}
-
-.rent-checkout-profile {
-  align-items: center;
-  background: #eef2f8;
-  border: 2px solid rgba(23, 59, 143, 0.25);
-  border-radius: 999px;
-  display: inline-flex;
-  height: 42px;
-  justify-content: center;
-  overflow: hidden;
-  padding: 0;
-  width: 42px;
-}
-
-.rent-checkout-profile img,
-.rent-checkout-profile svg {
-  height: 100%;
-  object-fit: cover;
-  width: 100%;
-}
-
-.rent-checkout-profile svg {
-  fill: none;
-  padding: 9px;
-  stroke: #172033;
-  stroke-width: 1.7;
+.rent-checkout-market-page :where(.landing-nav, .landing-toolbar, .landing-controls, .landing-search, .rent-checkout-public-main, .rent-order-shell, .rent-order-panel, .rent-checkout-main, .rent-checkout-summary, .rent-checkout-summary-card, .rent-order-table, .rent-summary-date-input) {
+  background-color: var(--ui-background-color, #fff) !important;
 }
 
 .rent-checkout-public-main {
@@ -127,6 +65,7 @@
 }
 
 .rent-summary-date-input {
+  background: var(--ui-background-color, #fff) !important;
   border-radius: 10px !important;
   font-size: 13px !important;
   min-height: 40px !important;
@@ -145,6 +84,46 @@
 
 .rent-mobile-note-modal {
   max-width: 520px !important;
+}
+
+.rent-bundle-modal {
+  background: var(--ui-background-color, #fff) !important;
+  border: 1px solid color-mix(in srgb, var(--ui-text-color, #18212e) 14%, transparent) !important;
+  border-radius: 16px !important;
+  box-shadow: 0 24px 70px color-mix(in srgb, var(--ui-text-color, #18212e) 20%, transparent) !important;
+  gap: 20px !important;
+  max-width: 440px !important;
+  padding: 28px !important;
+  width: min(440px, 100%) !important;
+}
+
+.rent-bundle-modal h3 {
+  font-size: 25px !important;
+  letter-spacing: -0.035em !important;
+  line-height: 1.15 !important;
+}
+
+.rent-bundle-quantity-input {
+  background: var(--ui-background-color, #fff) !important;
+  border-color: color-mix(in srgb, var(--ui-text-color, #18212e) 16%, transparent) !important;
+  border-radius: 10px !important;
+  font-size: 16px !important;
+  min-height: 48px !important;
+}
+
+.rent-modal-primary {
+  background: var(--ui-primary-color, #173b8f) !important;
+  color: var(--ui-primary-text-color, #fff) !important;
+  min-height: 44px !important;
+  padding-inline: 22px !important;
+}
+
+.rent-modal-cancel {
+  background: var(--ui-background-color, #fff) !important;
+  border: 1px solid color-mix(in srgb, var(--ui-text-color, #18212e) 16%, transparent) !important;
+  color: var(--ui-text-color, #18212e) !important;
+  min-height: 44px !important;
+  padding-inline: 20px !important;
 }
 
 .rent-order-shell {
@@ -220,15 +199,22 @@
 }
 
 .rent-summary-place-order {
+  background: var(--ui-primary-color, #173b8f) !important;
   border-radius: 0 !important;
+  color: var(--ui-background-color, #fff) !important;
   min-height: 56px !important;
 }
 
 .rent-summary-cancel {
-  background: transparent !important;
+  background: var(--ui-background-color, #fff) !important;
   border: 1px solid color-mix(in srgb, var(--ui-text-color, #18212e) 24%, transparent) !important;
   border-radius: 0 !important;
   min-height: 48px;
+}
+
+.rent-mobile-paybar-submit {
+  background: var(--ui-primary-color, #173b8f) !important;
+  color: var(--ui-background-color, #fff) !important;
 }
 
 .rent-order-hero-meta {
@@ -450,18 +436,6 @@
 }
 
 @media (max-width: 1100px) {
-  .rent-checkout-header-tools {
-    grid-template-columns: minmax(250px, 340px) minmax(280px, 1fr);
-  }
-
-  .rent-checkout-barangay span {
-    display: none;
-  }
-
-  .rent-checkout-barangay {
-    grid-template-columns: 1fr;
-  }
-
   .rent-checkout-layout {
     grid-template-columns: minmax(0, 1fr) minmax(300px, 340px);
   }
@@ -479,26 +453,6 @@
 }
 
 @media (max-width: 768px) {
-  .rent-checkout-header {
-    gap: 10px;
-    grid-template-columns: minmax(0, 1fr) auto;
-    padding: 10px 16px;
-  }
-
-  .rent-checkout-header .landing-brand span:last-child {
-    font-size: 18px;
-  }
-
-  .rent-checkout-header-tools {
-    grid-column: 1 / -1;
-    grid-template-columns: 1fr;
-    order: 3;
-  }
-
-  .rent-checkout-barangay {
-    display: none;
-  }
-
   .rent-checkout-public-main {
     padding: 16px;
   }
@@ -859,4 +813,41 @@
     padding: 0 18px !important;
     width: 100%;
   }
+}
+.rent-voucher-field {
+  border-top: 1px solid var(--ui-border-color, #dbe3f0);
+  display: grid;
+  gap: 7px;
+  margin-top: 2px;
+  padding-top: 12px;
+}
+
+.rent-voucher-field label {
+  color: var(--ui-text-color, #18212e);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.rent-voucher-field select {
+  background: var(--ui-background-color, #fff);
+  border: 1px solid var(--ui-border-color, #dbe3f0);
+  border-radius: 8px;
+  color: var(--ui-text-color, #18212e);
+  font: inherit;
+  min-height: 42px;
+  padding: 0 10px;
+  width: 100%;
+}
+
+.rent-voucher-field small {
+  color: #60718a;
+  font-size: 11px;
+}
+
+.rent-voucher-discount {
+  align-items: center;
+  color: #2f7168;
+  display: flex;
+  font-size: 13px;
+  justify-content: space-between;
 }

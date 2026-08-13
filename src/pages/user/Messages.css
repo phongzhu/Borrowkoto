@@ -1,6 +1,7 @@
 .messages-shell {
+  --messages-border: color-mix(in srgb, var(--ui-text-color, #18212e) 12%, transparent);
   background: var(--ui-background-color, #fff) !important;
-  border: 1px solid #dbe3f0 !important;
+  border: 1px solid var(--messages-border) !important;
   border-radius: 12px;
   box-shadow: none !important;
 }
@@ -8,12 +9,15 @@
 .messages-sidebar,
 .messages-conversation,
 .messages-conversation-header,
-.messages-composer-area {
+.messages-composer-area,
+.messages-feed,
+.messages-empty-card,
+.messages-empty-state {
   background: var(--ui-background-color, #fff) !important;
 }
 
 .messages-sidebar {
-  border-right-color: #dbe3f0 !important;
+  border-right-color: var(--messages-border) !important;
 }
 
 .messages-sidebar h2 {
@@ -24,13 +28,13 @@
 
 .messages-search {
   background: var(--ui-background-color, #fff) !important;
-  border-color: #dbe3f0 !important;
+  border-color: var(--messages-border) !important;
   border-radius: 8px !important;
 }
 
 .message-thread-card {
   background: var(--ui-background-color, #fff) !important;
-  border-color: #dbe3f0 !important;
+  border-color: var(--messages-border) !important;
   border-radius: 8px !important;
   box-shadow: none !important;
   min-height: 96px !important;
@@ -39,39 +43,39 @@
 
 .message-thread-card:hover,
 .message-thread-card.active {
-  background: color-mix(in srgb, var(--ui-primary-color, #1f3f73) 7%, var(--ui-background-color, #fff)) !important;
-  border-color: color-mix(in srgb, var(--ui-primary-color, #1f3f73) 25%, #dbe3f0) !important;
+  background: var(--ui-background-color, #fff) !important;
+  border-color: var(--ui-primary-color, #1f3f73) !important;
 }
 
 .messages-conversation-header {
-  border-bottom-color: #dbe3f0 !important;
+  border-bottom-color: var(--messages-border) !important;
   padding: 16px 20px !important;
 }
 
 .messages-feed {
-  background: color-mix(in srgb, var(--ui-primary-color, #1f3f73) 2%, var(--ui-background-color, #fff)) !important;
+  background: var(--ui-background-color, #fff) !important;
 }
 
 .message-bubble {
   background: var(--ui-background-color, #fff) !important;
-  border-color: #dbe3f0 !important;
+  border-color: var(--messages-border) !important;
   border-radius: 8px !important;
   box-shadow: none !important;
 }
 
 .message-bubble.own {
-  background: color-mix(in srgb, var(--ui-primary-color, #1f3f73) 10%, var(--ui-background-color, #fff)) !important;
-  border-color: color-mix(in srgb, var(--ui-primary-color, #1f3f73) 20%, #dbe3f0) !important;
+  background: var(--ui-background-color, #fff) !important;
+  border-color: var(--ui-primary-color, #1f3f73) !important;
 }
 
 .messages-composer-area {
-  border-top-color: #dbe3f0 !important;
+  border-top-color: var(--messages-border) !important;
   padding: 14px 18px !important;
 }
 
 .message-item-context {
   background: var(--ui-background-color, #fff) !important;
-  border-color: #dbe3f0 !important;
+  border-color: var(--messages-border) !important;
   border-radius: 8px !important;
   box-shadow: none !important;
   gap: 10px !important;
@@ -141,7 +145,7 @@
 
 .messages-composer {
   background: var(--ui-background-color, #fff) !important;
-  border-color: #dbe3f0 !important;
+  border-color: var(--messages-border) !important;
   border-radius: 8px !important;
 }
 

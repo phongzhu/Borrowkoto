@@ -75,7 +75,7 @@ export default function TransactionsTesting() {
                 description="Use this page to verify that the test PayMongo key can create intents from the current Borrow Ko To interface."
               />
               <Badge tone={isConfigured ? 'success' : 'warning'}>
-                {isConfigured ? 'Test key detected' : 'Configure REACT_APP_PAYMONGO_TEST_SECRET_KEY'}
+                {isConfigured ? 'Test key detected' : 'Configure PAYMONGO_TEST_SECRET_KEY'}
               </Badge>
             </div>
 
@@ -230,7 +230,7 @@ export default function TransactionsTesting() {
                   <StatusMessage tone={isConfigured ? 'success' : 'warning'}>
                     {isConfigured
                       ? 'The test secret key is available. If the request fails, the browser console or PayMongo response will show the exact issue.'
-                      : 'Add REACT_APP_PAYMONGO_TEST_SECRET_KEY to your .env file, then restart the dev server before testing.'}
+                      : 'Add PAYMONGO_TEST_SECRET_KEY to your .env file, then restart the dev server before testing.'}
                   </StatusMessage>
                 </div>
               </Panel>

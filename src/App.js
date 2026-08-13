@@ -130,13 +130,13 @@ function LogoMark({ logoUrl, brandName }) {
   );
 }
 
-function ProductImage({ item }) {
+function ProductImage({ item, promoted = false }) {
   const imageUrl = item.primaryImage?.image_url;
-  if (imageUrl) return <img alt={item.title} src={imageUrl} />;
+  if (imageUrl) return <><img alt={item.title} src={imageUrl} />{promoted ? <span className="item-promotion-badge">Promoted</span> : null}</>;
   return (
-    <div className="market-product-placeholder">
+    <><div className="market-product-placeholder">
       <span>{item.title?.slice(0, 1)?.toUpperCase() || 'I'}</span>
-    </div>
+    </div>{promoted ? <span className="item-promotion-badge">Promoted</span> : null}</>
   );
 }
 
@@ -260,6 +260,9 @@ export default function App() {
   const [minimumRating, setMinimumRating] = useState('0');
   const [currentUser, setCurrentUser] = useState(null);
   const [currentUserProfile, setCurrentUserProfile] = useState(null);
+  const [savedItemIds, setSavedItemIds] = useState(() => new Set());
+  const [savingItemId, setSavingItemId] = useState('');
+  const [promotedItemIds, setPromotedItemIds] = useState([]);
   const [recentlyViewedIds, setRecentlyViewedIds] = useState([]);
   const [activeRecentIndex, setActiveRecentIndex] = useState(0);
   const [recentCarouselPaused, setRecentCarouselPaused] = useState(false);
@@ -348,6 +351,36 @@ export default function App() {
   useEffect(() => {
     let mounted = true;
     if (!currentUser?.id) {
+      setSavedItemIds(new Set());
+      return undefined;
+    }
+
+    supabase
+      .from('saved_rent_items')
+      .select('item_id')
+      .eq('user_id', currentUser.id)
+      .then(({ data, error: savedError }) => {
+        if (!mounted) return;
+        if (savedError) {
+          console.warn('Unable to load saved listings:', savedError.message);
+          return;
+        }
+        setSavedItemIds(new Set((data || []).map((row) => row.item_id)));
+      });
+
+    return () => { mounted = false; };
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    let mounted = true;
+    supabase.from('active_item_promotions').select('item_id,last_displayed_at').order('last_displayed_at', { ascending: true, nullsFirst: true })
+      .then(({ data }) => { if (mounted) setPromotedItemIds((data || []).map((entry) => entry.item_id)); });
+    return () => { mounted = false; };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    if (!currentUser?.id) {
       setCurrentUserProfile(null);
       return undefined;
     }
@@ -355,7 +388,7 @@ export default function App() {
     async function loadCurrentUserProfile() {
       const { data, error: profileError } = await supabase
         .from('profiles')
-        .select('first_name, last_name, username, profile_photo_url')
+        .select('first_name, last_name, username, profile_photo_url, is_profile_complete')
         .eq('id', currentUser.id)
         .maybeSingle();
       if (!mounted) return;
@@ -742,6 +775,7 @@ export default function App() {
     return recentlyViewedIds.map((itemId) => itemsById.get(itemId)).filter(Boolean);
   }, [items, recentlyViewedIds]);
   const activeRecentItem = recentlyViewedItems[activeRecentIndex] || recentlyViewedItems[0] || null;
+  const promotedItems = promotedItemIds.map((id) => items.find((item) => item.id === id)).filter(Boolean).slice(0, 8);
 
   useEffect(() => {
     if (!currentUser || recentCarouselPaused || recentlyViewedItems.length < 2) return undefined;
@@ -784,6 +818,34 @@ export default function App() {
     if (itemId) {
       navigate(`/items/${itemId}`);
     }
+  }
+
+  async function toggleSavedPromotedItem(event, itemId) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!currentUser?.id) {
+      navigate('/login');
+      return;
+    }
+    if (savingItemId) return;
+
+    const isSaved = savedItemIds.has(itemId);
+    setSavingItemId(itemId);
+    const result = isSaved
+      ? await supabase.from('saved_rent_items').delete().eq('user_id', currentUser.id).eq('item_id', itemId)
+      : await supabase.from('saved_rent_items').upsert({ desired_quantity: 1, item_id: itemId, note: null, user_id: currentUser.id }, { onConflict: 'user_id,item_id' });
+
+    if (result.error) {
+      setError(result.error.message);
+    } else {
+      setSavedItemIds((current) => {
+        const next = new Set(current);
+        if (isSaved) next.delete(itemId);
+        else next.add(itemId);
+        return next;
+      });
+    }
+    setSavingItemId('');
   }
 
   function openCatalogPage({ categoryId = '', mode = 'all', q = search, barangay = barangayFilter } = {}) {
@@ -965,11 +1027,11 @@ export default function App() {
       <main className="landing-main">
         {error ? <div className="market-alert">{error}</div> : null}
 
-        {currentUser ? (
+        {currentUser && !promotedItems.length ? (
           <section className="landing-recently-viewed">
             {activeRecentItem ? (
               <div className="landing-recent-feature" onMouseEnter={() => setRecentCarouselPaused(true)} onMouseLeave={() => setRecentCarouselPaused(false)}>
-                <div className="landing-recent-feature-media" key={`recent-media-${activeRecentItem.id}`}><ProductImage item={activeRecentItem} /></div>
+                <div className="landing-recent-feature-media" key={`recent-media-${activeRecentItem.id}`}><ProductImage item={activeRecentItem} promoted={promotedItemIds.includes(activeRecentItem.id)} /></div>
                 <div className="landing-recent-feature-shade" />
                 <div className="landing-recent-feature-copy" key={`recent-copy-${activeRecentItem.id}`}>
                   <span>Continue where you left off</span>
@@ -986,7 +1048,7 @@ export default function App() {
                     <div>
                       {recentlyViewedItems.slice(0, 5).map((item, index) => (
                         <button aria-label={`Show ${item.title}`} className={activeRecentIndex === index ? 'active' : ''} key={`recent-thumb-${item.id}`} onClick={() => setActiveRecentIndex(index)} title={item.title} type="button">
-                          <ProductImage item={item} />
+                          <ProductImage item={item} promoted={promotedItemIds.includes(item.id)} />
                         </button>
                       ))}
                     </div>
@@ -1001,17 +1063,21 @@ export default function App() {
             ) : (
               <div className="landing-recently-empty">
                 <span className="landing-recent-eyebrow">Borrow around Baliuag</span>
-                <h2>Useful things, shared<br />closer to home.</h2>
+                <h2>Useful things, shared closer to home.</h2>
                 <p>Discover items from trusted neighbors, borrow only what you need, and make more room for what matters.</p>
                 <div className="landing-recent-empty-actions">
                   <button onClick={() => openCatalogPage({ mode: 'all' })} type="button">Explore rentals</button>
-                  <button onClick={() => navigate('/list-item')} type="button">List an item</button>
+                  {currentUserProfile?.is_profile_complete ? (
+                    <button onClick={() => navigate('/user/rental-items/add')} type="button">List an item</button>
+                  ) : (
+                    <button onClick={() => navigate('/user/profile')} type="button">Finish setting up your account</button>
+                  )}
                 </div>
                 <small>Your recently viewed items will appear here once you start exploring.</small>
               </div>
             )}
           </section>
-        ) : <>
+        ) : !currentUser ? <>
         <section
           aria-label="Featured rental campaigns"
           aria-roledescription="carousel"
@@ -1066,38 +1132,32 @@ export default function App() {
           </div>
         </section>
 
-        <section className="landing-trust-row">
-          <article>
-            <RentalIcon type="return" />
-            <div>
-              <strong>Verified Neighbors</strong>
-              <span>Identity checked community members</span>
-            </div>
-          </article>
-          <article>
-            <RentalIcon type="item" />
-            <div>
-              <strong>Insurance Protection</strong>
-              <span>Coverage up to {currencyFormatter.format(50000)}</span>
-            </div>
-          </article>
-          <article>
-            <RentalIcon type="price" />
-            <div>
-              <strong>Secure Payments</strong>
-              <span>100% secure escrow payments</span>
-            </div>
-          </article>
-        </section>
+        </> : null}
 
-        <div className="landing-market-divider" aria-hidden="true">
-          <div className="landing-editorial-rule">
-            <i />
-            <span />
-            <i />
-          </div>
-        </div>
-        </>}
+        {promotedItems.length ? (
+          <section className="landing-promoted-banner">
+            <div className="landing-promoted-intro">
+              <span><i /> Sponsored marketplace</span>
+              <h2>Local rentals<br/>in the <b>spotlight.</b></h2>
+              <button onClick={() => openCatalogPage({ mode: 'all' })} type="button">Browse all items <b aria-hidden="true">→</b></button>
+            </div>
+            <div className="landing-promoted-list">
+              {promotedItems.map((item) => (
+                <button key={item.id} onClick={() => openPublicItem(item.id)} type="button">
+                  <span className="landing-promoted-media"><ProductImage item={item}/><em><b aria-hidden="true">ϟ</b> Promoted</em><i aria-label={savedItemIds.has(item.id) ? `Remove ${item.title} from saved listings` : `Save ${item.title}`} aria-pressed={savedItemIds.has(item.id)} className={`landing-promoted-favorite ${savedItemIds.has(item.id) ? 'saved' : ''} ${savingItemId === item.id ? 'saving' : ''}`} onClick={(event)=>toggleSavedPromotedItem(event,item.id)} onKeyDown={(event)=>{if(event.key==='Enter'||event.key===' '){toggleSavedPromotedItem(event,item.id)}}} role="button" tabIndex="0">{savedItemIds.has(item.id) ? '♥' : '♡'}</i><span className="landing-promoted-features"><i>◖ <b>Powerful<br/>performance</b></i><i>⌁ <b>Easy to<br/>use</b></i><i>▣ <b>Rental<br/>ready</b></i></span></span>
+                  <span className="landing-promoted-content"><span className="landing-promoted-category">{item.category?.name || 'Featured rental'}</span><strong>{item.title}</strong><b>{currencyFormatter.format(Number(item.rental_price_per_day) || 0)} <i>/ day</i></b><small className="landing-promoted-meta"><i>Portable</i><i>{formatCondition(item.item_condition)}</i><i>{detectBaliuagBarangay(item)}</i></small><small className="landing-promoted-rating">{formatItemRating(item)}</small><span className="landing-promoted-action">View rental details <i>→</i></span></span>
+                </button>
+              ))}
+            </div>
+            {recentlyViewedItems.length ? <aside className="landing-promoted-history"><small>Your viewing history</small><div>{recentlyViewedItems.slice(0,3).map((item)=><button aria-label={`View ${item.title}`} key={`promoted-history-${item.id}`} onClick={()=>openPublicItem(item.id)} type="button"><ProductImage item={item}/></button>)}</div></aside> : null}
+          </section>
+        ) : null}
+
+        {!currentUser ? <section className="landing-trust-row landing-trust-row-after-promotion">
+          <article><RentalIcon type="return" /><div><strong>Verified Neighbors</strong><span>Identity checked community members</span></div></article>
+          <article><RentalIcon type="item" /><div><strong>Insurance Protection</strong><span>Coverage up to {currencyFormatter.format(50000)}</span></div></article>
+          <article><RentalIcon type="price" /><div><strong>Secure Payments</strong><span>100% secure escrow payments</span></div></article>
+        </section> : null}
 
         {categorySections.length ? (
           <section className="landing-category-editorial">
@@ -1109,7 +1169,7 @@ export default function App() {
                   onClick={() => openCatalogPage({ categoryId: category.id, mode: 'all' })}
                   type="button"
                 >
-                  <ProductImage item={categoryItems[0]} />
+                  <ProductImage item={categoryItems[0]} promoted={promotedItemIds.includes(categoryItems[0].id)} />
                   <span className="landing-category-feature-shade" />
                   <span className="landing-category-feature-label">
                     <small>{categoryItems.length} nearby {categoryItems.length === 1 ? 'item' : 'items'}</small>
@@ -1128,6 +1188,29 @@ export default function App() {
           </section>
         ) : null}
 
+        {newArrivalItems.length ? (
+          <section
+            aria-label="New arrivals"
+            aria-roledescription="carousel"
+            className="landing-arrivals-carousel"
+            onMouseEnter={() => setArrivalCarouselPaused(true)}
+            onMouseLeave={() => setArrivalCarouselPaused(false)}
+          >
+            {newArrivalItems.map((item, index) => (
+              <article aria-hidden={activeArrival !== index} className={`landing-arrival-slide ${activeArrival === index ? 'active' : ''}`} key={`arrival-${item.id}`}>
+                <ProductImage item={item} promoted={promotedItemIds.includes(item.id)} />
+                <div className="landing-arrival-shade" />
+                <div className="landing-arrival-copy">
+                  <span>New arrival</span><h2>{item.title}</h2>
+                  <p>Newly available in {detectBaliuagBarangay(item)} for {currencyFormatter.format(Number(item.rental_price_per_day) || 0)} per day.</p>
+                  <button onClick={() => openPublicItem(item.id)} tabIndex={activeArrival === index ? 0 : -1} type="button">View item <b aria-hidden="true">→</b></button>
+                </div>
+              </article>
+            ))}
+            {newArrivalItems.length > 1 ? <><button aria-label="Previous new arrival" className="landing-carousel-arrow previous" onClick={() => setActiveArrival((activeArrival - 1 + newArrivalItems.length) % newArrivalItems.length)} type="button">‹</button><button aria-label="Next new arrival" className="landing-carousel-arrow next" onClick={() => setActiveArrival((activeArrival + 1) % newArrivalItems.length)} type="button">›</button><div className="landing-carousel-dots" role="tablist" aria-label="Choose new arrival">{newArrivalItems.map((item, index) => <button aria-label={`Show ${item.title}`} aria-selected={activeArrival === index} className={activeArrival === index ? 'active' : ''} key={`arrival-dot-${item.id}`} onClick={() => setActiveArrival(index)} role="tab" type="button"><i /></button>)}</div></> : null}
+          </section>
+        ) : null}
+
         <section className="landing-nearby-wrap">
           <article className="landing-nearby">
             <div className="landing-section-head landing-collection-head">
@@ -1137,7 +1220,7 @@ export default function App() {
               {nearbyItems.map((item) => (
                 <button className="landing-item-card" key={item.id} onClick={() => openPublicItem(item.id)} type="button">
                   <div className="landing-item-media">
-                    <ProductImage item={item} />
+                    <ProductImage item={item} promoted={promotedItemIds.includes(item.id)} />
                   </div>
                   <span className="landing-item-tag">{item.category?.name || formatCondition(item.item_condition)}</span>
                   <h3>{item.title}</h3>
@@ -1167,7 +1250,7 @@ export default function App() {
             {trendingItems.map(({ item, totalViews }) => (
               <button className="landing-trending-card" key={item.id} onClick={() => openPublicItem(item.id)} type="button">
                 <div className="landing-item-media">
-                  <ProductImage item={item} />
+                  <ProductImage item={item} promoted={promotedItemIds.includes(item.id)} />
                   <span className="landing-trending-tile-label">
                     <b>{item.title}</b>
                     <small>{currencyFormatter.format(Number(item.rental_price_per_day) || 0)} / day</small>
@@ -1198,7 +1281,7 @@ export default function App() {
             {mostViewedItems.slice(0, 8).map(({ item, totalViews }) => (
               <button className="landing-trending-card" key={`most-viewed-${item.id}`} onClick={() => openPublicItem(item.id)} type="button">
                 <div className="landing-item-media">
-                  <ProductImage item={item} />
+                  <ProductImage item={item} promoted={promotedItemIds.includes(item.id)} />
                 </div>
                 <h3>{item.title}</h3>
                 <strong>{currencyFormatter.format(Number(item.rental_price_per_day) || 0)} / day</strong>
@@ -1222,7 +1305,7 @@ export default function App() {
             {cheapestItems.map((item) => (
               <button className="landing-trending-card" key={`cheapest-${item.id}`} onClick={() => openPublicItem(item.id)} type="button">
                 <div className="landing-item-media">
-                  <ProductImage item={item} />
+                  <ProductImage item={item} promoted={promotedItemIds.includes(item.id)} />
                 </div>
                 <h3>{item.title}</h3>
                 <strong>{currencyFormatter.format(Number(item.rental_price_per_day) || 0)} / day</strong>
@@ -1245,7 +1328,7 @@ export default function App() {
             {priciestItems.map((item) => (
               <button className="landing-trending-card" key={`priciest-${item.id}`} onClick={() => openPublicItem(item.id)} type="button">
                 <div className="landing-item-media">
-                  <ProductImage item={item} />
+                  <ProductImage item={item} promoted={promotedItemIds.includes(item.id)} />
                 </div>
                 <h3>{item.title}</h3>
                 <strong>{currencyFormatter.format(Number(item.rental_price_per_day) || 0)} / day</strong>
@@ -1259,67 +1342,6 @@ export default function App() {
             ) : null}
           </div>
         </section>
-
-        {newArrivalItems.length ? (
-          <section
-            aria-label="New arrivals"
-            aria-roledescription="carousel"
-            className="landing-arrivals-carousel"
-            onMouseEnter={() => setArrivalCarouselPaused(true)}
-            onMouseLeave={() => setArrivalCarouselPaused(false)}
-          >
-            {newArrivalItems.map((item, index) => (
-              <article
-                aria-hidden={activeArrival !== index}
-                className={`landing-arrival-slide ${activeArrival === index ? 'active' : ''}`}
-                key={`arrival-${item.id}`}
-              >
-                <ProductImage item={item} />
-                <div className="landing-arrival-shade" />
-                <div className="landing-arrival-copy">
-                  <span>New arrival</span>
-                  <h2>{item.title}</h2>
-                  <p>
-                    Newly available in {detectBaliuagBarangay(item)} for {currencyFormatter.format(Number(item.rental_price_per_day) || 0)} per day.
-                  </p>
-                  <button onClick={() => openPublicItem(item.id)} tabIndex={activeArrival === index ? 0 : -1} type="button">
-                    View item <b aria-hidden="true">→</b>
-                  </button>
-                </div>
-              </article>
-            ))}
-
-            {newArrivalItems.length > 1 ? (
-              <>
-                <button
-                  aria-label="Previous new arrival"
-                  className="landing-carousel-arrow previous"
-                  onClick={() => setActiveArrival((activeArrival - 1 + newArrivalItems.length) % newArrivalItems.length)}
-                  type="button"
-                >‹</button>
-                <button
-                  aria-label="Next new arrival"
-                  className="landing-carousel-arrow next"
-                  onClick={() => setActiveArrival((activeArrival + 1) % newArrivalItems.length)}
-                  type="button"
-                >›</button>
-                <div className="landing-carousel-dots" role="tablist" aria-label="Choose new arrival">
-                  {newArrivalItems.map((item, index) => (
-                    <button
-                      aria-label={`Show ${item.title}`}
-                      aria-selected={activeArrival === index}
-                      className={activeArrival === index ? 'active' : ''}
-                      key={`arrival-dot-${item.id}`}
-                      onClick={() => setActiveArrival(index)}
-                      role="tab"
-                      type="button"
-                    ><i /></button>
-                  ))}
-                </div>
-              </>
-            ) : null}
-          </section>
-        ) : null}
 
       </main>
 

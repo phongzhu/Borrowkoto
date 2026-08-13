@@ -10,7 +10,7 @@ body {
 }
 
 code {
-  font-family: var(--ui-font-mono);
+  font-family: var(--ui-font-body);
 }
 
 @layer utilities {

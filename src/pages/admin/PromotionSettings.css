@@ -1,0 +1,45 @@
+.promotion-admin-page { display: grid; gap: 20px; }
+.promotion-section-heading h2 { margin: 0; }
+.promotion-section-heading p { color: var(--ui-secondary-text-color); margin: 5px 0 0; }
+.promotion-admin-card { background: var(--ui-background-color); border: 1px solid var(--ui-border-color); border-radius: 20px; overflow: hidden; }
+.promotion-section-heading { align-items: center; display: flex; justify-content: space-between; padding: 20px 22px; }
+.promotion-section-heading h2 { font-family: var(--ui-header-font-family); font-size: 1.2rem; }
+.promotion-section-heading p { font-size: .9rem; }
+.promotion-header-actions { align-items: center; display: flex; gap: 10px; }
+.promotion-settings-button { align-items: center; background: var(--ui-background-color); border: 1px solid var(--ui-border-color); border-radius: 999px; color: var(--ui-primary-text-color); cursor: pointer; display: inline-flex; flex: 0 0 46px; height: 46px; justify-content: center; transition: background 160ms ease, border-color 160ms ease; width: 46px; }
+.promotion-settings-button:hover { background: color-mix(in srgb, var(--ui-primary-color) 8%, var(--ui-background-color)); border-color: color-mix(in srgb, var(--ui-primary-color) 28%, var(--ui-border-color)); }
+.promotion-table-wrap { overflow-x: auto; }
+.promotion-table { border-collapse: collapse; min-width: 760px; width: 100%; }
+.promotion-table th { background: color-mix(in srgb, var(--ui-primary-color) 5%, var(--ui-background-color)); color: var(--ui-secondary-text-color); font-size: .78rem; letter-spacing: .06em; padding: 13px 22px; text-align: left; text-transform: uppercase; }
+.promotion-table td { border-top: 1px solid var(--ui-border-color); padding: 16px 22px; vertical-align: middle; }
+.promotion-table td strong { display: block; font-size: .98rem; }
+.promotion-plan-description { color: var(--ui-secondary-text-color); display: block; font-size: .86rem; line-height: 1.45; margin-top: 4px; max-width: 540px; }
+.promotion-fee { font-weight: 700; white-space: nowrap; }
+.promotion-actions-column { text-align: right !important; }
+.promotion-row-actions { align-items: center; display: flex; gap: 8px; justify-content: flex-end; white-space: nowrap; }
+.promotion-row-actions button { min-height: 38px !important; padding: 0 14px !important; }
+.promotion-empty { color: var(--ui-secondary-text-color); padding: 30px !important; text-align: center; }
+.promotion-settings-form { display: grid; gap: 18px; min-width: min(500px, calc(100vw - 88px)); }
+.promotion-settings-form > p { color: var(--ui-secondary-text-color); margin: 0; max-width: 480px; }
+.promotion-request-list article { align-items: center; border-top: 1px solid var(--ui-border-color); display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr) auto auto; padding: 16px 22px; }
+.promotion-request-list article > div:first-child { display: grid; gap: 4px; }
+.promotion-request-list article span { color: var(--ui-secondary-text-color); font-size: .88rem; }
+.promotion-plan-form { display: grid; gap: 18px; min-width: min(520px, calc(100vw - 88px)); padding-top: 4px; }
+.promotion-plan-form-row { display: grid; gap: 14px; grid-template-columns: 1fr 1fr; }
+.promotion-active-toggle { align-items: flex-start; cursor: pointer; display: flex; gap: 12px; }
+.promotion-active-toggle input { accent-color: var(--ui-primary-color); height: 18px; margin-top: 2px; width: 18px; }
+.promotion-active-toggle span { color: var(--ui-primary-text-color); display: grid; gap: 3px; }
+.promotion-active-toggle small { color: var(--ui-secondary-text-color); }
+.promotion-hidden-submit { display: none; }
+.promotion-delete-copy { color: var(--ui-secondary-text-color); margin: 0; max-width: 520px; }
+.promotion-delete-copy strong { color: var(--ui-primary-text-color); }
+
+@media (max-width: 760px) {
+  .promotion-section-heading { align-items: flex-start; gap: 16px; }
+  .promotion-header-actions { flex-shrink: 0; }
+  .promotion-settings-form { min-width: 0; }
+  .promotion-plan-form { min-width: 0; }
+  .promotion-plan-form-row { grid-template-columns: 1fr; }
+  .promotion-request-list article { align-items: start; grid-template-columns: 1fr; }
+  .promotion-row-actions { justify-content: flex-start; }
+}

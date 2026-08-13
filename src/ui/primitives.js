@@ -478,7 +478,7 @@ export function Modal({ actions, children, contentClassName, contentStyle, inlin
         overflowY: 'auto',
         padding: 20,
         position: 'fixed',
-        zIndex: 50,
+        zIndex: 1000,
       }}
     >
       {modalContent}

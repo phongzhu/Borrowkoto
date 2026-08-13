@@ -2331,13 +2331,8 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
           setMessage(`Payment succeeded. ${updatedCount} booking(s) were auto-approved, but ${failedIds.length} booking(s) still need attention.`);
           setMessageTone('warning');
         } else if (transactionRecordFailures?.length) {
-          const firstFailure = String(transactionRecordFailures[0] || '');
-          const failureReason = firstFailure.includes(':') ? firstFailure.split(':').slice(1).join(':').trim() : firstFailure;
-          setMessage(
-            `Payment succeeded. ${updatedCount} booking(s) were automatically approved, but ${transactionRecordFailures.length} payment record(s) failed to save.${
-              failureReason ? ` Reason: ${failureReason}` : ''
-            }`
-          );
+          console.warn('Payment transaction records need synchronization:', transactionRecordFailures);
+          setMessage(`Payment completed and ${updatedCount} booking(s) were approved. Your receipt is still being synchronized.`);
           setMessageTone('warning');
         } else {
           setMessage(`Payment succeeded. ${updatedCount} booking(s) were automatically approved.`);
@@ -4844,23 +4839,26 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
             display: 'flex',
             inset: 0,
             justifyContent: 'flex-end',
-            padding: 16,
+            padding: 18,
             pointerEvents: 'none',
             position: 'fixed',
-            zIndex: 70,
+            zIndex: 1100,
           }}
         >
           <div
-            className="glass-panel"
+            className="booking-notice"
             onClick={(event) => event.stopPropagation()}
             style={{
-              borderRadius: 16,
+              background: 'var(--ui-background-color)',
+              border: '1px solid var(--ui-border-color)',
+              borderRadius: 12,
+              boxShadow: '0 18px 50px rgba(24, 33, 46, 0.16)',
               boxSizing: 'border-box',
               display: 'grid',
-              gap: 10,
-              maxWidth: 420,
+              gap: 12,
+              maxWidth: 390,
               minWidth: 280,
-              padding: 14,
+              padding: 16,
               pointerEvents: 'auto',
               width: '100%',
             }}
@@ -4877,16 +4875,14 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                 style={{
                   color: theme.colors.ink,
                   fontFamily: theme.fonts.display,
-                  fontSize: 22,
+                  fontSize: 18,
                   letterSpacing: '-0.03em',
                   lineHeight: 1.1,
                 }}
               >
                 Notice
               </strong>
-              <Button onClick={() => setMessage('')} type="button" variant="ghost">
-                Close
-              </Button>
+              <button aria-label="Close notice" onClick={() => setMessage('')} style={{ background: 'transparent', color: 'var(--ui-text-color)', cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: 4 }} type="button">×</button>
             </div>
             <StatusMessage tone={messageTone}>{message}</StatusMessage>
           </div>

@@ -64,8 +64,11 @@ function applyDocumentStyles(settings) {
 
   // Primary, secondary, and tertiary colors
   root.style.setProperty('--ui-primary-color', settings.primary_color || theme.colors.teal);
+  root.style.setProperty('--ui-primary-text-color', settings.primary_text_color || '#ffffff');
   root.style.setProperty('--ui-secondary-color', settings.secondary_color || theme.colors.coral);
+  root.style.setProperty('--ui-secondary-text-color', settings.secondary_text_color || theme.colors.ink);
   root.style.setProperty('--ui-tertiary-color', resolvedBackground);
+  root.style.setProperty('--ui-tertiary-text-color', settings.tertiary_text_color || theme.colors.ink);
 
   // Tertiary color is the system background color.
   root.style.setProperty('--ui-text-color', theme.colors.ink);

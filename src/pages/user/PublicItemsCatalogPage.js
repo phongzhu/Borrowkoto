@@ -163,11 +163,11 @@ function LogoMark({ logoUrl, brandName }) {
 
 function ProductImage({ item }) {
   const imageUrl = item.primaryImage?.image_url;
-  if (imageUrl) return <img alt={item.title} src={imageUrl} />;
+  if (imageUrl) return <><img alt={item.title} src={imageUrl} />{item.isPromoted ? <span className="item-promotion-badge">Promoted</span> : null}</>;
   return (
-    <div className="market-product-placeholder">
+    <><div className="market-product-placeholder">
       <span>{item.title?.slice(0, 1)?.toUpperCase() || 'I'}</span>
-    </div>
+    </div>{item.isPromoted ? <span className="item-promotion-badge">Promoted</span> : null}</>
   );
 }
 
@@ -259,7 +259,7 @@ export default function PublicItemsCatalogPage() {
       setLoading(true);
       setError('');
 
-      const [categoriesResult, itemsResult, viewCountsResult] = await Promise.all([
+      const [categoriesResult, itemsResult, viewCountsResult, promotionsResult] = await Promise.all([
         supabase
           .from('categories')
           .select('id, name, parent_category_id')
@@ -279,6 +279,9 @@ export default function PublicItemsCatalogPage() {
           .select('item_id, total_views')
           .order('total_views', { ascending: false })
           .limit(500),
+        supabase
+          .from('active_item_promotions')
+          .select('item_id'),
       ]);
 
       if (!mounted) return;
@@ -290,6 +293,9 @@ export default function PublicItemsCatalogPage() {
       if (categoriesResult.error) nextErrors.push(`categories: ${categoriesResult.error.message}`);
       if (itemsResult.error) nextErrors.push(`items: ${itemsResult.error.message}`);
       if (viewCountsResult.error) nextErrors.push(`item_daily_view_counts: ${viewCountsResult.error.message}`);
+      if (promotionsResult.error) nextErrors.push(`active_item_promotions: ${promotionsResult.error.message}`);
+
+      const promotedItemIds = new Set((promotionsResult.data || []).map((row) => row.item_id));
 
       const itemIds = rawItems.map((item) => item.id);
       const ownerIds = Array.from(new Set(rawItems.map((item) => item.owner_id).filter(Boolean)));
@@ -378,6 +384,7 @@ export default function PublicItemsCatalogPage() {
 
         return {
           ...item,
+          isPromoted: promotedItemIds.has(item.id),
           category: categoryMap.get(item.category_id) || null,
           owner: ownerProfile,
           ownerAverageRating,

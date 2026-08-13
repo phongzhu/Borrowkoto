@@ -385,15 +385,20 @@ function DetailIcon({ type, size = 18 }) {
 }
 
 function BorrowKoToItemLoader() {
+  const hand = (
+    <>
+      <path className="hand-sleeve" d="M8 45h35v78H8Z" />
+      <path d="M43 51c13 0 22-2 31-10l22-20c7-6 16-5 20 1 3 5 2 10-2 15L99 52h91c9 0 14 5 13 12-1 6-6 9-13 10l-62 4 55 5c8 1 12 5 11 12-1 6-6 9-13 9l-58-2 45 10c7 2 10 7 8 13-2 6-7 8-14 7l-70-14c-10-2-18 0-26 6l-17 13H43Z" />
+      <path className="hand-detail" d="M75 79c12-1 21 3 27 11M67 116c8-7 17-10 29-9" />
+    </>
+  );
+
   return (
     <section aria-live="polite" aria-label="Loading item details" className="borrow-item-loader" role="status">
       <div className="borrow-item-loader-scene" aria-hidden="true">
         <span className="borrow-item-loader-orbit orbit-one" />
         <span className="borrow-item-loader-orbit orbit-two" />
-        <svg className="borrow-item-loader-hand hand-left" viewBox="0 0 170 105">
-          <path d="M9 59h28l22-18c7-6 17-7 25-2l13 8h38c14 0 23 14 16 26-3 6-10 9-17 9H82l-21 15H22Z" />
-          <path d="m42 59 20 22M82 62h48" />
-        </svg>
+        <svg className="borrow-item-loader-hand hand-left" viewBox="0 0 212 150">{hand}</svg>
         <div className="borrow-item-loader-box">
           <svg viewBox="0 0 92 92">
             <path d="M12 28 46 10l34 18-34 18Z" />
@@ -401,10 +406,12 @@ function BorrowKoToItemLoader() {
             <path d="m29 19 34 18v18" />
           </svg>
         </div>
-        <svg className="borrow-item-loader-hand hand-right" viewBox="0 0 170 105">
-          <path d="M9 59h28l22-18c7-6 17-7 25-2l13 8h38c14 0 23 14 16 26-3 6-10 9-17 9H82l-21 15H22Z" />
-          <path d="m42 59 20 22M82 62h48" />
-        </svg>
+        <svg className="borrow-item-loader-hand hand-right" viewBox="0 0 212 150">{hand}</svg>
+      </div>
+      <div className="borrow-item-loader-copy">
+        <strong>Getting the item ready</strong>
+        <span>Checking details and availability</span>
+        <i aria-hidden="true"><b /><b /><b /></i>
       </div>
     </section>
   );
@@ -458,11 +465,7 @@ export default function ViewItemList({ publicMode = false }) {
     const bounds = event.currentTarget.getBoundingClientRect();
     const xPercent = ((event.clientX - bounds.left) / Math.max(bounds.width, 1)) * 100;
     const yPercent = ((event.clientY - bounds.top) / Math.max(bounds.height, 1)) * 100;
-    setViewerZoom({
-      active: true,
-      xPercent: Math.min(100, Math.max(0, xPercent)),
-      yPercent: Math.min(100, Math.max(0, yPercent)),
-    });
+    setViewerZoom({ active: true, xPercent: Math.min(100, Math.max(0, xPercent)), yPercent: Math.min(100, Math.max(0, yPercent)) });
   }
 
   function resetViewerZoom() {
@@ -488,7 +491,6 @@ export default function ViewItemList({ publicMode = false }) {
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [imageViewerOpen, viewerImageCount]);
-
   useEffect(() => {
     let mounted = true;
 
@@ -675,7 +677,7 @@ export default function ViewItemList({ publicMode = false }) {
       const relatedOwnerIds = Array.from(new Set(relatedRawItems.map((relatedItem) => relatedItem.owner_id).filter(Boolean)));
       const relatedItemIds = relatedRawItems.map((relatedItem) => relatedItem.id);
 
-      const [relatedOwnersResult, relatedImagesResult] = await Promise.all([
+      const [relatedOwnersResult, relatedImagesResult, relatedPromotionsResult] = await Promise.all([
         relatedOwnerIds.length
           ? supabase
               .from('profiles')
@@ -691,6 +693,9 @@ export default function ViewItemList({ publicMode = false }) {
               .in('item_id', relatedItemIds)
               .order('sort_order', { ascending: true })
           : Promise.resolve({ data: [], error: null }),
+        relatedItemIds.length
+          ? supabase.from('active_item_promotions').select('item_id').in('item_id', relatedItemIds)
+          : Promise.resolve({ data: [], error: null }),
       ]);
 
       if (!mounted) {
@@ -704,6 +709,11 @@ export default function ViewItemList({ publicMode = false }) {
       if (relatedImagesResult.error) {
         nextErrors.push(`related images: ${relatedImagesResult.error.message}`);
       }
+      if (relatedPromotionsResult.error) {
+        nextErrors.push(`related promotions: ${relatedPromotionsResult.error.message}`);
+      }
+
+      const promotedRelatedItemIds = new Set((relatedPromotionsResult.data || []).map((row) => row.item_id));
 
       const relatedOwnerMap = new Map((relatedOwnersResult.data || []).map((profile) => [profile.id, profile]));
       const relatedImagesByItemId = new Map();
@@ -741,6 +751,7 @@ export default function ViewItemList({ publicMode = false }) {
 
         return {
           ...relatedItem,
+          isPromoted: promotedRelatedItemIds.has(relatedItem.id),
           category: categoryResult.data || null,
           images: relatedImages,
           owner: relatedOwnerMap.get(relatedItem.owner_id) || (relatedItem.owner_id === itemRow.owner_id ? ownerResult.data || null : null),
@@ -768,18 +779,6 @@ export default function ViewItemList({ publicMode = false }) {
       mounted = false;
     };
   }, [itemId]);
-
-  useEffect(() => {
-    if (!item?.images?.length || item.images.length < 2) {
-      return undefined;
-    }
-
-    const intervalId = window.setInterval(() => {
-      setActiveImageIndex((current) => (current + 1) % item.images.length);
-    }, 4200);
-
-    return () => window.clearInterval(intervalId);
-  }, [item?.images]);
 
   const ownerName = useMemo(() => buildPersonName(item?.owner) || 'Community member', [item]);
   const brandName = settings.system_name?.trim() || "Borrow Ko 'To";
@@ -880,39 +879,22 @@ export default function ViewItemList({ publicMode = false }) {
   }, [bookedRanges, maxRentalDays, minRentalDays, selectedEnd, selectedStartDate]);
 
   function openItemDetails(nextItem) {
-    navigate(`/user/view-item-list/${nextItem.id}`);
+    navigate(publicMode ? `/items/${nextItem.id}` : `/user/view-item-list/${nextItem.id}`);
   }
 
   function updateQuickViewFromMouse(event) {
     const container = heroImageRef.current;
-    if (!container) {
-      return;
-    }
-
+    if (!container) return;
     const rect = container.getBoundingClientRect();
-    if (!rect.width || !rect.height) {
-      return;
-    }
-
+    if (!rect.width || !rect.height) return;
     const nextX = Math.min(Math.max(event.clientX - rect.left, 0), rect.width);
     const nextY = Math.min(Math.max(event.clientY - rect.top, 0), rect.height);
-    const xPercent = (nextX / rect.width) * 100;
-    const yPercent = (nextY / rect.height) * 100;
-
-    setImageQuickView({ active: true, xPercent, yPercent });
+    setImageQuickView({ active: true, xPercent: (nextX / rect.width) * 100, yPercent: (nextY / rect.height) * 100 });
   }
 
-  function handleQuickViewMouseEnter(event) {
-    updateQuickViewFromMouse(event);
-  }
-
-  function handleQuickViewMouseMove(event) {
-    updateQuickViewFromMouse(event);
-  }
-
-  function handleQuickViewMouseLeave() {
-    setImageQuickView((current) => ({ ...current, active: false }));
-  }
+  function handleQuickViewMouseEnter(event) { updateQuickViewFromMouse(event); }
+  function handleQuickViewMouseMove(event) { updateQuickViewFromMouse(event); }
+  function handleQuickViewMouseLeave() { setImageQuickView((current) => ({ ...current, active: false })); }
 
   function handleSelectedStartChange(nextStart) {
     const nextValue = formatDateTimeLocalValue(nextStart);
@@ -1394,7 +1376,6 @@ export default function ViewItemList({ publicMode = false }) {
                       ))}
                     </div>
                   ) : null}
-
                   <div className="item-detail-hero-quickview">
                     <div
                       className="item-detail-hero-image"
@@ -1409,21 +1390,8 @@ export default function ViewItemList({ publicMode = false }) {
                     >
                       {activeImage?.image_url ? (
                         <>
-                          <img
-                            alt={item.title}
-                            className={imageQuickView.active ? 'is-zoomed' : ''}
-                            src={activeImage.image_url}
-                            style={{ transformOrigin: `${imageQuickView.xPercent}% ${imageQuickView.yPercent}%` }}
-                          />
-                          {imageQuickView.active ? (
-                            <div
-                              className="item-detail-hero-lens"
-                              style={{
-                                left: `${imageQuickView.xPercent}%`,
-                                top: `${imageQuickView.yPercent}%`,
-                              }}
-                            />
-                          ) : null}
+                          <img alt={item.title} className={imageQuickView.active ? 'is-zoomed' : ''} src={activeImage.image_url} style={{ transformOrigin: `${imageQuickView.xPercent}% ${imageQuickView.yPercent}%` }} />
+                          {imageQuickView.active ? <div className="item-detail-hero-lens" style={{ left: `${imageQuickView.xPercent}%`, top: `${imageQuickView.yPercent}%` }} /> : null}
                         </>
                       ) : (
                         <div className="item-detail-image-empty">No image available</div>
@@ -1849,14 +1817,7 @@ export default function ViewItemList({ publicMode = false }) {
             <section className="item-detail-wide-section">
               <div className="item-detail-section-head item-detail-owner-more-head"><h2>More from this owner</h2><button onClick={() => setOwnerProfileOpen(true)} type="button">View Profile</button></div>
               <div className="item-detail-related-grid">
-                {ownerOtherItems.length ? ownerOtherItems.slice(0, 4).map((relatedItem) => <article key={relatedItem.id} onClick={() => openItemDetails(relatedItem)} role="button" tabIndex={0}><div className="item-detail-related-image">{relatedItem.primaryImage?.image_url ? <img alt={relatedItem.title} src={relatedItem.primaryImage.image_url} /> : <span>{relatedItem.title?.charAt(0) || 'I'}</span>}</div><div className="item-detail-related-body"><strong>{relatedItem.title}</strong><span>{relatedItem.category?.name || formatListingStatusLabel(relatedItem.item_condition)}</span><p>{currencyFormatter.format(Number(relatedItem.rental_price_per_day) || 0)} <small>/ day</small></p></div></article>) : <div className="item-detail-related-empty"><StatusMessage tone="info">This owner does not have other active product listings right now.</StatusMessage></div>}
-              </div>
-            </section>
-
-            <section className="item-detail-wide-section">
-              <div className="item-detail-section-head"><h2>Similar items</h2><span>{item.category?.name || 'Same category'}</span></div>
-              <div className="item-detail-related-grid">
-                {sameCategoryItems.length ? sameCategoryItems.slice(0, 4).map((relatedItem) => <article key={relatedItem.id} onClick={() => openItemDetails(relatedItem)} role="button" tabIndex={0}><div className="item-detail-related-image">{relatedItem.primaryImage?.image_url ? <img alt={relatedItem.title} src={relatedItem.primaryImage.image_url} /> : <span>{relatedItem.title?.charAt(0) || 'I'}</span>}</div><div className="item-detail-related-body"><strong>{relatedItem.title}</strong><span>{relatedItem.category?.name || formatListingStatusLabel(relatedItem.item_condition)}</span><p>{currencyFormatter.format(Number(relatedItem.rental_price_per_day) || 0)} <small>/ day</small></p></div></article>) : <div className="item-detail-related-empty"><StatusMessage tone="info">No similar active listings are available in this category right now.</StatusMessage></div>}
+                {ownerOtherItems.length ? ownerOtherItems.slice(0, 4).map((relatedItem) => <article key={relatedItem.id} onClick={() => openItemDetails(relatedItem)} role="button" tabIndex={0}><div className="item-detail-related-image">{relatedItem.primaryImage?.image_url ? <img alt={relatedItem.title} src={relatedItem.primaryImage.image_url} /> : <span>{relatedItem.title?.charAt(0) || 'I'}</span>}{relatedItem.isPromoted ? <span className="item-promotion-badge">Promoted</span> : null}</div><div className="item-detail-related-body"><strong>{relatedItem.title}</strong><span>{relatedItem.category?.name || formatListingStatusLabel(relatedItem.item_condition)}</span><p>{currencyFormatter.format(Number(relatedItem.rental_price_per_day) || 0)} <small>/ day</small></p></div></article>) : <div className="item-detail-related-empty"><StatusMessage tone="info">This owner does not have other active product listings right now.</StatusMessage></div>}
               </div>
             </section>
 
@@ -1865,23 +1826,21 @@ export default function ViewItemList({ publicMode = false }) {
                 <button aria-label="Close image gallery" className="item-detail-image-viewer-close" onClick={() => setImageViewerOpen(false)} type="button">×</button>
                 {galleryImages.length > 1 ? <button aria-label="Previous image" className="item-detail-image-viewer-arrow previous" onClick={() => setActiveImageIndex((current) => (current - 1 + galleryImages.length) % galleryImages.length)} type="button">←</button> : null}
                 <div className="item-detail-image-viewer-stage">
-                  <img
-                    alt={item.title}
-                    className={`item-detail-image-viewer-main${viewerZoom.active ? ' is-zoomed' : ''}`}
-                    onMouseEnter={updateViewerZoom}
-                    onMouseLeave={resetViewerZoom}
-                    onMouseMove={updateViewerZoom}
-                    src={activeImage.image_url}
-                    style={{ transformOrigin: `${viewerZoom.xPercent}% ${viewerZoom.yPercent}%` }}
-                  />
-                  <span className="item-detail-image-viewer-zoom-hint" aria-hidden="true">
-                    {viewerZoom.active ? '−' : '+'}
-                  </span>
+                  <img alt={item.title} className={`item-detail-image-viewer-main${viewerZoom.active ? ' is-zoomed' : ''}`} onMouseEnter={updateViewerZoom} onMouseLeave={resetViewerZoom} onMouseMove={updateViewerZoom} src={activeImage.image_url} style={{ transformOrigin: `${viewerZoom.xPercent}% ${viewerZoom.yPercent}%` }} />
+                  <span className="item-detail-image-viewer-zoom-hint" aria-hidden="true">{viewerZoom.active ? '−' : '+'}</span>
                 </div>
                 {galleryImages.length > 1 ? <button aria-label="Next image" className="item-detail-image-viewer-arrow next" onClick={() => setActiveImageIndex((current) => (current + 1) % galleryImages.length)} type="button">→</button> : null}
                 {galleryImages.length ? <div className="item-detail-image-viewer-thumbs">{galleryImages.map((image, index) => <button aria-label={`View image ${index + 1}`} className={index === activeImageIndex ? 'active' : ''} key={image.id || image.image_url} onClick={() => setActiveImageIndex(index)} type="button"><img alt="" src={image.image_url} /></button>)}</div> : null}
               </div>
             ) : null}
+
+            <section className="item-detail-wide-section">
+              <div className="item-detail-section-head"><h2>Similar items</h2><span>{item.category?.name || 'Same category'}</span></div>
+              <div className="item-detail-related-grid">
+                {sameCategoryItems.length ? sameCategoryItems.slice(0, 4).map((relatedItem) => <article key={relatedItem.id} onClick={() => openItemDetails(relatedItem)} role="button" tabIndex={0}><div className="item-detail-related-image">{relatedItem.primaryImage?.image_url ? <img alt={relatedItem.title} src={relatedItem.primaryImage.image_url} /> : <span>{relatedItem.title?.charAt(0) || 'I'}</span>}{relatedItem.isPromoted ? <span className="item-promotion-badge">Promoted</span> : null}</div><div className="item-detail-related-body"><strong>{relatedItem.title}</strong><span>{relatedItem.category?.name || formatListingStatusLabel(relatedItem.item_condition)}</span><p>{currencyFormatter.format(Number(relatedItem.rental_price_per_day) || 0)} <small>/ day</small></p></div></article>) : <div className="item-detail-related-empty"><StatusMessage tone="info">No similar active listings are available in this category right now.</StatusMessage></div>}
+              </div>
+            </section>
+
           </>
         ) : null}
         </main>

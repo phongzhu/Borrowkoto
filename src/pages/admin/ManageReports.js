@@ -13,6 +13,7 @@ const categoryOptions = [
   { label: 'Returns', value: 'returns' },
   { label: 'Reviews', value: 'reviews' },
   { label: 'Payments', value: 'payments' },
+  { label: 'Promotion income', value: 'promotion_income' },
   { label: 'Verifications', value: 'verifications' },
 ];
 
@@ -284,6 +285,26 @@ function normalizePayments(records, profileById = new Map()) {
   }));
 }
 
+function normalizePromotionIncome(records, profileById = new Map()) {
+  return (records || []).map((item) => ({
+    assets: [],
+    category: 'promotion_income',
+    categoryLabel: 'Promotion income',
+    date: item.paid_at,
+    details: joinParts([
+      `Lender: ${resolveIdentity(profileById, item.lender_id)}`,
+      `Item: ${item.item_id}`,
+      `Checkout: ${item.paymongo_checkout_session_id}`,
+      item.paymongo_payment_id ? `Payment: ${item.paymongo_payment_id}` : '',
+    ]),
+    id: `promotion-income-${item.id}`,
+    paymentAmount: Number(item.amount) || 0,
+    reference: item.promotion_id,
+    status: item.status,
+    subject: `${currencyFormatter.format(Number(item.amount) || 0)} banner promotion`,
+  }));
+}
+
 function normalizeVerifications(records) {
   return (records || []).map((item) => ({
     assets: [
@@ -392,6 +413,15 @@ export default function ManageReports() {
             .limit(50),
         },
         {
+          label: 'promotion_payments',
+          normalize: normalizePromotionIncome,
+          request: supabase
+            .from('promotion_payments')
+            .select('id, promotion_id, lender_id, item_id, paymongo_checkout_session_id, paymongo_payment_id, amount, currency, status, paid_at')
+            .order('paid_at', { ascending: false })
+            .limit(50),
+        },
+        {
           label: 'identity_verifications',
           normalize: normalizeVerifications,
           request: supabase
@@ -431,6 +461,9 @@ export default function ManageReports() {
       (resultByLabel.get('payment_transactions') || []).forEach((row) => {
         if (row.payer_id) profileIds.add(row.payer_id);
         if (row.payee_id) profileIds.add(row.payee_id);
+      });
+      (resultByLabel.get('promotion_payments') || []).forEach((row) => {
+        if (row.lender_id) profileIds.add(row.lender_id);
       });
 
       let profileById = new Map();
@@ -706,6 +739,10 @@ export default function ManageReports() {
 
         return sum + (Number(record.paymentAmount) || 0);
       }, 0),
+    [records]
+  );
+  const promotionIncome = useMemo(
+    () => records.reduce((sum, record) => record.category === 'promotion_income' && record.status === 'paid' ? sum + (Number(record.paymentAmount) || 0) : sum, 0),
     [records]
   );
 
@@ -1049,7 +1086,7 @@ export default function ManageReports() {
       </Modal>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-        <SectionGrid columns={4} style={{ gap: 16, position: 'relative', zIndex: 1 }}>
+        <SectionGrid columns={5} style={{ gap: 16, position: 'relative', zIndex: 1 }}>
           <MetricCard
             detail="Combined records loaded from the report-related tables in Supabase."
             icon={<span style={{ fontSize: 18, fontWeight: 700 }}>#</span>}
@@ -1077,6 +1114,13 @@ export default function ManageReports() {
             label="Commission Income"
             tone={theme.colors.sky}
             value={loading ? 'Loading...' : currencyFormatter.format(commissionIncome)}
+          />
+          <MetricCard
+            detail="Total paid lender banner-promotion fees received by the platform."
+            icon={<span style={{ fontSize: 18, fontWeight: 700 }}>+</span>}
+            label="Promotion Income"
+            tone={theme.colors.teal}
+            value={loading ? 'Loading...' : currencyFormatter.format(promotionIncome)}
           />
         </SectionGrid>
 

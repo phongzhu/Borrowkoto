@@ -1,6 +1,7 @@
 const { createProxyMiddleware } = require('http-proxy-middleware');
 
 const PAYMONGO_TEST_SECRET_KEY_ENV_KEYS = Object.freeze([
+  'PAYMONGO_TEST_SECRET_KEY',
   'REACT_APP_PAYMONGO_TEST_SECRET_KEY',
   'REACT_APP_PAYMONGO_SECRET_KEY',
 ]);

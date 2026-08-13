@@ -1,28 +1,6 @@
-const PAYMONGO_TEST_API_BASE_URL =
-  process.env.NODE_ENV === 'development' ? '/api/paymongo/v1' : 'https://api.paymongo.com/v1';
+const PAYMONGO_TEST_API_BASE_URL = '/api/paymongo/v1';
 
 const DEFAULT_CHECKOUT_PAYMENT_METHOD_TYPES = Object.freeze(['card', 'qrph']);
-
-function readPayMongoTestSecretKey() {
-  const secretKey = [
-    process.env.REACT_APP_PAYMONGO_TEST_SECRET_KEY,
-    process.env.REACT_APP_PAYMONGO_SECRET_KEY,
-  ].find((value) => typeof value === 'string' && value.trim());
-
-  if (!secretKey) {
-    throw new Error(
-      'PayMongo test secret key is not configured. Set REACT_APP_PAYMONGO_TEST_SECRET_KEY to a PayMongo test key.'
-    );
-  }
-
-  const trimmedKey = secretKey.trim();
-
-  if (!trimmedKey.startsWith('sk_test_')) {
-    throw new Error('Only PayMongo test keys are allowed in this project.');
-  }
-
-  return trimmedKey;
-}
 
 function toCentavos(amount) {
   const numericAmount = Number(amount);
@@ -34,24 +12,8 @@ function toCentavos(amount) {
   return Math.round(numericAmount * 100);
 }
 
-function toBase64(value) {
-  if (typeof btoa === 'function') {
-    return btoa(value);
-  }
-
-  return Buffer.from(value).toString('base64');
-}
-
 function buildPayMongoHeaders() {
-  if (process.env.NODE_ENV === 'development') {
-    return {
-      'Content-Type': 'application/json',
-    };
-  }
-
-  const secretKey = readPayMongoTestSecretKey();
   return {
-    Authorization: `Basic ${toBase64(`${secretKey}:`)}`,
     'Content-Type': 'application/json',
   };
 }
@@ -354,11 +316,7 @@ export function buildTransactionPayload({
 }
 
 export function isPayMongoTestKeyConfigured() {
-  try {
-    return Boolean(readPayMongoTestSecretKey());
-  } catch (error) {
-    return false;
-  }
+  return process.env.REACT_APP_PAYMONGO_CONFIGURED === 'true';
 }
 
 const transactionService = {

@@ -15,12 +15,16 @@ import ListItemLanding from './pages/user/ListItemLanding';
 import UserRentalsCalendar from './pages/user/UserRentalsCalendar';
 import RentalIncome from './pages/user/RentalIncome';
 import SavedListings from './pages/user/SavedListings';
+import Rewards from './pages/user/Rewards';
+import Promotions from './pages/user/Promotions';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import ManageCatalog from './pages/admin/ManageCatalog';
 import AdminProfile from './pages/admin/AdminProfile';
 import ManageUsers from './pages/admin/ManageUsers';
 import ManageReports from './pages/admin/ManageReports';
 import UISettings from './pages/admin/UISettings';
+import PromotionSettings from './pages/admin/PromotionSettings';
+import VoucherRewards from './pages/admin/VoucherRewards';
 import TransactionsTesting from './services/transactions_testing';
 import ProtectedRoute from './components/ProtectedRoute';
 import { AuthProvider } from './context/AuthContext';
@@ -42,6 +46,8 @@ export default function Root() {
             <Route path="/user/dashboard" element={<UserDashboard />} />
             <Route path="/user/browse-listings" element={<Navigate to="/" replace />} />
             <Route path="/user/saved-listings" element={<SavedListings />} />
+            <Route path="/user/rewards" element={<Rewards />} />
+            <Route path="/user/promotions" element={<Promotions />} />
             <Route path="/user/view-item-list/:itemId" element={<ViewItemList />} />
             <Route path="/user/rent-item/:itemId" element={<RentItem />} />
             <Route path="/user/rental-items" element={<MyBookings viewMode="rental-items" />} />
@@ -64,6 +70,8 @@ export default function Root() {
             <Route path="/admin/catalog" element={<ManageCatalog />} />
             <Route path="/admin/reports" element={<ManageReports />} />
             <Route path="/admin/ui-settings" element={<UISettings />} />
+            <Route path="/admin/promotion-settings" element={<PromotionSettings />} />
+            <Route path="/admin/voucher-rewards" element={<VoucherRewards />} />
             <Route path="/services/transactions-testing" element={<TransactionsTesting />} />
           </Route>
           </Routes>

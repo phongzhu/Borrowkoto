@@ -4,7 +4,7 @@ import { supabase } from '../../api/supabaseClient';
 import { useUISettings } from '../../context/UISettingsContext';
 import { ArrowRightIcon, EyeIcon, EyeOffIcon, KeyIcon, LockIcon, MailIcon } from '../../ui/icons';
 import { AuthLayout } from '../../ui/layouts';
-import { AuthInput, Button, FormField, StatusMessage } from '../../ui/primitives';
+import { AuthInput, Button, FormField, Modal, StatusMessage } from '../../ui/primitives';
 import { theme } from '../../ui/theme';
 import termsPdf from '../../assets/Borrow_Ko_To_Terms_and_Conditions.pdf';
 
@@ -14,6 +14,7 @@ export default function UserSignupPage() {
   const [password, setPassword] = useState('');
   const [otp, setOtp] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [termsOpen, setTermsOpen] = useState(false);
   const [termsViewed, setTermsViewed] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [error, setError] = useState('');
@@ -100,7 +101,7 @@ export default function UserSignupPage() {
 
   function handleViewTerms() {
     setTermsViewed(true);
-    window.open(termsPdf, '_blank', 'noopener,noreferrer');
+    setTermsOpen(true);
   }
 
   async function handleVerifyOtp(event) {
@@ -280,6 +281,24 @@ export default function UserSignupPage() {
               View terms
             </button>
           </div>
+
+          <Modal
+            actions={(
+              <Button onClick={() => setTermsOpen(false)} type="button" variant="secondary">
+                Close
+              </Button>
+            )}
+            contentStyle={{ width: 'min(900px, calc(100vw - 40px))' }}
+            onClose={() => setTermsOpen(false)}
+            open={termsOpen}
+            title="Terms and Agreement"
+          >
+            <iframe
+              src={termsPdf}
+              style={{ border: 0, display: 'block', height: '65vh', width: '100%' }}
+              title="Borrow Ko To Terms and Agreement"
+            />
+          </Modal>
 
           {error ? <StatusMessage tone="danger">{error}</StatusMessage> : null}
 
