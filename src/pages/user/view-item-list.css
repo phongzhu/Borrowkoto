@@ -1516,7 +1516,7 @@
   object-fit: cover;
 }
 
-.item-detail-related-image > span {
+.item-detail-related-image > span:not(.item-promotion-badge) {
   color: #fff;
   font-size: 38px;
   font-weight: 800;

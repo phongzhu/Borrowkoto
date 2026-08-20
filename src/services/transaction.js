@@ -1,3 +1,5 @@
+import { supabase } from '../api/supabaseClient';
+
 const PAYMONGO_TEST_API_BASE_URL = '/api/paymongo/v1';
 
 const DEFAULT_CHECKOUT_PAYMENT_METHOD_TYPES = Object.freeze(['card', 'qrph']);
@@ -12,18 +14,16 @@ function toCentavos(amount) {
   return Math.round(numericAmount * 100);
 }
 
-function buildPayMongoHeaders() {
-  return {
-    'Content-Type': 'application/json',
-  };
-}
-
 async function paymongoRequest(path, options = {}) {
   const { body, method = 'POST', signal } = options;
 
+  const { data: { session } } = await supabase.auth.getSession();
   const response = await fetch(`${PAYMONGO_TEST_API_BASE_URL}${path}`, {
     body: body ? JSON.stringify(body) : undefined,
-    headers: buildPayMongoHeaders(),
+    headers: {
+      'Content-Type': 'application/json',
+      ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+    },
     method,
     signal,
   });
@@ -32,7 +32,7 @@ async function paymongoRequest(path, options = {}) {
 
   if (!response.ok) {
     const firstError = payload?.errors?.[0];
-    const apiMessage = firstError?.detail || firstError?.code || firstError?.title || '';
+    const apiMessage = payload?.error || firstError?.detail || firstError?.code || firstError?.title || '';
     const fallbackMessage = `PayMongo request failed (${response.status} ${response.statusText || 'unknown'})`;
     throw new Error(apiMessage ? `${apiMessage} (${response.status} ${response.statusText || 'unknown'})` : fallbackMessage);
   }

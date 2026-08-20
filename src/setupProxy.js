@@ -1,6 +1,7 @@
 const { createProxyMiddleware } = require('http-proxy-middleware');
 
 const PAYMONGO_TEST_SECRET_KEY_ENV_KEYS = Object.freeze([
+  'PAYMONGO_SECRET_KEY',
   'PAYMONGO_TEST_SECRET_KEY',
   'REACT_APP_PAYMONGO_TEST_SECRET_KEY',
   'REACT_APP_PAYMONGO_SECRET_KEY',
@@ -20,6 +21,17 @@ function readPayMongoTestSecretKey() {
 }
 
 module.exports = function setupPayMongoProxy(app) {
+  app.use('/api/paymongo', (request, response, next) => {
+    if (!readPayMongoTestSecretKey()) {
+      response.status(503).json({
+        error: 'PayMongo is not configured locally. Add PAYMONGO_SECRET_KEY=sk_test_... to .env.local, then restart the development server.',
+      });
+      return;
+    }
+
+    next();
+  });
+
   app.use(
     '/api/paymongo',
     createProxyMiddleware({
