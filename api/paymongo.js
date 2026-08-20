@@ -4,20 +4,20 @@ const SUPABASE_URL = 'https://fndvviirhvqrocuycpfr.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZuZHZ2aWlyaHZxcm9jdXljcGZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxNjM2NDksImV4cCI6MjA5MTczOTY0OX0.FnSt0xhlEIiYur5ye4S1xm9SueGQm5lsArsJlHkX08M';
 
 const allowedRequests = [
-  { method: 'POST', path: /^v1\/payment_intents$/ },
-  { method: 'POST', path: /^v1\/payment_intents\/[^/]+\/attach$/ },
-  { method: 'POST', path: /^v1\/payment_methods$/ },
-  { method: 'GET', path: /^v1\/merchants\/capabilities\/payment_methods$/ },
-  { method: 'POST', path: /^v1\/checkout_sessions$/ },
+  { method: 'POST', path: /^\/payment_intents$/ },
+  { method: 'POST', path: /^\/payment_intents\/[^/]+\/attach$/ },
+  { method: 'POST', path: /^\/payment_methods$/ },
+  { method: 'GET', path: /^\/merchants\/capabilities\/payment_methods$/ },
+  { method: 'POST', path: /^\/checkout_sessions$/ },
 ];
 
 module.exports = async function handler(request, response) {
-  const pathParts = Array.isArray(request.query.path) ? request.query.path : [request.query.path].filter(Boolean);
-  const path = pathParts.join('/');
-  const method = String(request.method || '').toUpperCase();
+  if (request.method !== 'POST') return response.status(405).json({ error: 'Method not allowed.' });
 
-  if (!allowedRequests.some((entry) => entry.method === method && entry.path.test(path))) {
-    return response.status(405).json({ error: 'Unsupported PayMongo request.' });
+  const upstreamMethod = String(request.body?.method || 'POST').toUpperCase();
+  const upstreamPath = String(request.body?.path || '');
+  if (!allowedRequests.some((entry) => entry.method === upstreamMethod && entry.path.test(upstreamPath))) {
+    return response.status(400).json({ error: 'Unsupported PayMongo request.' });
   }
 
   const token = String(request.headers.authorization || '').replace(/^Bearer\s+/i, '');
@@ -33,13 +33,13 @@ module.exports = async function handler(request, response) {
   if (!secretKey) return response.status(503).json({ error: 'PayMongo is not configured on Vercel.' });
 
   try {
-    const paymongoResponse = await fetch(`https://api.paymongo.com/${path}`, {
-      body: method === 'GET' ? undefined : JSON.stringify(request.body),
+    const paymongoResponse = await fetch(`https://api.paymongo.com/v1${upstreamPath}`, {
+      body: upstreamMethod === 'GET' ? undefined : JSON.stringify(request.body?.body),
       headers: {
         Authorization: `Basic ${Buffer.from(`${secretKey}:`).toString('base64')}`,
         'Content-Type': 'application/json',
       },
-      method,
+      method: upstreamMethod,
     });
     const payload = await paymongoResponse.json().catch(() => null);
     return response.status(paymongoResponse.status).json(payload || { error: 'PayMongo returned an empty response.' });

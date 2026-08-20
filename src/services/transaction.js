@@ -18,13 +18,16 @@ async function paymongoRequest(path, options = {}) {
   const { body, method = 'POST', signal } = options;
 
   const { data: { session } } = await supabase.auth.getSession();
-  const response = await fetch(`${PAYMONGO_TEST_API_BASE_URL}${path}`, {
-    body: body ? JSON.stringify(body) : undefined,
+  const useVercelFunction = process.env.NODE_ENV === 'production';
+  const response = await fetch(useVercelFunction ? '/api/paymongo' : `${PAYMONGO_TEST_API_BASE_URL}${path}`, {
+    body: useVercelFunction
+      ? JSON.stringify({ body, method, path })
+      : body ? JSON.stringify(body) : undefined,
     headers: {
       'Content-Type': 'application/json',
       ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
     },
-    method,
+    method: useVercelFunction ? 'POST' : method,
     signal,
   });
 
