@@ -68,14 +68,6 @@ function statusTone(status) {
   return 'info';
 }
 
-function getVerificationPersistedStatus(nextStatus) {
-  if (nextStatus === 'approved') {
-    return 'verified';
-  }
-
-  return nextStatus;
-}
-
 function getVerificationStatusLabel(status) {
   const normalized = String(status || '').toLowerCase();
 
@@ -331,9 +323,11 @@ function normalizeVerifications(records) {
     reviewProfileLocation: buildProfileLocation(item.profile),
     reviewProfileName: buildProfileName(item.profile) || item.user_id,
     reviewProfileState: item.profile?.is_profile_complete ? 'Complete' : 'Needs completion',
+    reviewProvider: 'Didit',
     reviewRemarks: item.remarks || '',
     reviewSubmittedAt: item.submitted_at,
     reviewUserId: item.user_id,
+    subjectMemberName: buildProfileName(item.profile) || 'Unknown member',
     status: item.status || 'pending',
     subject: item.id_type || 'Identity verification',
   }));
@@ -347,10 +341,8 @@ export default function ManageReports() {
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [selectedVerification, setSelectedVerification] = useState(null);
-  const [reviewRemarks, setReviewRemarks] = useState('');
   const [reviewFeedback, setReviewFeedback] = useState('');
   const [reviewFeedbackTone, setReviewFeedbackTone] = useState('info');
-  const [reviewSaving, setReviewSaving] = useState(false);
   const [selectedDamageClaim, setSelectedDamageClaim] = useState(null);
   const [damageEvidence, setDamageEvidence] = useState([]);
   const [damageReviewAmount, setDamageReviewAmount] = useState('');
@@ -507,75 +499,8 @@ export default function ManageReports() {
 
   function openVerificationReview(record) {
     setSelectedVerification(record);
-    setReviewRemarks(record.reviewRemarks || '');
     setReviewFeedback('');
     setReviewFeedbackTone('info');
-  }
-
-  async function handleVerificationDecision(nextStatus) {
-    if (!selectedVerification || reviewSaving) {
-      return;
-    }
-
-    const normalizedRemarks = reviewRemarks.trim();
-
-    if (nextStatus === 'rejected' && !normalizedRemarks) {
-      setReviewFeedback('State the reason for rejection so the user can see why the submission was declined.');
-      setReviewFeedbackTone('warning');
-      return;
-    }
-
-    setReviewSaving(true);
-    setReviewFeedback('');
-
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) {
-        throw new Error('Admin account not authenticated.');
-      }
-
-      const persistedStatus = getVerificationPersistedStatus(nextStatus);
-      const reviewedAt = new Date().toISOString();
-      const { error: verificationError } = await supabase
-        .from('identity_verifications')
-        .update({
-          remarks: normalizedRemarks || null,
-          reviewed_at: reviewedAt,
-          reviewed_by: user.id,
-          status: persistedStatus,
-        })
-        .eq('id', selectedVerification.reviewId);
-
-      if (verificationError) {
-        throw new Error(verificationError.message);
-      }
-
-      const profileUpdate = {
-        is_verified: nextStatus === 'approved',
-        verification_status: persistedStatus,
-        ...(nextStatus === 'approved' ? { is_profile_complete: true } : {}),
-      };
-
-      const { error: profileError } = await supabase.from('profiles').update(profileUpdate).eq('id', selectedVerification.reviewUserId);
-
-      if (profileError) {
-        throw new Error(profileError.message);
-      }
-
-      setSelectedVerification(null);
-      setReviewRemarks('');
-      setReviewFeedback(nextStatus === 'approved' ? 'Verification approved.' : 'Verification rejected and reason saved.');
-      setReviewFeedbackTone(nextStatus === 'approved' ? 'success' : 'warning');
-      await loadReportFeeds(false);
-    } catch (reviewError) {
-      setReviewFeedback(`Review update failed: ${reviewError.message}`);
-      setReviewFeedbackTone('danger');
-    } finally {
-      setReviewSaving(false);
-    }
   }
 
   async function openDamageClaimReview(record) {
@@ -778,7 +703,7 @@ export default function ManageReports() {
             <div className="admin-report-detail-actions">
               {selectedRecord.category === 'verifications' ? (
                 <Button onClick={() => { setSelectedRecord(null); openVerificationReview(selectedRecord); }} type="button" variant="secondary">
-                  Review submission
+                  View verification
                 </Button>
               ) : selectedRecord.category === 'damage_claims' ? (
                 <Button onClick={() => { setSelectedRecord(null); openDamageClaimReview(selectedRecord); }} type="button" variant="secondary">
@@ -798,18 +723,18 @@ export default function ManageReports() {
         ) : null}
       </Modal>
 
-      <Modal onClose={() => setSelectedVerification(null)} open={Boolean(selectedVerification)} title="Verification review">
+      <Modal onClose={() => setSelectedVerification(null)} open={Boolean(selectedVerification)} title="Verified identity record">
         {selectedVerification ? (
           <div style={{ display: 'grid', gap: 18 }}>
-            <p style={{ color: theme.colors.slate, lineHeight: 1.7, margin: 0 }}>
-              Review the submitted identity verification assets, then approve or reject the record. Rejection remarks will be visible on the user side so they can submit again.
-            </p>
+            <StatusMessage tone="success">
+              This identity was automatically validated by Didit. This record is view-only and does not require admin approval.
+            </StatusMessage>
 
             <SectionGrid columns={3} style={{ gap: 14 }}>
               <MetricCard
-                detail="Current review status of the latest verification submission."
+                detail="Automatically validated by Didit."
                 icon={<span style={{ fontSize: 18, fontWeight: 700 }}>!</span>}
-                label="Status"
+                label="Didit status"
                 style={{ borderRadius: 18, minHeight: 0, padding: 12 }}
                 tone={theme.colors.amber}
                 value={getVerificationStatusLabel(selectedVerification.status)}
@@ -891,6 +816,7 @@ export default function ManageReports() {
                   Submission record
                 </strong>
                 <div style={{ display: 'grid' }}>
+                  <ReviewDetailRow label="Verification provider" value={selectedVerification.reviewProvider} />
                   <ReviewDetailRow label="User ID" value={selectedVerification.reviewUserId} />
                   <ReviewDetailRow label="ID type" value={selectedVerification.subject} />
                   <ReviewDetailRow label="Masked ID" value={readValue(selectedVerification.reviewMaskedId)} />
@@ -949,27 +875,11 @@ export default function ManageReports() {
               ))}
             </div>
 
-            <label style={{ display: 'grid', gap: 10 }}>
-              <span style={{ color: theme.colors.ink, fontSize: 14, fontWeight: 600 }}>Review remarks / rejection reason</span>
-              <Textarea
-                onChange={(event) => setReviewRemarks(event.target.value)}
-                placeholder="State why this verification is being rejected, or leave an approval note."
-                style={{ minHeight: 104 }}
-                value={reviewRemarks}
-              />
-            </label>
-
-            {selectedVerification.reviewRemarks ? <StatusMessage tone="info">Previous remarks: {selectedVerification.reviewRemarks}</StatusMessage> : null}
+            {selectedVerification.reviewRemarks ? <StatusMessage tone="info">Verification note: {selectedVerification.reviewRemarks}</StatusMessage> : null}
 
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, justifyContent: 'flex-end' }}>
               <Button onClick={() => setSelectedVerification(null)} type="button" variant="ghost">
                 Close
-              </Button>
-              <Button disabled={reviewSaving} onClick={() => handleVerificationDecision('rejected')} type="button" variant="danger">
-                Reject
-              </Button>
-              <Button disabled={reviewSaving} onClick={() => handleVerificationDecision('approved')} type="button">
-                Approve
               </Button>
             </div>
           </div>
@@ -1181,6 +1091,7 @@ export default function ManageReports() {
                     <tr>
                       <th style={headerCellStyle}>Category</th>
                       <th style={headerCellStyle}>Subject</th>
+                      <th style={headerCellStyle}>Provider</th>
                       <th style={headerCellStyle}>Status</th>
                       <th style={headerCellStyle}>Date</th>
                       <th style={headerCellStyle}>Action</th>
@@ -1201,8 +1112,17 @@ export default function ManageReports() {
                               letterSpacing: '-0.03em',
                             }}
                           >
-                            {record.subject}
+                            {record.category === 'verifications' ? record.subjectMemberName : record.subject}
                           </strong>
+                          {record.category === 'verifications' ? (
+                            <div style={{ color: theme.colors.slate, display: 'grid', fontSize: 13, gap: 3, marginTop: 6 }}>
+                              <span>{record.subject}</span>
+                              <span style={{ fontFamily: 'monospace', overflowWrap: 'anywhere' }}>User ID: {record.reviewUserId}</span>
+                            </div>
+                          ) : null}
+                        </td>
+                        <td style={bodyCellStyle}>
+                          {record.category === 'verifications' ? <Badge tone="info">Didit</Badge> : <span style={{ color: theme.colors.slate }}>System</span>}
                         </td>
                         <td style={bodyCellStyle}>
                           <Badge tone={statusTone(record.status)}>{getVerificationStatusLabel(record.status)}</Badge>
@@ -1211,7 +1131,13 @@ export default function ManageReports() {
                           <span style={{ color: theme.colors.ink }}>{formatDate(record.date)}</span>
                         </td>
                         <td style={bodyCellStyle}>
-                          <Button onClick={() => setSelectedRecord(record)} type="button" variant="secondary">View</Button>
+                          <Button
+                            onClick={() => record.category === 'verifications' ? openVerificationReview(record) : setSelectedRecord(record)}
+                            type="button"
+                            variant="secondary"
+                          >
+                            View
+                          </Button>
                         </td>
                       </tr>
                     ))}

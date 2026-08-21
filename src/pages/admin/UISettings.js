@@ -265,7 +265,7 @@ export default function UISettings() {
             {error ? <StatusMessage tone="warning">{error}</StatusMessage> : null}
 
             <div className="ui-settings-section ui-settings-name-section">
-            <FormField label="System Name">
+            <FormField label="System Name" required>
                 <Input name="system_name" onChange={handleChange} required value={form.system_name || ''} />
               </FormField>
             <FormField label="System Tagline">

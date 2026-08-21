@@ -18,7 +18,7 @@ const currencyFormatter = new Intl.NumberFormat('en-PH', {
 });
 
 const itemSelectFields =
-  'id, owner_id, category_id, title, rental_price_per_day, security_deposit, min_rental_days, max_rental_days, quantity, pickup_street, pickup_region, pickup_barangay, pickup_city, pickup_province, pickup_country, meetup_notes, status, is_active';
+  'id, owner_id, category_id, title, rental_price_per_day, security_deposit, min_rental_days, max_rental_days, quantity, pickup_street, pickup_region, pickup_barangay, pickup_city, pickup_province, pickup_country, pickup_time, return_time, meetup_notes, status, is_active';
 const SLOT_INTERVAL_MINUTES = 30;
 const COMMISSION_RATE = 0.15;
 
@@ -60,13 +60,20 @@ function calculateRentalDays(startIso, endIso) {
     return 0;
   }
 
-  const millis = end.getTime() - start.getTime();
+  const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+  const millis = endDay.getTime() - startDay.getTime();
 
   if (millis <= 0) {
     return 0;
   }
 
-  return Math.ceil(millis / (1000 * 60 * 60 * 24));
+  return Math.round(millis / (1000 * 60 * 60 * 24));
+}
+
+function matchesListingTime(date, timeValue, fallbackTime) {
+  const [hours, minutes] = String(timeValue || fallbackTime).slice(0, 5).split(':').map(Number);
+  return date.getHours() === hours && date.getMinutes() === minutes;
 }
 
 function isRentableStatus(status) {
@@ -944,6 +951,14 @@ export default function RentItem() {
         throw new Error('Requested end must be later than requested start.');
       }
 
+      if (!matchesListingTime(requestedStartDate, item.pickup_time, '09:00')) {
+        throw new Error(`This item can be claimed at ${String(item.pickup_time || '09:00').slice(0, 5)}.`);
+      }
+
+      if (!matchesListingTime(requestedEndDate, item.return_time, '18:00')) {
+        throw new Error(`This item must be returned by ${String(item.return_time || '18:00').slice(0, 5)}.`);
+      }
+
       const requestedStartIso = requestedStartDate.toISOString();
       const requestedEndIso = requestedEndDate.toISOString();
       const nextRentalDays = calculateRentalDays(requestedStartIso, requestedEndIso);
@@ -1024,6 +1039,10 @@ export default function RentItem() {
 
         if (itemMaxDays !== null && nextRentalDays > itemMaxDays) {
           throw new Error(`${requestedItem.title} allows up to ${itemMaxDays} rental day(s).`);
+        }
+
+        if (!matchesListingTime(requestedStartDate, requestedItem.pickup_time, '09:00') || !matchesListingTime(requestedEndDate, requestedItem.return_time, '18:00')) {
+          throw new Error(`${requestedItem.title} has a different pickup or return schedule and cannot be bundled for these times.`);
         }
       });
 
@@ -1418,25 +1437,27 @@ export default function RentItem() {
                   <div className="rent-summary-date-grid" style={{ display: 'grid', gap: 12, gridTemplateColumns: '1fr 1fr' }}>
                     <div style={{ display: 'grid', gap: 6 }}>
                       <span style={{ color: theme.colors.slate, fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-                        Check-in
+                        Check-in<span aria-hidden="true" className="required-asterisk">*</span>
                       </span>
                       <Input
                         className="rent-summary-date-input"
                         name="requested_start"
-                        onChange={handleFormChange}
+                        readOnly
+                        required
                         type="datetime-local"
                         value={form.requested_start || ''}
                       />
                     </div>
                     <div style={{ display: 'grid', gap: 6 }}>
                       <span style={{ color: theme.colors.slate, fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-                        Check-out
+                        Check-out<span aria-hidden="true" className="required-asterisk">*</span>
                       </span>
                       <Input
                         className="rent-summary-date-input"
                         min={form.requested_start || undefined}
                         name="requested_end"
-                        onChange={handleFormChange}
+                        readOnly
+                        required
                         type="datetime-local"
                         value={form.requested_end || ''}
                       />
@@ -2088,7 +2109,7 @@ export default function RentItem() {
               <span style={{ color: theme.colors.slate, fontSize: 14 }}>Available stock</span>
               <strong style={{ color: theme.colors.ink, fontSize: 14 }}>{Math.max(0, Number(activeBundleModalItem?.quantity) || 0)}</strong>
             </div>
-            <FormField label="Quantity">
+            <FormField label="Quantity" required>
               <Input
                 className="rent-bundle-quantity-input"
                 max={Math.max(1, Number(activeBundleModalItem?.quantity) || 1)}

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, FormField, Input, StatusMessage } from './primitives';
+import SearchableSelect from './SearchableSelect';
 import { alpha, theme } from './theme';
 import { buildAddressQuery, buildMapEmbedUrl, geocodePhilippineAddress, sanitizeText } from './profileFormUtils';
 
@@ -82,6 +83,18 @@ function findByName(options, value, labelBuilder) {
   });
 }
 
+function normalizeBarangayName(value) {
+  return normalize(value)
+    .replace(/\([^)]*\)/g, '')
+    .replace(/\b(?:barangay|brgy)\.?\b/g, '')
+    .replace(/[^a-z0-9]/g, '');
+}
+
+function findBarangayByName(options, value) {
+  const normalizedValue = normalizeBarangayName(value);
+  return options.find((option) => normalizeBarangayName(option.name) === normalizedValue);
+}
+
 function readValue(form, fieldMap, key) {
   const fieldName = fieldMap[key];
   return fieldName ? form?.[fieldName] || '' : '';
@@ -152,11 +165,13 @@ export default function PhilippineAddressFields({
   form,
   labels: labelOverrides = {},
   profileSource = null,
+  requiredFields = [],
   setForm,
   showCoordinates = true,
   showUseProfileAddress = false,
 }) {
   const labels = { ...defaultLabels, ...labelOverrides };
+  const requiredFieldSet = useMemo(() => new Set(requiredFields), [requiredFields]);
   const addressGridStyle = { display: 'grid', gap: 14, gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))` };
   const [regions, setRegions] = useState([]);
   const [provinces, setProvinces] = useState([]);
@@ -235,7 +250,17 @@ export default function PhilippineAddressFields({
   const selectedRegion = useMemo(() => findByName(regions, readValue(form, fieldMap, 'region'), getRegionLabel), [fieldMap, form, regions]);
   const selectedProvince = useMemo(() => findByName(provinces, readValue(form, fieldMap, 'province')), [fieldMap, form, provinces]);
   const selectedCity = useMemo(() => findByName(cities, readValue(form, fieldMap, 'city')), [cities, fieldMap, form]);
-  const selectedBarangay = useMemo(() => findByName(barangays, readValue(form, fieldMap, 'barangay')), [barangays, fieldMap, form]);
+  const savedBarangay = readValue(form, fieldMap, 'barangay');
+  const selectedBarangay = useMemo(() => findBarangayByName(barangays, savedBarangay), [barangays, savedBarangay]);
+  const barangayOptions = useMemo(() => {
+    const options = barangays.map((barangay) => ({ label: barangay.name, value: barangay.code }));
+
+    if (savedBarangay && !selectedBarangay) {
+      options.unshift({ label: savedBarangay, value: '__saved_barangay__' });
+    }
+
+    return options;
+  }, [barangays, savedBarangay, selectedBarangay]);
   const mapUrl = useMemo(() => buildMapEmbedUrl(readValue(form, fieldMap, 'latitude'), readValue(form, fieldMap, 'longitude')), [fieldMap, form]);
   const fixedRegion = useMemo(
     () => regions.find((region) => matchesAnyAlias(getRegionLabel(region), FIXED_LOCATION.regionAliases)),
@@ -398,8 +423,6 @@ export default function PhilippineAddressFields({
     const currentRegion = readValue(form, fieldMap, 'region');
     if (normalize(currentRegion) !== normalize(getRegionLabel(fixedRegion))) {
       updateAddressFields({
-        barangay: '',
-        city: '',
         province: FIXED_LOCATION.province,
         region: getRegionLabel(fixedRegion),
       });
@@ -483,6 +506,10 @@ export default function PhilippineAddressFields({
   }
 
   function handleBarangayChange(event) {
+    if (event.target.value === '__saved_barangay__') {
+      return;
+    }
+
     const nextBarangay = barangays.find((barangay) => barangay.code === event.target.value);
 
     setUseProfileAddress(false);
@@ -623,11 +650,11 @@ export default function PhilippineAddressFields({
       ) : null}
 
       <div className="form-grid" style={addressGridStyle}>
-        <FormField label={labels.street}>
+        <FormField label={labels.street} required={requiredFieldSet.has('street')}>
           <Input name={fieldMap.street} onChange={handleStreetChange} value={readValue(form, fieldMap, 'street')} />
         </FormField>
 
-        <FormField label={labels.region}>
+        <FormField label={labels.region} required={requiredFieldSet.has('region')}>
           <select disabled={loadingRegions || !fixedRegion} onChange={handleRegionChange} style={selectStyle} value={fixedRegion?.code || ''}>
             <option value="">{loadingRegions ? 'Loading regions...' : 'Select region'}</option>
             {(fixedRegion ? [fixedRegion] : []).map((region) => (
@@ -637,7 +664,7 @@ export default function PhilippineAddressFields({
             ))}
           </select>
         </FormField>
-        <FormField label={labels.province}>
+        <FormField label={labels.province} required={requiredFieldSet.has('province')}>
           <select
             disabled={loadingProvinces || !fixedProvince}
             onChange={handleProvinceChange}
@@ -653,7 +680,7 @@ export default function PhilippineAddressFields({
           </select>
         </FormField>
 
-        <FormField label={labels.city}>
+        <FormField label={labels.city} required={requiredFieldSet.has('city')}>
           <select
             disabled={loadingCities || !fixedCity}
             onChange={handleCityChange}
@@ -668,18 +695,20 @@ export default function PhilippineAddressFields({
             ))}
           </select>
         </FormField>
-        <FormField label={labels.barangay}>
-          <select disabled={!selectedCity || loadingBarangays} onChange={handleBarangayChange} style={selectStyle} value={selectedBarangay?.code || ''}>
-            <option value="">{!selectedCity ? 'Select city first' : loadingBarangays ? 'Loading barangays...' : 'Select barangay'}</option>
-            {barangays.map((barangay) => (
-              <option key={barangay.code} value={barangay.code}>
-                {barangay.name}
-              </option>
-            ))}
-          </select>
+        <FormField label={labels.barangay} required={requiredFieldSet.has('barangay')}>
+          <SearchableSelect
+            ariaLabel={labels.barangay}
+            disabled={!selectedCity || loadingBarangays}
+            emptyMessage="No barangay matches your search"
+            onChange={(value) => handleBarangayChange({ target: { value } })}
+            options={barangayOptions}
+            placeholder={!selectedCity ? 'Select city first' : loadingBarangays ? 'Loading barangays...' : 'Select barangay'}
+            searchPlaceholder="Search barangay"
+            value={selectedBarangay?.code || (savedBarangay ? '__saved_barangay__' : '')}
+          />
         </FormField>
 
-        <FormField label={labels.country}>
+        <FormField label={labels.country} required={requiredFieldSet.has('country')}>
           <Input name={fieldMap.country} readOnly value={readValue(form, fieldMap, 'country') || 'Philippines'} />
         </FormField>
       </div>
@@ -711,7 +740,7 @@ export default function PhilippineAddressFields({
         <div className="form-grid" style={{ alignItems: 'start', display: 'grid', gap: 16, gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
           <div style={{ display: 'grid', gap: 14 }}>
             <div className="form-grid" style={{ display: 'grid', gap: 14, gridTemplateColumns: 'minmax(0, 1fr) auto' }}>
-              <FormField label={labels.search}>
+              <FormField label={labels.search} required={requiredFieldSet.has('search')}>
                 <Input onChange={(event) => setLocationSearch(event.target.value)} placeholder={labels.searchPlaceholder} value={locationSearch} />
               </FormField>
 
@@ -724,7 +753,7 @@ export default function PhilippineAddressFields({
 
             {showCoordinates ? (
               <div className="form-grid" style={{ display: 'grid', gap: 14, gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
-                <FormField label="Latitude">
+                <FormField label="Latitude" required={requiredFieldSet.has('latitude')}>
                   <Input
                     name={fieldMap.latitude}
                     onChange={handleCoordinateChange}
@@ -733,7 +762,7 @@ export default function PhilippineAddressFields({
                   />
                 </FormField>
 
-                <FormField label="Longitude">
+                <FormField label="Longitude" required={requiredFieldSet.has('longitude')}>
                   <Input
                     name={fieldMap.longitude}
                     onChange={handleCoordinateChange}

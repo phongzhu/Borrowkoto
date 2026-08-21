@@ -331,7 +331,7 @@ export default function UserBrowseListings() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
-  const [barangayFilter, setBarangayFilter] = useState('all');
+  const [barangayFilters, setBarangayFilters] = useState([]);
   const [categoryFilters, setCategoryFilters] = useState([]);
   const [conditionFilters, setConditionFilters] = useState([]);
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
@@ -580,7 +580,7 @@ export default function UserBrowseListings() {
     const normalizedSearch = search.trim().toLowerCase();
 
     return items.filter((item) => {
-      if (barangayFilter !== 'all' && String(item.pickup_barangay || '').trim() !== barangayFilter) {
+      if (barangayFilters.length && !barangayFilters.includes(String(item.pickup_barangay || '').trim())) {
         return false;
       }
 
@@ -613,7 +613,7 @@ export default function UserBrowseListings() {
 
       return haystack.includes(normalizedSearch);
     });
-  }, [barangayFilter, categoryFilters, conditionFilters, items, search]);
+  }, [barangayFilters, categoryFilters, conditionFilters, items, search]);
 
   const newestItems = useMemo(
     () => createSectionItems(filteredItems, (left, right) => new Date(right.created_at) - new Date(left.created_at)),
@@ -847,8 +847,15 @@ export default function UserBrowseListings() {
 
   function clearFilters() {
     setSearch('');
+    setBarangayFilters([]);
     setCategoryFilters([]);
     setConditionFilters([]);
+  }
+
+  function toggleBarangayFilter(barangay) {
+    setBarangayFilters((current) =>
+      current.includes(barangay) ? current.filter((value) => value !== barangay) : [...current, barangay]
+    );
   }
 
   function toggleCategoryFilter(categoryId) {
@@ -889,17 +896,10 @@ export default function UserBrowseListings() {
                 />
                 <button type="submit">Search</button>
               </form>
-              <label className="browse-barangay-select">
+              <button className="browse-barangay-select" onClick={() => setFilterDrawerOpen(true)} type="button">
                 <span>Barangay</span>
-                <select onChange={(event) => setBarangayFilter(event.target.value)} value={barangayFilter}>
-                  <option value="all">All barangays</option>
-                  {barangayOptions.map((barangay) => (
-                    <option key={barangay} value={barangay}>
-                      {barangay}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                <strong>{barangayFilters.length ? `${barangayFilters.length} selected` : 'All barangays'}</strong>
+              </button>
               <button
                 aria-label="Open filters"
                 className="browse-filter-toggle"
@@ -1144,6 +1144,20 @@ export default function UserBrowseListings() {
         <button className="browse-filter-clear" onClick={clearFilters} type="button">
           Clear all
         </button>
+
+        <div className="browse-filter-section">
+          <h4>Barangay</h4>
+          <label className="browse-filter-option">
+            <input checked={barangayFilters.length === 0} onChange={() => setBarangayFilters([])} type="checkbox" />
+            <span>All barangays</span>
+          </label>
+          {barangayOptions.map((barangay) => (
+            <label className="browse-filter-option" key={`drawer-barangay-${barangay}`}>
+              <input checked={barangayFilters.includes(barangay)} onChange={() => toggleBarangayFilter(barangay)} type="checkbox" />
+              <span>{barangay}</span>
+            </label>
+          ))}
+        </div>
 
         <div className="browse-filter-section">
           <h4>Category</h4>

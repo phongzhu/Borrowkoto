@@ -6,7 +6,12 @@ import { RENTABLE_ITEM_STATUSES } from './utils/bookingEnums';
 import borrowToolsCampaign from './assets/campaigns/borrow-tools.png';
 import borrowTechCampaign from './assets/campaigns/borrow-tech.png';
 import borrowWeekendCampaign from './assets/campaigns/borrow-weekend.png';
+import SearchableSelect from './ui/SearchableSelect';
+import CategoryIcon from './ui/CategoryIcon';
+import { Button, Modal } from './ui/primitives';
 import './App.css';
+
+const welcomeStorageKey = (userId) => `borrowkoto:landing-welcome-seen:${userId}`;
 
 const MARKET_CAMPAIGNS = [
   {
@@ -253,6 +258,9 @@ export default function App() {
   const [activeCampaign, setActiveCampaign] = useState(0);
   const [campaignPaused, setCampaignPaused] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [selectedBarangays, setSelectedBarangays] = useState([]);
+  const [barangaySearch, setBarangaySearch] = useState('');
+  const [filterCategorySearch, setFilterCategorySearch] = useState('');
   const [selectedFilterCategories, setSelectedFilterCategories] = useState([]);
   const [selectedConditions, setSelectedConditions] = useState([]);
   const [minimumPrice, setMinimumPrice] = useState('');
@@ -260,6 +268,7 @@ export default function App() {
   const [minimumRating, setMinimumRating] = useState('0');
   const [currentUser, setCurrentUser] = useState(null);
   const [currentUserProfile, setCurrentUserProfile] = useState(null);
+  const [showWelcome, setShowWelcome] = useState(false);
   const [savedItemIds, setSavedItemIds] = useState(() => new Set());
   const [savingItemId, setSavingItemId] = useState('');
   const [promotedItemIds, setPromotedItemIds] = useState([]);
@@ -382,6 +391,7 @@ export default function App() {
     let mounted = true;
     if (!currentUser?.id) {
       setCurrentUserProfile(null);
+      setShowWelcome(false);
       return undefined;
     }
 
@@ -394,11 +404,23 @@ export default function App() {
       if (!mounted) return;
       if (profileError) console.warn('Unable to load member profile:', profileError.message);
       setCurrentUserProfile(data || null);
+      const hasSeenWelcome = window.localStorage.getItem(welcomeStorageKey(currentUser.id)) === 'true';
+      setShowWelcome(Boolean(data && !data.is_profile_complete && !hasSeenWelcome));
     }
 
     loadCurrentUserProfile();
     return () => { mounted = false; };
   }, [currentUser?.id]);
+
+  function dismissWelcome() {
+    if (currentUser?.id) window.localStorage.setItem(welcomeStorageKey(currentUser.id), 'true');
+    setShowWelcome(false);
+  }
+
+  function openProfileFromWelcome() {
+    dismissWelcome();
+    navigate('/user/profile');
+  }
 
   useEffect(() => {
     let mounted = true;
@@ -410,7 +432,7 @@ export default function App() {
       const [categoriesResult, itemsResult, viewCountsResult] = await Promise.all([
         supabase
           .from('categories')
-          .select('id, name, parent_category_id')
+          .select('id, name, description, icon_key, icon_url, parent_category_id')
           .eq('is_active', true)
           .order('name', { ascending: true }),
         supabase
@@ -472,7 +494,7 @@ export default function App() {
         itemIds.length
           ? supabase
               .from('item_subcategories')
-              .select('item_id, subcategory_id, categories!item_subcategories_subcategory_id_fkey(id, name, parent_category_id)')
+              .select('item_id, subcategory_id, categories!item_subcategories_subcategory_id_fkey(id, name, description, parent_category_id)')
               .in('item_id', itemIds)
           : { data: [], error: null },
         itemIds.length
@@ -602,7 +624,9 @@ export default function App() {
         item.title,
         item.description,
         item.category?.name,
+        item.category?.description,
         ...(item.subcategories || []).map((subcategory) => subcategory.name),
+        ...(item.subcategories || []).map((subcategory) => subcategory.description),
         item.item_condition,
         getLocation(item),
         ...(item.searchTags || []),
@@ -625,9 +649,11 @@ export default function App() {
   );
 
   const barangayFilteredItems = useMemo(() => {
-    const scoped = barangayFilter === 'all'
-      ? itemsWithBarangay
-      : itemsWithBarangay.filter((entry) => entry.barangay === barangayFilter);
+    const scoped = itemsWithBarangay.filter((entry) => {
+      if (barangayFilter !== 'all' && entry.barangay !== barangayFilter) return false;
+      if (selectedBarangays.length && !selectedBarangays.includes(entry.barangay)) return false;
+      return true;
+    });
 
     return scoped
       .slice()
@@ -637,7 +663,7 @@ export default function App() {
           String(left.item.title || '').localeCompare(String(right.item.title || ''))
       )
       .map((entry) => entry.item);
-  }, [barangayFilter, itemsWithBarangay]);
+  }, [barangayFilter, itemsWithBarangay, selectedBarangays]);
 
   const totalViewsByItemId = useMemo(() => {
     const map = new Map();
@@ -731,7 +757,10 @@ export default function App() {
   const quickCategories = useMemo(
     () =>
       categories.map((category) => ({
+        description: category.description,
         id: category.id,
+        icon_url: category.icon_url,
+        icon_key: category.icon_key,
         name: category.name,
       })),
     [categories]
@@ -740,6 +769,23 @@ export default function App() {
     const parents = categories.filter((category) => !category.parent_category_id);
     return parents.length ? parents : categories;
   }, [categories]);
+  const filteredFilterBarangays = useMemo(() => {
+    const query = barangaySearch.trim().toLowerCase();
+    if (!query) return BALIUAG_BARANGAYS;
+    return BALIUAG_BARANGAYS.filter((barangay) => barangay.toLowerCase().includes(query));
+  }, [barangaySearch]);
+  const filteredFilterCategories = useMemo(() => {
+    const query = filterCategorySearch.trim().toLowerCase();
+    if (!query) return parentCategories;
+    return parentCategories.filter((category) => {
+      const childTerms = categories
+        .filter((child) => child.parent_category_id === category.id)
+        .flatMap((child) => [child.name, child.description]);
+      return [category.name, category.description, ...childTerms]
+        .filter(Boolean)
+        .some((value) => value.toLowerCase().includes(query));
+    });
+  }, [categories, filterCategorySearch, parentCategories]);
   const categorySections = useMemo(
     () =>
       parentCategories
@@ -768,7 +814,7 @@ export default function App() {
         .slice(0, 5),
     [barangayFilteredItems]
   );
-  const activeFilterCount = selectedFilterCategories.length + selectedConditions.length +
+  const activeFilterCount = selectedBarangays.length + selectedFilterCategories.length + selectedConditions.length +
     (minimumPrice !== '' ? 1 : 0) + (maximumPrice !== '' ? 1 : 0) + (Number(minimumRating) > 0 ? 1 : 0);
   const recentlyViewedItems = useMemo(() => {
     const itemsById = new Map(items.map((item) => [item.id, item]));
@@ -806,6 +852,9 @@ export default function App() {
   }
 
   function clearMarketplaceFilters() {
+    setSelectedBarangays([]);
+    setBarangaySearch('');
+    setFilterCategorySearch('');
     setSelectedFilterCategories([]);
     setSelectedConditions([]);
     setMinimumPrice('');
@@ -873,6 +922,12 @@ export default function App() {
     openCatalogPage({ mode: 'all' });
   }
 
+  function handleHeaderBarangayChange(event) {
+    const nextBarangay = event.target.value;
+    setBarangayFilter(nextBarangay);
+    openCatalogPage({ barangay: nextBarangay, mode: 'all' });
+  }
+
   return (
     <div
       className="market-page"
@@ -896,20 +951,18 @@ export default function App() {
         <section className="landing-toolbar landing-toolbar-top">
           <div className="landing-search-row">
             <div className="landing-controls inline">
-              <select
-                aria-label="Filter by Baliuag barangay"
-                id="barangay-filter"
-                onChange={(event) => setBarangayFilter(event.target.value)}
+              <SearchableSelect
+                ariaLabel="Filter by Baliuag barangay"
+                onChange={(value) => handleHeaderBarangayChange({ target: { value } })}
+                options={[
+                  { label: 'All barangays', value: 'all' },
+                  ...BALIUAG_BARANGAYS.map((barangay) => ({ label: barangay, value: barangay })),
+                  { label: 'Unspecified', value: 'Unspecified' },
+                ]}
+                placeholder="All barangays"
+                searchPlaceholder="Search barangay"
                 value={barangayFilter}
-              >
-                <option value="all">All barangays</option>
-                {BALIUAG_BARANGAYS.map((barangay) => (
-                  <option key={barangay} value={barangay}>
-                    {barangay}
-                  </option>
-                ))}
-                <option value="Unspecified">Unspecified</option>
-              </select>
+              />
             </div>
 
             <form className="landing-search" onSubmit={handleSearchSubmit}>
@@ -954,12 +1007,49 @@ export default function App() {
 
           <div className="market-filter-body">
             <fieldset>
+              <legend>Barangay</legend>
+              <input
+                aria-label="Search barangays"
+                className="market-filter-search"
+                onChange={(event) => setBarangaySearch(event.target.value)}
+                placeholder="Search barangay"
+                type="search"
+                value={barangaySearch}
+              />
+              <div className="market-filter-options market-filter-barangays">
+                <label className="market-filter-all-option">
+                  <input checked={selectedBarangays.length === 0} onChange={() => setSelectedBarangays([])} type="checkbox" />
+                  <span>All barangays</span>
+                </label>
+                {filteredFilterBarangays.map((barangay) => (
+                  <label key={`filter-barangay-${barangay}`}>
+                    <input checked={selectedBarangays.includes(barangay)} onChange={() => toggleFilterValue(barangay, setSelectedBarangays)} type="checkbox" />
+                    <span>{barangay}</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+
+            <fieldset>
               <legend>Categories</legend>
+              <input
+                aria-label="Search categories"
+                className="market-filter-search"
+                onChange={(event) => setFilterCategorySearch(event.target.value)}
+                placeholder="Search category"
+                type="search"
+                value={filterCategorySearch}
+              />
               <div className="market-filter-options market-filter-categories">
-                {parentCategories.map((category) => (
+                {filteredFilterCategories.map((category) => (
                   <label key={`filter-${category.id}`}>
                     <input checked={selectedFilterCategories.includes(category.id)} onChange={() => toggleFilterValue(category.id, setSelectedFilterCategories)} type="checkbox" />
-                    <span>{category.name}</span>
+                    <span className="market-filter-category-label">
+                      <i className="market-filter-category-icon">
+                        <CategoryIcon iconKey={category.icon_key || getCategoryIconType(category.name)} iconUrl={category.icon_url} size={15} />
+                      </i>
+                      {category.name}
+                    </span>
                   </label>
                 ))}
               </div>
@@ -1012,11 +1102,11 @@ export default function App() {
               aria-pressed={categoryFilter === category.id}
               className={categoryFilter === category.id ? 'active' : ''}
               key={category.id}
-              onClick={() => setCategoryFilter((current) => current === category.id ? 'all' : category.id)}
+              onClick={() => openCatalogPage({ categoryId: category.id, mode: 'all' })}
               type="button"
             >
               <span className="landing-category-icon">
-                <RentalIcon type={getCategoryIconType(category.name)} />
+                <CategoryIcon iconKey={category.icon_key || getCategoryIconType(category.name)} iconUrl={category.icon_url} size={18} />
               </span>
               <strong>{category.name}</strong>
             </button>
@@ -1374,6 +1464,30 @@ export default function App() {
 
         <p className="landing-footer-note">© {new Date().getFullYear()} {brandName}. Built for the Baliuag community.</p>
       </footer>
+
+      <Modal
+        actions={
+          <>
+            <Button onClick={dismissWelcome} variant="ghost">Maybe later</Button>
+            <Button className="first-login-welcome-primary" onClick={openProfileFromWelcome}>Complete my profile</Button>
+          </>
+        }
+        contentClassName="first-login-welcome-modal"
+        onClose={dismissWelcome}
+        open={showWelcome}
+        size="compact"
+        title="Welcome to Borrow Ko 'To!"
+      >
+        <div className="first-login-welcome-content">
+          <div className="first-login-welcome-logo">
+            {logoUrl ? <img alt="Borrow Ko 'To logo" src={logoUrl} /> : <span>{(settings.logo_icon || 'BK').slice(0, 3)}</span>}
+          </div>
+          <div>
+            <h3>Let’s finish setting up your account.</h3>
+            <p>Complete your profile details and submit your identity verification before borrowing or listing items in the community.</p>
+          </div>
+        </div>
+      </Modal>
 
     </div>
   );

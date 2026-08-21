@@ -1,24 +1,37 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../../api/supabaseClient';
-import { CalendarIcon, CatalogIcon, LogoutIcon, MessageIcon, ProfileIcon, SparkIcon } from '../../ui/icons';
+import {
+  BookmarkIcon,
+  CalendarIcon,
+  CatalogIcon,
+  FaqIcon,
+  HomeIcon,
+  LogoutIcon,
+  MessageIcon,
+  ProfileIcon,
+  ReportIcon,
+  SparkIcon,
+  StarIcon,
+} from '../../ui/icons';
 import { WorkspaceLayout } from '../../ui/layouts';
 import { Button, Modal } from '../../ui/primitives';
 import { alpha, theme } from '../../ui/theme';
 
 const navItems = [
   { type: 'section', label: 'Browse' },
-  { path: '/user/dashboard', label: 'Dashboard', icon: <CatalogIcon size={18} /> },
+  { path: '/user/dashboard', label: 'Dashboard', icon: <HomeIcon size={18} /> },
   { path: '/', label: 'Browse Listings', icon: <CatalogIcon size={18} /> },
-  { path: '/user/saved-listings', label: 'Saved Listings', icon: <CatalogIcon size={18} /> },
+  { path: '/user/saved-listings', label: 'Saved Listings', icon: <BookmarkIcon size={18} /> },
   { type: 'section', label: 'Rentals' },
   { path: '/user/rental-items', label: 'Rental Items', icon: <CatalogIcon size={18} /> },
   { path: '/user/manage-booking', label: 'Manage Booking', icon: <CalendarIcon size={18} /> },
-  { path: '/user/rental-income', label: 'Report', icon: <SparkIcon size={18} /> },
+  { path: '/user/rental-income', label: 'Report', icon: <ReportIcon size={18} /> },
   { path: '/user/promotions', label: 'Promote Listings', icon: <SparkIcon size={18} /> },
-  { path: '/user/rewards', label: 'Rewards', icon: <SparkIcon size={18} /> },
+  { path: '/user/rewards', label: 'Rewards', icon: <StarIcon size={18} /> },
   { type: 'section', label: 'Communication' },
   { path: '/user/messages', label: 'Messages', icon: <MessageIcon size={18} /> },
+  { path: '/user/listing-faqs', label: 'Listing FAQs', icon: <FaqIcon size={18} /> },
 ];
 
 export default function UserShell({ children, subtitle, title }) {
@@ -191,6 +204,7 @@ export default function UserShell({ children, subtitle, title }) {
       >
         You will be signed out of the current session and returned to the user login screen.
       </Modal>
+
     </>
   );
 }

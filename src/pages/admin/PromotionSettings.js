@@ -186,8 +186,8 @@ export default function PromotionSettings() {
         <Modal actions={<><Button onClick={() => setSettingsOpen(false)} variant="ghost">Cancel</Button><Button disabled={savingSettings} onClick={saveGlobalSettings}>{savingSettings ? 'Saving…' : 'Save settings'}</Button></>} onClose={() => setSettingsOpen(false)} open={settingsOpen} size="compact" title="Banner display settings">
           <div className="promotion-settings-form">
             <p>Control how many paid promotions can run and how they rotate on the public banner.</p>
-            <FormField hint="The maximum number of promoted listings that may be active at the same time." label="Active promotion limit"><Input min="1" onChange={(e) => setSettings((current) => ({ ...current, banner_slot_limit: e.target.value }))} type="number" value={settings.banner_slot_limit} /></FormField>
-            <FormField hint="How long one promoted listing is shown before the banner switches to the next." label="Seconds per banner"><Input max="120" min="3" onChange={(e) => setSettings((current) => ({ ...current, rotation_interval_seconds: e.target.value }))} type="number" value={settings.rotation_interval_seconds} /></FormField>
+            <FormField hint="The maximum number of promoted listings that may be active at the same time." label="Active promotion limit" required><Input min="1" onChange={(e) => setSettings((current) => ({ ...current, banner_slot_limit: e.target.value }))} required type="number" value={settings.banner_slot_limit} /></FormField>
+            <FormField hint="How long one promoted listing is shown before the banner switches to the next." label="Seconds per banner" required><Input max="120" min="3" onChange={(e) => setSettings((current) => ({ ...current, rotation_interval_seconds: e.target.value }))} required type="number" value={settings.rotation_interval_seconds} /></FormField>
           </div>
         </Modal>
       </main>

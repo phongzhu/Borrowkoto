@@ -49,11 +49,32 @@
 
 .messages-conversation-header {
   border-bottom-color: var(--messages-border) !important;
-  padding: 16px 20px !important;
+  min-height: 64px !important;
+  padding: 8px 16px !important;
+}
+
+.messages-conversation-header > div > div:first-child {
+  height: 42px !important;
+  width: 42px !important;
+}
+
+.messages-conversation-header > div > div:last-child {
+  gap: 1px !important;
+}
+
+.messages-conversation-header strong {
+  font-size: 18px !important;
+  line-height: 1 !important;
+}
+
+.messages-conversation-header > div > div:last-child > span {
+  font-size: 12px !important;
 }
 
 .messages-feed {
   background: var(--ui-background-color, #fff) !important;
+  align-content: start;
+  padding: 14px 18px !important;
 }
 
 .message-bubble {
@@ -70,7 +91,8 @@
 
 .messages-composer-area {
   border-top-color: var(--messages-border) !important;
-  padding: 14px 18px !important;
+  gap: 8px !important;
+  padding: 8px 14px !important;
 }
 
 .message-item-context {
@@ -79,15 +101,15 @@
   border-radius: 8px !important;
   box-shadow: none !important;
   gap: 10px !important;
-  grid-template-columns: 54px minmax(0, 1fr) !important;
+  grid-template-columns: 42px minmax(0, 1fr) !important;
   justify-self: stretch !important;
   max-width: none !important;
-  padding: 8px 10px !important;
+  padding: 6px 9px !important;
 }
 
 .message-item-context > div:first-child {
   border-radius: 6px !important;
-  min-height: 54px !important;
+  min-height: 42px !important;
 }
 
 .message-item-context > div:last-child {
@@ -148,6 +170,24 @@
   border-color: var(--messages-border) !important;
   border-radius: 8px !important;
 }
+
+.faq-assistant-card { background:var(--ui-background-color,#fff); border-bottom:1px solid var(--messages-border); display:grid; gap:8px; padding:0 0 12px; width:100%; }
+.faq-assistant-head { align-items:center; display:flex; gap:10px; }
+.faq-assistant-head > span { align-items:center; background:var(--ui-primary-color,#1f3f73); border-radius:50%; color:#fff; display:flex; font-weight:800; height:30px; justify-content:center; width:30px; }
+.faq-assistant-head > div { display:grid; gap:1px; }
+.faq-assistant-head strong { color:var(--ui-text-color,#18212e); font-size:13px; }
+.faq-assistant-head small { color:var(--ui-text-secondary,#64748b); font-size:11px; }
+.faq-assistant-prompts { display:flex; flex-wrap:wrap; gap:6px; }
+.faq-assistant-prompts button { background:var(--ui-background-color,#fff); border:1px solid var(--messages-border); border-radius:16px; color:var(--ui-text-color,#334155); cursor:pointer; font:600 12px inherit; min-height:32px; padding:6px 10px; text-align:left; }
+.faq-assistant-prompts button:hover,.faq-assistant-prompts button.active { background:color-mix(in srgb,var(--ui-primary-color,#1f3f73) 8%,var(--ui-background-color,#fff)); border-color:var(--ui-primary-color,#1f3f73); color:var(--ui-primary-color,#1f3f73); }
+.faq-chat-exchange { display:grid; gap:8px; }
+.faq-chat-question { background:var(--ui-primary-color,#1f3f73); border-radius:16px 16px 3px 16px; color:#fff; justify-self:end; max-width:min(70%,620px); padding:9px 13px; }
+.faq-chat-answer { align-items:start; display:grid; gap:8px; grid-template-columns:30px minmax(0,620px); justify-self:start; }
+.faq-chat-avatar { align-items:center; background:var(--ui-primary-color,#1f3f73); border-radius:50%; color:#fff; display:flex; font-size:12px; font-weight:800; height:30px; justify-content:center; width:30px; }
+.faq-chat-answer > div { background:var(--ui-background-color,#fff); border:1px solid var(--messages-border); border-radius:3px 16px 16px 16px; display:grid; gap:4px; padding:10px 13px; }
+.faq-chat-answer strong { color:var(--ui-text-color,#18212e); font-size:12px; }
+.faq-chat-answer p { color:var(--ui-text-color,#475569); line-height:1.5; margin:0; white-space:pre-line; }
+.faq-chat-answer small { color:var(--ui-text-secondary,#7c8798); font-size:10px; }
 
 .messages-composer-area > div:last-child {
   display: none !important;

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
+import { QRCodeSVG } from 'qrcode.react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../api/supabaseClient';
-import { CalendarIcon, CheckIcon, ProfileIcon, ShieldIcon, UploadIcon } from '../../ui/icons';
+import { CalendarIcon, ProfileIcon, ShieldIcon, UploadIcon } from '../../ui/icons';
 import { SectionGrid } from '../../ui/layouts';
 import { Badge, Button, FileInput, FormField, Input, Modal, Panel, StatusMessage } from '../../ui/primitives';
 import { alpha, theme } from '../../ui/theme';
@@ -13,14 +14,11 @@ import {
   buildProfileForm,
   ensureUniquePhoneNumber,
   ensureUniqueUsername,
-  getVerificationIdTypeRule,
-  normalizeMaskedIdNumber,
   sanitizeText,
   suffixOptions,
   validateMaskedIdNumber,
   validateBaliwagLocation,
   validateCoordinates,
-  verificationIdTypeOptions,
 } from '../../ui/profileFormUtils';
 
 const identityFields = [
@@ -99,6 +97,21 @@ function validateAdultDateOfBirth(value) {
 
 function buildName(profile) {
   return [profile?.first_name, profile?.middle_name, profile?.last_name, profile?.suffix].filter(Boolean).join(' ');
+}
+
+function normalizeDiditDecision(decision) {
+  const idVerification = decision?.id_verifications?.[0] || decision?.id_verification || decision?.verification || decision?.result || {};
+  const contactDetails = decision?.contact_details?.[0] || decision?.contact_details || {};
+  const parsedAddress = idVerification?.parsed_address || contactDetails?.parsed_address || {};
+
+  return {
+    date_of_birth: String(idVerification?.date_of_birth || contactDetails?.date_of_birth || '').trim(),
+    first_name: String(idVerification?.first_name || contactDetails?.first_name || '').trim(),
+    last_name: String(idVerification?.last_name || contactDetails?.last_name || '').trim(),
+    middle_name: String(contactDetails?.middle_name || '').trim(),
+    region: String(parsedAddress?.region || '').trim(),
+    street: String(parsedAddress?.street_1 || parsedAddress?.street || contactDetails?.address || '').trim(),
+  };
 }
 
 function readValue(value, fallback = 'Not available') {
@@ -258,6 +271,10 @@ export default function Profile({ verificationPage = false }) {
   const [selfie, setSelfie] = useState(null);
   const [verifMsg, setVerifMsg] = useState('');
   const [verifTone, setVerifTone] = useState('success');
+  const [diditSessionUrl, setDiditSessionUrl] = useState('');
+  const [diditSessionId, setDiditSessionId] = useState('');
+  const [diditSessionLoading, setDiditSessionLoading] = useState(false);
+  const [diditSessionError, setDiditSessionError] = useState('');
 
   useEffect(() => {
     let mounted = true;
@@ -273,13 +290,16 @@ export default function Profile({ verificationPage = false }) {
       }
 
       const { data: profileData } = await supabase.from('profiles').select('*').eq('id', currentUser.id).single();
-      const { data: verificationData } = await supabase
+      const { data: verificationRows } = await supabase
         .from('identity_verifications')
         .select('*')
         .eq('user_id', currentUser.id)
         .order('submitted_at', { ascending: false })
-        .limit(1)
-        .single();
+        .limit(20);
+
+      const verificationData = (verificationRows || []).find((row) => isAcceptedVerificationStatus(row.status))
+        || verificationRows?.[0]
+        || null;
 
       if (!mounted) {
         return;
@@ -315,22 +335,6 @@ export default function Profile({ verificationPage = false }) {
 
   function handleChange(event) {
     setForm((current) => ({ ...current, [event.target.name]: event.target.value }));
-  }
-
-  function handleVerifChange(event) {
-    const { name, value } = event.target;
-
-    setVerifForm((current) => {
-      if (name === 'id_type') {
-        return { ...current, id_number_masked: '', [name]: value };
-      }
-
-      if (name === 'id_number_masked') {
-        return { ...current, [name]: normalizeMaskedIdNumber(value) };
-      }
-
-      return { ...current, [name]: value };
-    });
   }
 
   async function uploadPhoto() {
@@ -374,6 +378,155 @@ export default function Profile({ verificationPage = false }) {
     return data.publicUrl;
   }
 
+  async function startDiditSession() {
+    setVerifMsg('');
+    setVerifTone('success');
+    setDiditSessionError('');
+    setDiditSessionLoading(true);
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      const response = await fetch('/api/didit', {
+        body: JSON.stringify({
+          action: 'create-session',
+          workflow_id: '8f902160-00ff-4cc2-823c-af17f4bc99b3',
+        }),
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session?.access_token || ''}`,
+        },
+        method: 'POST',
+      });
+
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Unable to start Didit verification.');
+      }
+
+      setDiditSessionId(payload?.session_id || '');
+      setDiditSessionUrl(payload?.url || '');
+      if (!payload?.url) {
+        throw new Error('Didit returned no verification URL.');
+      }
+    } catch (error) {
+      setDiditSessionError(`Didit session failed: ${error.message}`);
+      setVerifTone('danger');
+    } finally {
+      setDiditSessionLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!diditSessionId) {
+      return undefined;
+    }
+
+    let mounted = true;
+    let pollInProgress = false;
+    let timer = null;
+
+    async function pollDecision() {
+      if (pollInProgress) return;
+      pollInProgress = true;
+
+      try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        return;
+      }
+
+      const response = await fetch('/api/didit', {
+        body: JSON.stringify({
+          action: 'session-decision',
+          session_id: diditSessionId,
+        }),
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        method: 'POST',
+      });
+
+      const payload = await response.json().catch(() => null);
+      if (!mounted) {
+        return;
+      }
+
+      if (!response.ok) {
+        setDiditSessionError(payload?.error || 'Unable to retrieve the Didit verification result.');
+        setVerifMsg(payload?.error || 'Unable to retrieve the Didit verification result.');
+        setVerifTone('danger');
+
+        if ([401, 403].includes(response.status)) {
+          setDiditSessionId('');
+        }
+        return;
+      }
+
+      if (!payload?.verified) {
+        return;
+      }
+
+      const diditFields = normalizeDiditDecision(payload?.decision);
+      const updates = {};
+
+      if (diditFields.first_name) updates.first_name = diditFields.first_name;
+      if (diditFields.middle_name) updates.middle_name = diditFields.middle_name;
+      if (diditFields.last_name) updates.last_name = diditFields.last_name;
+      if (diditFields.date_of_birth) updates.date_of_birth = diditFields.date_of_birth;
+      if (diditFields.region) updates.region = diditFields.region;
+      if (diditFields.street) updates.street = diditFields.street;
+
+      if (Object.keys(updates).length) {
+        const { error } = await supabase.from('profiles').update(updates).eq('id', profile.id);
+        if (!error) {
+          setProfile((current) => ({ ...current, ...updates }));
+          setForm((current) => ({ ...current, ...updates }));
+        }
+      }
+
+      setProfile((current) => ({
+        ...current,
+        is_verified: true,
+        verification_status: 'verified',
+      }));
+
+      setVerification((current) => ({
+        ...(current || {}),
+        ...(payload?.verification || {}),
+        id_type: payload?.verification?.id_type || current?.id_type || verifForm.id_type || 'Didit verification',
+        status: 'verified',
+      }));
+      setDiditSessionId('');
+      setDiditSessionUrl('');
+      setVerifMsg(
+        payload?.document_import_error
+          ? `Didit verified your identity, but the document copy could not be saved: ${payload.document_import_error}`
+          : 'Didit verification completed. Profile fields and document copies were saved.'
+      );
+      setVerifTone(payload?.document_import_error ? 'warning' : 'success');
+      } finally {
+        pollInProgress = false;
+      }
+    }
+
+    timer = window.setInterval(pollDecision, 5000);
+    pollDecision();
+
+    return () => {
+      mounted = false;
+      if (timer) {
+        window.clearInterval(timer);
+      }
+    };
+  }, [diditSessionId, profile?.id, verifForm.id_type]);
+
   async function handleSubmit(event) {
     event.preventDefault();
     setMessage('');
@@ -407,6 +560,14 @@ export default function Profile({ verificationPage = false }) {
         suffix: sanitizeText(form.suffix),
         username: normalizedUsername,
       };
+      const diditApproved = isAcceptedVerificationStatus(verification?.status)
+        || profile?.is_verified
+        || isAcceptedVerificationStatus(profile?.verification_status);
+
+      if (diditApproved) {
+        updateData.is_verified = true;
+        updateData.verification_status = 'verified';
+      }
       const missingDetails = getMissingProfileDetails(updateData);
 
       if (missingDetails.length) {
@@ -422,6 +583,59 @@ export default function Profile({ verificationPage = false }) {
 
       setProfile((current) => ({ ...current, ...updateData }));
       setForm((current) => ({ ...current, ...buildProfileForm(user, { ...current, ...updateData }, 'user') }));
+
+      const shouldSubmitVerification = Boolean(verifForm.id_type && verifForm.id_number_masked && (idFront || idBack || selfie));
+
+      if (shouldSubmitVerification) {
+        const normalizedMaskedIdNumber = validateMaskedIdNumber(verifForm.id_type, verifForm.id_number_masked);
+        const [idFrontUrl, idBackUrl, selfieUrl] = await Promise.all([
+          uploadVerificationFile('id-verifications', 'front', idFront),
+          uploadVerificationFile('id-verifications', 'back', idBack),
+          uploadVerificationFile('id-verifications', 'selfie', selfie),
+        ]);
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        const verificationResponse = await fetch('/api/didit', {
+          body: JSON.stringify({
+            id_back_url: idBackUrl,
+            id_front_url: idFrontUrl,
+            id_number_masked: normalizedMaskedIdNumber,
+            id_type: verifForm.id_type,
+            selfie_url: selfieUrl,
+          }),
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session?.access_token || ''}`,
+          },
+          method: 'POST',
+        });
+
+        const verificationBody = await verificationResponse.json().catch(() => null);
+
+        if (!verificationResponse.ok) {
+          throw new Error(verificationBody?.error || 'Verification failed.');
+        }
+
+        if (verificationBody?.profile_updates) {
+          setProfile((current) => ({ ...current, ...verificationBody.profile_updates }));
+          setForm((current) => ({ ...current, ...verificationBody.profile_updates }));
+        }
+
+        setVerification(verificationBody?.verification || null);
+        setVerifMsg(
+          verificationBody?.status === 'verified'
+            ? 'ID verified and your profile details were auto-filled from Didit.'
+            : 'ID uploaded and submitted for verification.'
+        );
+        setVerifTone('success');
+        setVerifForm({ id_type: '', id_number_masked: '' });
+        setIdFront(null);
+        setIdBack(null);
+        setSelfie(null);
+      }
+
       setPhotoFile(null);
       setMessage('');
       setEditMode(false);
@@ -438,66 +652,6 @@ export default function Profile({ verificationPage = false }) {
         : rawMessage;
       setMessage(`Update failed: ${friendlyMessage}`);
       setMessageTone('danger');
-    }
-  }
-
-  async function handleVerificationSubmit(event) {
-    event.preventDefault();
-    setVerifMsg('');
-
-    if (!profile) {
-      return;
-    }
-
-    const missingDetails = getMissingProfileDetails(profile);
-
-    if (missingDetails.length) {
-      setVerifMsg('');
-      setMessage(`Complete your profile before submitting an ID. Missing: ${missingDetails.join(', ')}.`);
-      setMessageTone('warning');
-      setEditMode(true);
-      navigate('/user/profile');
-      return;
-    }
-
-    try {
-      const normalizedMaskedIdNumber = validateMaskedIdNumber(verifForm.id_type, verifForm.id_number_masked);
-      const [idFrontUrl, idBackUrl, selfieUrl] = await Promise.all([
-        uploadVerificationFile('id-verifications', 'front', idFront),
-        uploadVerificationFile('id-verifications', 'back', idBack),
-        uploadVerificationFile('id-verifications', 'selfie', selfie),
-      ]);
-
-      const { data, error } = await supabase
-        .from('identity_verifications')
-        .insert([
-          {
-            id_back_url: idBackUrl,
-            id_front_url: idFrontUrl,
-            id_number_masked: normalizedMaskedIdNumber,
-            id_type: verifForm.id_type,
-            selfie_url: selfieUrl,
-            status: 'pending',
-            user_id: profile.id,
-          },
-        ])
-        .select()
-        .single();
-
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      setVerification(data);
-      setVerifMsg('Verification submitted. An admin review is now pending.');
-      setVerifTone('success');
-      setVerifForm({ id_type: '', id_number_masked: '' });
-      setIdFront(null);
-      setIdBack(null);
-      setSelfie(null);
-    } catch (submitError) {
-      setVerifMsg(`Verification submission failed: ${submitError.message}`);
-      setVerifTone('danger');
     }
   }
 
@@ -534,48 +688,23 @@ export default function Profile({ verificationPage = false }) {
     .join(', ');
   const locationSummary = [liveProfile.city, liveProfile.province, liveProfile.country].filter(Boolean).join(', ');
   const mapUrl = buildMapEmbedUrl(liveProfile.latitude, liveProfile.longitude);
-  const verificationStatus = getVerificationStatusLabel(verification?.status);
+  const profileVerificationAccepted = Boolean(profile?.is_verified)
+    || isAcceptedVerificationStatus(profile?.verification_status);
+  const storedVerificationStatus = profileVerificationAccepted
+    ? 'verified'
+    : verification?.status || profile?.verification_status || '';
+  const verificationStatus = getVerificationStatusLabel(storedVerificationStatus);
   const rawVerificationStatus = String(verification?.status || '').toLowerCase();
-  const canResubmitVerification = rawVerificationStatus === 'rejected';
-  const verificationAccepted = isAcceptedVerificationStatus(verification?.status);
+  const canResubmitVerification = !profileVerificationAccepted && rawVerificationStatus === 'rejected';
+  const verificationAccepted = profileVerificationAccepted || isAcceptedVerificationStatus(verification?.status);
   const joinedAt = formatDate(profile.created_at || user?.created_at);
   const lastSignIn = formatDate(user?.last_sign_in_at);
   const missingProfileDetails = getMissingProfileDetails(profile);
   const profileDetailsComplete = missingProfileDetails.length === 0;
   const profileCompletion = profileDetailsComplete ? 'Complete' : 'Needs completion';
   const accountStatus = readValue(profile.account_status, 'Active');
-  const verificationIdRule = getVerificationIdTypeRule(verifForm.id_type);
   const latestAdultBirthDate = formatDateInputValue(getLatestAdultBirthDate());
-  const verificationActionLabel = verification
-    ? verificationAccepted
-      ? 'View ID'
-      : canResubmitVerification
-        ? 'Submit ID again'
-        : 'View ID submission'
-    : 'Submit ID verification';
-  const verificationModalTitle = verification
-    ? verificationAccepted
-      ? 'Verified ID credentials'
-      : canResubmitVerification
-        ? 'Resubmit ID verification'
-        : 'ID submission details'
-    : 'Submit ID verification';
-
-  function openVerification() {
-    setVerifMsg('');
-
-    const actionWouldSubmitVerification = !verification || canResubmitVerification;
-
-    if (actionWouldSubmitVerification && !profileDetailsComplete) {
-      setMessage(`Complete your profile before submitting an ID. Missing: ${missingProfileDetails.join(', ')}.`);
-      setMessageTone('warning');
-      setEditMode(true);
-      return;
-    }
-
-    setMessage('');
-    navigate('/user/profile/verification');
-  }
+  const verificationModalTitle = verification ? (verificationAccepted ? 'Verified ID credentials' : 'ID submission details') : 'Didit verification';
 
   return (
     <UserShell subtitle="" title="">
@@ -594,7 +723,7 @@ export default function Profile({ verificationPage = false }) {
             Your profile credentials have been completed and saved successfully.
           </p>
           <p style={{ color: theme.colors.slate, lineHeight: 1.65, margin: 0 }}>
-            You can continue updating your verification details or return to your member workspace.
+            Your verified profile is ready. You can now return to your member workspace.
           </p>
         </div>
       </Modal>
@@ -716,65 +845,37 @@ export default function Profile({ verificationPage = false }) {
             </div>
           ) : (
             <>
-              <p style={{ color: theme.colors.slate, lineHeight: 1.7, margin: 0 }}>
-                Upload the selected government ID, its supporting images, and a selfie so your member account can enter the trust review queue.
-              </p>
+              <StatusMessage tone="info">
+                Didit verification now opens as a hosted session. Start it from the edit form to scan your ID and selfie, then we will auto-fill supported profile fields.
+              </StatusMessage>
 
-              {canResubmitVerification ? (
-                <StatusMessage tone="warning">
-                  Your previous submission was rejected. {verification?.remarks ? `Reason: ${verification.remarks}` : 'Review the requirements and submit a corrected ID set.'}
-                </StatusMessage>
-              ) : null}
-
-              <form onSubmit={handleVerificationSubmit} style={{ display: 'grid', gap: 18 }}>
-                <div className="form-grid" style={{ display: 'grid', gap: 14, gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
-                  <FormField hint="Choose the government ID you are uploading for review." label="ID type">
-                    <select name="id_type" onChange={handleVerifChange} required style={selectStyle} value={verifForm.id_type}>
-                      {verificationIdTypeOptions.map((option) => (
-                        <option key={option.value || 'none'} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </FormField>
-                  <FormField
-                    hint={verifForm.id_type ? `${verificationIdRule.description} Example: ${verificationIdRule.example}.` : verificationIdRule.description}
-                    label="Masked ID number"
-                  >
-                    <Input
-                      maxLength={verificationIdRule.maxLength}
-                      name="id_number_masked"
-                      onChange={handleVerifChange}
-                      placeholder={verificationIdRule.placeholder}
-                      required
-                      value={verifForm.id_number_masked}
-                    />
-                  </FormField>
+              {diditSessionUrl ? (
+                <div className="didit-inline-session">
+                  <div className="didit-qr-card">
+                    <QRCodeSVG level="M" marginSize={2} size={220} value={diditSessionUrl} />
+                    <strong>Scan with your phone</strong>
+                    <span>Use your phone camera to open the secure Didit ID and selfie verification.</span>
+                  </div>
+                  <div className="didit-session-copy">
+                    <StatusMessage tone="info">Your verification session is ready. Scan the QR or open it on this device.</StatusMessage>
+                    <Button as="a" href={diditSessionUrl} rel="noreferrer" target="_blank" type="button">
+                      Open verification
+                    </Button>
+                  </div>
                 </div>
-
-                <div className="form-grid" style={{ display: 'grid', gap: 14, gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
-                  <FormField label="Upload ID front">
-                    <FileInput accept="image/*" onChange={(event) => setIdFront(event.target.files?.[0] || null)} required />
-                  </FormField>
-                  <FormField label="Upload ID back">
-                    <FileInput accept="image/*" onChange={(event) => setIdBack(event.target.files?.[0] || null)} required />
-                  </FormField>
-                  <FormField label="Upload selfie">
-                    <FileInput accept="image/*" onChange={(event) => setSelfie(event.target.files?.[0] || null)} required />
-                  </FormField>
+              ) : (
+                <div style={{ display: 'grid', gap: 18 }}>
+                  <p style={{ color: theme.colors.slate, lineHeight: 1.7, margin: 0 }}>
+                    Start the hosted verification session to scan your ID and complete selfie capture with Didit.
+                  </p>
+                  {diditSessionError ? <StatusMessage tone={verifTone}>{diditSessionError}</StatusMessage> : null}
+                  <div style={{ display: 'flex', justifyContent: 'center' }}>
+                    <Button disabled={diditSessionLoading} onClick={startDiditSession} type="button">
+                      {diditSessionLoading ? 'Starting verification...' : 'Start Didit verification'}
+                    </Button>
+                  </div>
                 </div>
-
-                {verifMsg ? <StatusMessage tone={verifTone}>{verifMsg}</StatusMessage> : null}
-
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, justifyContent: 'flex-end' }}>
-                  <Button onClick={() => navigate('/user/profile')} type="button" variant="ghost">
-                    Back to profile
-                  </Button>
-                  <Button icon={<CheckIcon size={16} />} type="submit">
-                    Submit verification
-                  </Button>
-                </div>
-              </form>
+              )}
             </>
           )}
         </div>
@@ -900,26 +1001,7 @@ export default function Profile({ verificationPage = false }) {
                   </div>
                 </div>
 
-                <div className="responsive-action-row" style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-                  {!verification ? (
-                    <Button
-                      onClick={openVerification}
-                      style={{ minWidth: 182 }}
-                      type="button"
-                      variant="secondary"
-                    >
-                      {verificationActionLabel}
-                    </Button>
-                  ) : (
-                    <Button
-                      onClick={openVerification}
-                      style={{ minWidth: 182 }}
-                      type="button"
-                      variant="secondary"
-                    >
-                      {verificationActionLabel}
-                    </Button>
-                  )}
+              <div className="responsive-action-row" style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                   <Button
                     onClick={() => {
                       setEditMode((current) => !current);
@@ -958,16 +1040,52 @@ export default function Profile({ verificationPage = false }) {
           >
             {editMode ? (
               <form className="responsive-scroll-form" onSubmit={handleSubmit} style={{ display: 'grid', gap: 18, maxHeight: '78vh', overflowY: 'auto', paddingRight: 6 }}>
+                {!verificationAccepted ? <section className="profile-form-section">
+                  <div className="profile-form-section-heading">
+                    <strong>Didit verification</strong>
+                    <span>Start here first. Scan the QR with your phone to capture your ID and selfie, then supported details will populate automatically.</span>
+                  </div>
+
+                  {diditSessionUrl ? (
+                    <div className="didit-inline-session">
+                      <div className="didit-qr-card">
+                        <QRCodeSVG level="M" marginSize={2} size={220} value={diditSessionUrl} />
+                        <strong>Scan to verify your identity</strong>
+                        <span>Open your phone camera and scan this code to continue in Didit.</span>
+                      </div>
+                      <div className="didit-session-copy">
+                        <strong>Verification session ready</strong>
+                        <span>Didit will capture the front and back of your ID and your selfie. Keep this page open while completing the steps.</span>
+                        <div className="didit-action-row">
+                          <Button as="a" className="didit-primary-action" href={diditSessionUrl} rel="noreferrer" target="_blank" type="button">
+                            Open on this device
+                          </Button>
+                          <Button className="didit-secondary-action" disabled={diditSessionLoading} onClick={startDiditSession} type="button" variant="ghost">
+                            Start a new session
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', justifyContent: 'center' }}>
+                      <Button disabled={diditSessionLoading} onClick={startDiditSession} type="button">
+                        {diditSessionLoading ? 'Starting verification...' : 'Start Didit verification'}
+                      </Button>
+                    </div>
+                  )}
+                  {diditSessionError ? <StatusMessage tone={verifTone}>{diditSessionError}</StatusMessage> : null}
+                </section> : null}
+
                 <section className="profile-form-section">
                   <div className="profile-form-section-heading">
                     <strong>Personal details</strong>
-                    <span>Your identity and account information.</span>
+                    <span>Complete the profile after verification. Didit will fill supported fields automatically when available.</span>
                   </div>
 
                   <div className="form-grid profile-three-column-grid">
                   {identityFields.slice(0, 3).map((field) => (
-                    <FormField key={field.name} label={field.label}>
-                      <Input name={field.name} onChange={handleChange} value={form[field.name] || ''} />
+                    <FormField key={field.name} label={field.label} required={['first_name', 'last_name'].includes(field.name)}>
+                      <Input name={field.name} onChange={handleChange} required={['first_name', 'last_name'].includes(field.name)} value={form[field.name] || ''} />
                     </FormField>
                   ))}
 
@@ -982,12 +1100,12 @@ export default function Profile({ verificationPage = false }) {
                   </FormField>
 
                   {identityFields.slice(3).map((field) => (
-                    <FormField key={field.name} label={field.label}>
-                      <Input name={field.name} onChange={handleChange} value={form[field.name] || ''} />
+                    <FormField key={field.name} label={field.label} required={['username', 'phone_number'].includes(field.name)}>
+                      <Input name={field.name} onChange={handleChange} required={['username', 'phone_number'].includes(field.name)} value={form[field.name] || ''} />
                     </FormField>
                   ))}
 
-                  <FormField hint="Borrowers must be at least 18 years old." label="Date of birth">
+                  <FormField hint="Borrowers must be at least 18 years old." label="Date of birth" required>
                     <Input
                       max={latestAdultBirthDate}
                       name="date_of_birth"
@@ -1009,14 +1127,21 @@ export default function Profile({ verificationPage = false }) {
                     <strong>Address</strong>
                     <span>Your location and community details.</span>
                   </div>
-                  <PhilippineAddressFields columnCount={3} flatMap form={form} setForm={setForm} showCoordinates={false} />
+                  <PhilippineAddressFields
+                    columnCount={3}
+                    flatMap
+                    form={form}
+                    requiredFields={['street', 'region', 'province', 'city', 'barangay', 'country']}
+                    setForm={setForm}
+                    showCoordinates={false}
+                  />
                 </section>
 
                 {message ? <StatusMessage tone={messageTone}>{message}</StatusMessage> : null}
 
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                   <Button style={{ flex: 1 }} type="submit">
-                    Save profile
+                    Save profile and verify ID
                   </Button>
                   <Button onClick={() => setEditMode(false)} type="button" variant="ghost">
                     Cancel

@@ -129,32 +129,35 @@ function useCompactViewport(breakpoint = 980) {
   return isCompact;
 }
 
-function SidebarHeader({ brandName, collapsed, logoIcon, logoUrl, palette, roleLabel }) {
+function SidebarHeader({ brandName, collapsed, compact, logoIcon, logoUrl, palette, roleLabel }) {
   const brandFallbackText = (logoIcon || brandName.slice(0, 2) || 'BK').toUpperCase();
+  const isCompact = compact;
+  const headerGap = isCompact ? 10 : 'clamp(6px, 1.8vh, 18px)';
+  const logoSize = isCompact ? 42 : 'clamp(38px, 5.6vh, 56px)';
 
   return (
-    <div style={{ display: 'grid', gap: 18 }}>
-      <div style={{ alignItems: 'center', display: 'grid', gap: 12, gridTemplateColumns: collapsed ? '1fr' : '56px minmax(0, 1fr)' }}>
+    <div style={{ display: 'grid', gap: headerGap }}>
+      <div style={{ alignItems: 'center', display: 'grid', gap: isCompact ? 8 : 'clamp(8px, 1.2vh, 12px)', gridTemplateColumns: collapsed ? '1fr' : `${logoSize} minmax(0, 1fr)` }}>
         <div
           style={{
             alignItems: 'center',
             background: palette.sidebarLogoBackground,
-            borderRadius: 18,
+            borderRadius: isCompact ? 14 : 18,
             color: palette.activeAccent,
             display: 'inline-flex',
-            height: 56,
+            height: logoSize,
             justifyContent: 'center',
             justifySelf: 'center',
             overflow: 'hidden',
-            width: 56,
+            width: logoSize,
           }}
         >
           {logoUrl ? (
             <img alt={brandName} src={logoUrl} style={{ height: '100%', objectFit: 'cover', width: '100%' }} />
           ) : logoIcon ? (
-            <span style={{ fontFamily: theme.fonts.display, fontSize: 14, fontWeight: 800, letterSpacing: '0.08em' }}>{brandFallbackText}</span>
+            <span style={{ fontFamily: theme.fonts.display, fontSize: isCompact ? 11 : 14, fontWeight: 800, letterSpacing: '0.08em' }}>{brandFallbackText}</span>
           ) : (
-            <BrandMark size={24} />
+            <BrandMark size={isCompact ? 18 : 24} />
           )}
         </div>
         {!collapsed ? (
@@ -163,7 +166,7 @@ function SidebarHeader({ brandName, collapsed, logoIcon, logoUrl, palette, roleL
               style={{
                 color: palette.sidebarText,
                 fontFamily: theme.fonts.display,
-                fontSize: 24,
+                fontSize: isCompact ? 18 : 'clamp(17px, 2.4vh, 24px)',
                 letterSpacing: '-0.03em',
                 lineHeight: 1.05,
                 margin: 0,
@@ -177,7 +180,7 @@ function SidebarHeader({ brandName, collapsed, logoIcon, logoUrl, palette, roleL
             <span
               style={{
                 color: palette.sidebarMuted,
-                fontSize: 12,
+                fontSize: isCompact ? 10 : 'clamp(9px, 1.2vh, 12px)',
                 fontWeight: 600,
                 letterSpacing: '0.13em',
                 textTransform: 'uppercase',
@@ -192,8 +195,11 @@ function SidebarHeader({ brandName, collapsed, logoIcon, logoUrl, palette, roleL
   );
 }
 
-function SidebarNavItem({ active, collapsed, icon, item, onNavigate, palette }) {
+function SidebarNavItem({ active, compact, collapsed, icon, item, onNavigate, palette }) {
   const itemText = active ? palette.sidebarText : palette.sidebarMuted;
+  const isDense = compact || collapsed;
+  const rowHeight = isDense ? 34 : 'clamp(34px, 5.8vh, 58px)';
+  const iconSize = isDense ? 28 : 'clamp(28px, 4.4vh, 44px)';
 
   return (
     <button
@@ -202,17 +208,17 @@ function SidebarNavItem({ active, collapsed, icon, item, onNavigate, palette }) 
         alignItems: 'center',
         background: active ? palette.sidebarSurface : 'transparent',
         border: `1px solid ${active ? palette.sidebarBorder : 'transparent'}`,
-        borderRadius: 24,
+        borderRadius: isDense ? 14 : 24,
         color: itemText,
         cursor: 'pointer',
         display: 'grid',
-        gap: collapsed ? 0 : 14,
-        gridTemplateColumns: collapsed ? '1fr' : '44px minmax(0, 1fr) 6px',
-        justifyItems: collapsed ? 'center' : 'stretch',
-        minHeight: collapsed ? 54 : 58,
-        padding: collapsed ? 0 : '0 14px',
+        gap: isDense ? 0 : 14,
+        gridTemplateColumns: isDense ? '1fr' : '44px minmax(0, 1fr) 6px',
+        justifyItems: isDense ? 'center' : 'stretch',
+        minHeight: rowHeight,
+        padding: isDense ? '0 4px' : '0 14px',
         position: 'relative',
-        textAlign: collapsed ? 'center' : 'left',
+        textAlign: isDense ? 'center' : 'left',
         transition: 'background 160ms ease, border-color 160ms ease',
       }}
     >
@@ -220,23 +226,23 @@ function SidebarNavItem({ active, collapsed, icon, item, onNavigate, palette }) 
         style={{
           alignItems: 'center',
           background: active ? alpha(palette.activeAccent, 0.16) : palette.sidebarIconBg,
-          borderRadius: 16,
+          borderRadius: isDense ? 10 : 16,
           color: active ? palette.activeAccent : itemText,
           display: 'inline-flex',
-          height: 44,
+          height: iconSize,
           justifyContent: 'center',
-          width: 44,
+          width: iconSize,
         }}
       >
-        {React.cloneElement(icon, { size: 18 })}
+        {React.cloneElement(icon, { size: isDense ? 14 : 18 })}
       </span>
 
-      {!collapsed ? (
+      {!isDense ? (
         <span
           style={{
             color: itemText,
             fontFamily: theme.fonts.display,
-            fontSize: 15,
+            fontSize: isDense ? 12 : 15,
             fontWeight: 600,
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -247,27 +253,27 @@ function SidebarNavItem({ active, collapsed, icon, item, onNavigate, palette }) 
         </span>
       ) : null}
 
-      {active && !collapsed ? (
+      {active && !isDense ? (
         <span
           style={{
             alignSelf: 'center',
             background: palette.activeAccent,
             borderRadius: 999,
-            height: 30,
+            height: 'clamp(12px, 1.8vh, 18px)',
             width: 4,
           }}
         />
       ) : null}
 
-      {active && collapsed ? (
+      {active && isDense ? (
         <span
           style={{
             background: palette.activeAccent,
             borderRadius: 999,
-            bottom: 8,
-            height: 6,
+            bottom: 6,
+            height: 4,
             position: 'absolute',
-            width: 18,
+            width: 12,
           }}
         />
       ) : null}
@@ -494,7 +500,7 @@ export function WorkspaceLayout({
   const isAdmin = kind === 'admin';
   const isCompactViewport = useCompactViewport();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const effectiveCollapsed = isCompactViewport ? false : collapsed;
+  const effectiveCollapsed = isCompactViewport ? true : collapsed;
   const sidebarWidth = effectiveCollapsed ? 96 : 296;
   const palette = getWorkspacePalette(settings, isAdmin);
   const brandName = settings.system_name?.trim() || "Borrow Ko 'To";
@@ -559,11 +565,13 @@ export function WorkspaceLayout({
         color: palette.sidebarText,
         display: 'flex',
         flexDirection: 'column',
-        gap: 22,
+        gap: isCompactViewport ? 6 : 'clamp(6px, 2.2vh, 22px)',
         height: '100%',
         overflowX: 'hidden',
-        overflowY: 'auto',
-        padding: effectiveCollapsed ? '20px 12px' : '26px 16px 18px',
+        overflowY: 'hidden',
+        padding: effectiveCollapsed
+          ? (isCompactViewport ? '8px 6px' : 'clamp(8px, 2vh, 20px) 12px')
+          : 'clamp(8px, 2.6vh, 26px) 16px clamp(8px, 1.8vh, 18px)',
       }}
     >
       {isCompactViewport ? (
@@ -571,14 +579,15 @@ export function WorkspaceLayout({
           style={{
             alignItems: 'flex-start',
             display: 'flex',
-            gap: 14,
+            gap: 6,
             justifyContent: 'space-between',
           }}
         >
           <div style={{ flex: 1, minWidth: 0 }}>
             <SidebarHeader
               brandName={brandName}
-              collapsed={false}
+              collapsed={true}
+              compact={isCompactViewport}
               logoIcon={logoIcon}
               logoUrl={logoUrl}
               palette={palette}
@@ -590,6 +599,7 @@ export function WorkspaceLayout({
         <SidebarHeader
           brandName={brandName}
           collapsed={effectiveCollapsed}
+          compact={isCompactViewport}
           logoIcon={logoIcon}
           logoUrl={logoUrl}
           palette={palette}
@@ -597,18 +607,18 @@ export function WorkspaceLayout({
         />
       )}
 
-      <nav style={{ display: 'grid', gap: 10, marginTop: 6 }}>
+      <nav style={{ display: 'grid', gap: isCompactViewport ? 2 : 'clamp(2px, 1vh, 10px)', marginTop: isCompactViewport ? 0 : 'clamp(0px, 0.6vh, 6px)' }}>
         {navItems.map((item, index) =>
           item.type === 'section' ? (
-            !effectiveCollapsed ? (
+            !effectiveCollapsed && !isCompactViewport ? (
               <span
                 key={`${item.label}-${index}`}
                 style={{
                   color: palette.sidebarMuted,
-                  fontSize: 10,
+                  fontSize: 9,
                   fontWeight: 700,
                   letterSpacing: '0.16em',
-                  margin: index === 0 ? '2px 14px 0' : '14px 14px 0',
+                  margin: index === 0 ? '0 12px' : 'clamp(1px, 0.4vh, 4px) 12px 0',
                   textTransform: 'uppercase',
                 }}
               >
@@ -621,13 +631,14 @@ export function WorkspaceLayout({
                 style={{
                   background: palette.sidebarBorder,
                   height: 1,
-                  margin: index === 0 ? '2px 18px 0' : '12px 18px 0',
+                  margin: index === 0 ? '0 12px 0' : '2px 12px 0',
                 }}
               />
             )
           ) : (
             <SidebarNavItem
               active={activePath === item.path}
+              compact={isCompactViewport}
               collapsed={effectiveCollapsed}
               icon={item.icon}
               item={item}

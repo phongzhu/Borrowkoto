@@ -1537,6 +1537,17 @@
   margin: 4px 0 0;
 }
 
+.item-detail-schedule-window {
+  color: var(--ui-text-secondary, #64748b);
+  font-size: 12px;
+  line-height: 1.55;
+  margin: -4px 0 2px;
+}
+
+.item-detail-schedule-window strong {
+  color: var(--ui-text-color, #101827);
+}
+
 
 @media (max-width: 980px) {
   .item-detail-layout {

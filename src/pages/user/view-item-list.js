@@ -20,8 +20,7 @@ const currencyFormatter = new Intl.NumberFormat('en-PH', {
 });
 
 const itemSelectFields =
-  'id, owner_id, category_id, title, description, item_condition, rental_price_per_day, security_deposit, estimated_value, is_for_sale, sale_price, sale_inclusions, min_rental_days, max_rental_days, quantity, pickup_street, pickup_region, pickup_barangay, pickup_city, pickup_province, pickup_country, pickup_latitude, pickup_longitude, meetup_notes, status, is_active, created_at, updated_at';
-const SLOT_INTERVAL_MINUTES = 30;
+  'id, owner_id, category_id, title, description, item_condition, rental_price_per_day, security_deposit, estimated_value, is_for_sale, sale_price, sale_inclusions, min_rental_days, max_rental_days, quantity, pickup_street, pickup_region, pickup_barangay, pickup_city, pickup_province, pickup_country, pickup_latitude, pickup_longitude, pickup_time, return_time, meetup_notes, status, is_active, created_at, updated_at';
 const BLOCKING_BOOKING_STATUSES = new Set(['pending', 'accepted', 'for_pickup', 'active', 'return_pending', 'overdue', 'disputed']);
 const TAGS_META_PREFIX = '[TAGS]::';
 const BALIUAG_BARANGAYS = ['Adias', 'Bagong Nayon', 'Balon', 'Banag', 'Barihan', 'Calantipay', 'Catulinan', 'Concepcion', 'Hinukay', 'Makinabang', 'Matangtubig', 'Pagala', 'Paitan', 'Piel', 'Pinagbarilan', 'Poblacion', 'Sabang', 'San Jose', 'San Roque', 'Santa Barbara', 'Santo Cristo', 'Santo Nino', 'Subic', 'Sulivan', 'Tangos', 'Tarcan', 'Tiaong', 'Tibag', 'Tilapayong', 'Virgen delas Flores'];
@@ -60,6 +59,13 @@ function PublicBrandMark({ brandName, logoUrl }) {
 function addDays(date, days) {
   const next = new Date(date);
   next.setDate(next.getDate() + days);
+  return next;
+}
+
+function applyListingTime(date, timeValue, fallbackTime) {
+  const next = new Date(date);
+  const [hours, minutes] = String(timeValue || fallbackTime).slice(0, 5).split(':').map(Number);
+  next.setHours(Number.isFinite(hours) ? hours : 0, Number.isFinite(minutes) ? minutes : 0, 0, 0);
   return next;
 }
 
@@ -803,6 +809,8 @@ export default function ViewItemList({ publicMode = false }) {
   const minimumStartValue = useMemo(() => formatDateTimeLocalValue(new Date()), []);
   const now = useMemo(() => new Date(), []);
   const selectedStartDate = useMemo(() => parseLocalDateTimeValue(selectedStart), [selectedStart]);
+  const pickupTime = String(item?.pickup_time || '09:00').slice(0, 5);
+  const returnTime = String(item?.return_time || '18:00').slice(0, 5);
   const hasSelectedSchedule = Boolean(selectedStartDate && parseLocalDateTimeValue(selectedEnd));
   const canProceedToRent = rentEligibility.allowed && hasSelectedSchedule;
   const minRentalDays = useMemo(() => Math.max(1, Number(item?.min_rental_days) || 1), [item?.min_rental_days]);
@@ -814,8 +822,8 @@ export default function ViewItemList({ publicMode = false }) {
     return minRentalDays;
   }, [item?.max_rental_days, minRentalDays]);
   const maximumEndValue = useMemo(() => {
-    return selectedStartDate ? formatDateTimeLocalValue(addDays(selectedStartDate, maxRentalDays)) : '';
-  }, [maxRentalDays, selectedStartDate]);
+    return selectedStartDate ? formatDateTimeLocalValue(applyListingTime(addDays(selectedStartDate, maxRentalDays), returnTime, '18:00')) : '';
+  }, [maxRentalDays, returnTime, selectedStartDate]);
   const blockedDateIntervals = useMemo(
     () => bookedRanges.map((range) => ({ end: range.end, start: range.start })),
     [bookedRanges]
@@ -832,34 +840,6 @@ export default function ViewItemList({ publicMode = false }) {
     [bookedRanges]
   );
 
-  const isStartDateTimeSelectable = useMemo(
-    () => (candidateDate) => {
-      if (!candidateDate || candidateDate < now) {
-        return false;
-      }
-      return !hasOverlap(candidateDate, addDays(candidateDate, minRentalDays), bookedRanges);
-    },
-    [bookedRanges, minRentalDays, now]
-  );
-
-  const isEndDateTimeSelectable = useMemo(
-    () => (candidateDate) => {
-      if (!selectedStartDate || !candidateDate) {
-        return false;
-      }
-
-      const minimumEnd = addDays(selectedStartDate, minRentalDays);
-      const maximumEnd = addDays(selectedStartDate, maxRentalDays);
-
-      if (candidateDate < minimumEnd || candidateDate > maximumEnd) {
-        return false;
-      }
-
-      return !hasOverlap(selectedStartDate, candidateDate, bookedRanges);
-    },
-    [bookedRanges, maxRentalDays, minRentalDays, selectedStartDate]
-  );
-
   useEffect(() => {
     if (!selectedStartDate || !selectedEnd) {
       return;
@@ -870,13 +850,13 @@ export default function ViewItemList({ publicMode = false }) {
       return;
     }
 
-    const minimumEnd = addDays(selectedStartDate, minRentalDays);
-    const maximumEnd = addDays(selectedStartDate, maxRentalDays);
+    const minimumEnd = applyListingTime(addDays(selectedStartDate, minRentalDays), returnTime, '18:00');
+    const maximumEnd = applyListingTime(addDays(selectedStartDate, maxRentalDays), returnTime, '18:00');
 
     if (currentEnd < minimumEnd || currentEnd > maximumEnd || hasOverlap(selectedStartDate, currentEnd, bookedRanges)) {
       setSelectedEnd(formatDateTimeLocalValue(minimumEnd));
     }
-  }, [bookedRanges, maxRentalDays, minRentalDays, selectedEnd, selectedStartDate]);
+  }, [bookedRanges, maxRentalDays, minRentalDays, returnTime, selectedEnd, selectedStartDate]);
 
   function openItemDetails(nextItem) {
     navigate(publicMode ? `/items/${nextItem.id}` : `/user/view-item-list/${nextItem.id}`);
@@ -897,39 +877,41 @@ export default function ViewItemList({ publicMode = false }) {
   function handleQuickViewMouseLeave() { setImageQuickView((current) => ({ ...current, active: false })); }
 
   function handleSelectedStartChange(nextStart) {
-    const nextValue = formatDateTimeLocalValue(nextStart);
+    const effectiveStart = nextStart ? applyListingTime(nextStart, pickupTime, '09:00') : null;
+    const nextValue = formatDateTimeLocalValue(effectiveStart);
     setSelectedStart(nextValue);
 
-    if (!nextStart) {
+    if (!effectiveStart) {
       setSelectedEnd('');
       return;
     }
 
-    const nextMinimumEnd = addDays(nextStart, minRentalDays);
-    const nextMaximumEnd = addDays(nextStart, maxRentalDays);
+    const nextMinimumEnd = applyListingTime(addDays(effectiveStart, minRentalDays), returnTime, '18:00');
+    const nextMaximumEnd = applyListingTime(addDays(effectiveStart, maxRentalDays), returnTime, '18:00');
     const currentEnd = parseLocalDateTimeValue(selectedEnd);
 
-    if (!currentEnd || currentEnd <= nextStart || currentEnd < nextMinimumEnd || currentEnd > nextMaximumEnd || hasOverlap(nextStart, currentEnd, bookedRanges)) {
+    if (!currentEnd || currentEnd <= effectiveStart || currentEnd < nextMinimumEnd || currentEnd > nextMaximumEnd || hasOverlap(effectiveStart, currentEnd, bookedRanges)) {
       setSelectedEnd(formatDateTimeLocalValue(nextMinimumEnd));
     }
   }
 
   function handleSelectedEndChange(nextEnd) {
-    const nextValue = formatDateTimeLocalValue(nextEnd);
+    const effectiveEnd = nextEnd ? applyListingTime(nextEnd, returnTime, '18:00') : null;
+    const nextValue = formatDateTimeLocalValue(effectiveEnd);
 
-    if (!selectedStartDate || !nextEnd) {
+    if (!selectedStartDate || !effectiveEnd) {
       setSelectedEnd(nextValue);
       return;
     }
 
-    const minimumEnd = addDays(selectedStartDate, minRentalDays);
-    const maximumEnd = addDays(selectedStartDate, maxRentalDays);
+    const minimumEnd = applyListingTime(addDays(selectedStartDate, minRentalDays), returnTime, '18:00');
+    const maximumEnd = applyListingTime(addDays(selectedStartDate, maxRentalDays), returnTime, '18:00');
 
-    if (nextEnd < minimumEnd || nextEnd > maximumEnd) {
+    if (effectiveEnd < minimumEnd || effectiveEnd > maximumEnd) {
       return;
     }
 
-    if (hasOverlap(selectedStartDate, nextEnd, bookedRanges)) {
+    if (hasOverlap(selectedStartDate, effectiveEnd, bookedRanges)) {
       return;
     }
 
@@ -1679,14 +1661,11 @@ export default function ViewItemList({ publicMode = false }) {
                         dateFormat="dd/MM/yyyy hh:mm aa"
                         dayClassName={bookedDayClassName}
                         excludeDateIntervals={blockedDateIntervals}
-                        filterTime={isStartDateTimeSelectable}
+                        filterDate={(date) => applyListingTime(date, pickupTime, '09:00') >= now}
                         minDate={startDatePickerMinDate}
                         onChange={handleSelectedStartChange}
-                        placeholderText="Select date and time"
+                        placeholderText="Select pickup date"
                         selected={selectedStartDate}
-                        showTimeSelect
-                        timeCaption="Time"
-                        timeIntervals={SLOT_INTERVAL_MINUTES}
                       />
                     </label>
                     <label>
@@ -1699,18 +1678,15 @@ export default function ViewItemList({ publicMode = false }) {
                         dayClassName={bookedDayClassName}
                         disabled={!selectedStart}
                         excludeDateIntervals={blockedDateIntervals}
-                        filterTime={isEndDateTimeSelectable}
                         maxDate={endDatePickerMaxDate || undefined}
                         minDate={endDatePickerMinDate}
                         onChange={handleSelectedEndChange}
-                        placeholderText="Select date and time"
+                        placeholderText="Select return date"
                         selected={parseLocalDateTimeValue(selectedEnd)}
-                        showTimeSelect
-                        timeCaption="Time"
-                        timeIntervals={SLOT_INTERVAL_MINUTES}
                       />
                     </label>
                   </div>
+                  <p className="item-detail-schedule-window">Pickup at <strong>{pickupTime}</strong> · Return by <strong>{returnTime}</strong>. Returns after the deadline incur the daily late fee.</p>
                   <div className="item-detail-booked-calendar">
                     <div className="item-detail-booked-calendar-head">
                       <strong>Booked dates</strong>
@@ -1927,12 +1903,13 @@ export default function ViewItemList({ publicMode = false }) {
 
             <div className="buy-request-fields">
             <label>
-              <span>Quantity</span>
+              <span>Quantity<span aria-hidden="true" className="required-asterisk">*</span></span>
               <input
                 className="buy-request-input"
                 max={Number(item?.quantity || 1)}
                 min="1"
                 onChange={(event) => setBuyRequestForm((current) => ({ ...current, quantity: event.target.value }))}
+                required
                 step="1"
                 type="number"
                 value={buyRequestForm.quantity}
@@ -1942,11 +1919,12 @@ export default function ViewItemList({ publicMode = false }) {
               </small>
             </label>
             <label>
-              <span>Preferred pickup</span>
+              <span>Preferred pickup<span aria-hidden="true" className="required-asterisk">*</span></span>
               <input
                 className="buy-request-input"
                 min={formatDateTimeLocalValue(new Date())}
                 onChange={(event) => setBuyRequestForm((current) => ({ ...current, buyer_preferred_pickup_at: event.target.value }))}
+                required
                 type="datetime-local"
                 value={buyRequestForm.buyer_preferred_pickup_at}
               />

@@ -294,6 +294,16 @@ export function ReportIcon(props) {
   );
 }
 
+export function FaqIcon(props) {
+  return (
+    <IconBase {...props}>
+      <path d="M5 4h14v13H9l-4 4V4Z" />
+      <path d="M9.5 9a2.5 2.5 0 0 1 4.8-.9c.7 1.8-2.3 2.1-2.3 3.9" />
+      <path d="M12 14.5h.01" />
+    </IconBase>
+  );
+}
+
 export function SearchIcon(props) {
   return (
     <IconBase {...props}>

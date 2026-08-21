@@ -6,6 +6,7 @@ import UserLoginPage from './pages/user/UserLoginPage';
 import UserSignupPage from './pages/user/UserSignupPage';
 import UserDashboard from './pages/user/UserDashboard';
 import MyBookings from './pages/user/MyBookings';
+import ListingFAQs from './pages/user/ListingFAQs';
 import Messages from './pages/user/Messages';
 import Profile from './pages/user/Profile';
 import RentItem from './pages/user/rent-item';
@@ -59,6 +60,7 @@ export default function Root() {
             <Route path="/user/bookings" element={<MyBookings viewMode="manage-booking" />} />
             <Route path="/user/calendar" element={<UserRentalsCalendar />} />
             <Route path="/user/messages" element={<Messages />} />
+            <Route path="/user/listing-faqs" element={<ListingFAQs />} />
             <Route path="/user/profile" element={<Profile />} />
             <Route path="/user/profile/verification" element={<Profile verificationPage />} />
           </Route>

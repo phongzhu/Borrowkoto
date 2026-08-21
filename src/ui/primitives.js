@@ -24,7 +24,7 @@ const buttonVariants = {
   primary: {
     background: theme.colors.ink,
     border: `1px solid ${theme.colors.ink}`,
-    color: '#fff',
+    color: 'var(--ui-background-color, #ffffff)',
   },
   secondary: {
     background: alpha(theme.colors.panel, 0.86),
@@ -259,7 +259,12 @@ export function StarRating({ rating = 0, reviewCount = 0, size = 14, style, text
   );
 }
 
-export function FormField({ children, hint, label }) {
+export function FormField({ children, hint, label, required }) {
+  const hasRequiredControl = React.Children.toArray(children).some(
+    (child) => React.isValidElement(child) && child.props.required,
+  );
+  const showRequired = required ?? hasRequiredControl;
+
   return (
     <label style={{ display: 'grid', gap: 10 }}>
       {label ? (
@@ -271,6 +276,7 @@ export function FormField({ children, hint, label }) {
           }}
         >
           {label}
+          {showRequired ? <span aria-hidden="true" style={{ color: theme.colors.danger, marginLeft: 4 }}>*</span> : null}
         </span>
       ) : null}
       {children}
@@ -451,7 +457,7 @@ export function Modal({ actions, children, contentClassName, contentStyle, inlin
             display: 'flex',
             flexWrap: 'wrap',
             gap: 10,
-            justifyContent: 'flex-end',
+            justifyContent: 'center',
             paddingTop: 4,
           }}
         >

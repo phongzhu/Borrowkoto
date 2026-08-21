@@ -5,6 +5,7 @@ import { CatalogIcon, CheckIcon, ShieldIcon, UsersIcon } from '../../ui/icons';
 import { SectionGrid } from '../../ui/layouts';
 import { Badge, Button, FormField, Input, MetricCard, Modal, Panel, StatusMessage, Textarea } from '../../ui/primitives';
 import { alpha, theme } from '../../ui/theme';
+import CategoryIcon, { CATEGORY_ICON_OPTIONS } from '../../ui/CategoryIcon';
 
 const currencyFormatter = new Intl.NumberFormat('en-PH', {
   currency: 'PHP',
@@ -16,6 +17,10 @@ const dateFormatter = new Intl.DateTimeFormat('en-US', {
   month: 'short',
   year: 'numeric',
 });
+
+const CATEGORY_ICONS_BUCKET = 'category-icons';
+const CATEGORY_ICON_TYPES = ['image/jpeg', 'image/png', 'image/svg+xml', 'image/webp'];
+const MAX_CATEGORY_ICON_SIZE = 1024 * 1024;
 
 const headerCellStyle = {
   borderBottom: `1px solid ${alpha(theme.colors.ink, 0.08)}`,
@@ -87,6 +92,32 @@ function normalizeCategoryName(name) {
   return name.trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
+function validateCategoryIcon(file) {
+  if (!CATEGORY_ICON_TYPES.includes(file?.type)) {
+    return 'Choose a PNG, JPEG, WebP, or SVG icon.';
+  }
+
+  if (file.size > MAX_CATEGORY_ICON_SIZE) {
+    return 'Category icons must be 1 MB or smaller.';
+  }
+
+  return '';
+}
+
+async function uploadCategoryIcon(file) {
+  const extension = String(file.name || '').split('.').pop()?.toLowerCase() || 'png';
+  const filePath = `categories/${crypto.randomUUID()}.${extension}`;
+  const { error: uploadError } = await supabase.storage.from(CATEGORY_ICONS_BUCKET).upload(filePath, file, {
+    contentType: file.type,
+  });
+
+  if (uploadError) {
+    throw new Error(`Icon upload failed: ${uploadError.message}`);
+  }
+
+  return supabase.storage.from(CATEGORY_ICONS_BUCKET).getPublicUrl(filePath).data.publicUrl;
+}
+
 export default function ManageCatalog() {
   const [activeCatalogTab, setActiveCatalogTab] = useState('categories');
   const [categories, setCategories] = useState([]);
@@ -98,9 +129,12 @@ export default function ManageCatalog() {
   const [categoryTypeFilter, setCategoryTypeFilter] = useState('all');
   const [categoryForm, setCategoryForm] = useState({
     description: '',
+    icon_key: 'box',
     name: '',
     parent_category_id: '',
   });
+  const [categoryIconFile, setCategoryIconFile] = useState(null);
+  const [categoryIconPreview, setCategoryIconPreview] = useState('');
   const [showAddCategory, setShowAddCategory] = useState(false);
   const [itemSearch, setItemSearch] = useState('');
   const [itemStatusFilter, setItemStatusFilter] = useState('all');
@@ -108,10 +142,13 @@ export default function ManageCatalog() {
   const [editingCategory, setEditingCategory] = useState(null);
   const [editingCategoryForm, setEditingCategoryForm] = useState({
     description: '',
+    icon_key: 'box',
     is_active: true,
     name: '',
     parent_category_id: '',
   });
+  const [editingCategoryIconFile, setEditingCategoryIconFile] = useState(null);
+  const [editingCategoryIconPreview, setEditingCategoryIconPreview] = useState('');
   const [updatingCategory, setUpdatingCategory] = useState(false);
 
   async function loadCatalog(showLoader = true) {
@@ -120,7 +157,7 @@ export default function ManageCatalog() {
     }
 
     const [categoriesResult, itemsResult] = await Promise.all([
-      supabase.from('categories').select('id, name, description, parent_category_id, is_active, created_at, updated_at').order('name', { ascending: true }),
+      supabase.from('categories').select('id, name, description, icon_key, icon_url, parent_category_id, is_active, created_at, updated_at').order('name', { ascending: true }),
       supabase
         .from('items')
         .select(
@@ -321,15 +358,43 @@ export default function ManageCatalog() {
   function openAddCategory() {
     setCategoryForm({
       description: '',
+      icon_key: 'box',
       name: '',
       parent_category_id: '',
     });
+    setCategoryIconFile(null);
+    setCategoryIconPreview('');
     setShowAddCategory(true);
   }
 
   function closeAddCategory() {
     setShowAddCategory(false);
     setSavingCategory(false);
+    setCategoryIconFile(null);
+    setCategoryIconPreview('');
+  }
+
+  function handleCategoryIconChange(event, editing = false) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const validationError = validateCategoryIcon(file);
+    if (validationError) {
+      setMessage(validationError);
+      setMessageTone('warning');
+      event.target.value = '';
+      return;
+    }
+
+    const previewUrl = URL.createObjectURL(file);
+    if (editing) {
+      setEditingCategoryIconFile(file);
+      setEditingCategoryIconPreview(previewUrl);
+    } else {
+      setCategoryIconFile(file);
+      setCategoryIconPreview(previewUrl);
+    }
+    setMessage('');
   }
 
   async function handleCreateCategory(event) {
@@ -355,9 +420,21 @@ export default function ManageCatalog() {
 
     setSavingCategory(true);
 
+    let iconUrl = null;
+    try {
+      iconUrl = categoryIconFile ? await uploadCategoryIcon(categoryIconFile) : null;
+    } catch (iconError) {
+      setMessage(iconError.message);
+      setMessageTone('warning');
+      setSavingCategory(false);
+      return;
+    }
+
     const { error: insertError } = await supabase.from('categories').insert([
       {
         description: categoryForm.description.trim() || null,
+        icon_key: categoryForm.icon_key || 'box',
+        icon_url: iconUrl,
         is_active: true,
         name: trimmedName,
         parent_category_id: categoryForm.parent_category_id || null,
@@ -373,9 +450,12 @@ export default function ManageCatalog() {
 
     setCategoryForm({
       description: '',
+      icon_key: 'box',
       name: '',
       parent_category_id: '',
     });
+    setCategoryIconFile(null);
+    setCategoryIconPreview('');
     setMessage('Category saved.');
     setMessageTone('success');
     setSavingCategory(false);
@@ -387,15 +467,20 @@ export default function ManageCatalog() {
     setEditingCategory(category);
     setEditingCategoryForm({
       description: category.description || '',
+      icon_key: category.icon_key || 'box',
       is_active: category.is_active,
       name: category.name || '',
       parent_category_id: category.parent_category_id || '',
     });
+    setEditingCategoryIconFile(null);
+    setEditingCategoryIconPreview(category.icon_url || '');
   }
 
   function closeEditCategory() {
     setEditingCategory(null);
     setUpdatingCategory(false);
+    setEditingCategoryIconFile(null);
+    setEditingCategoryIconPreview('');
   }
 
   function handleEditCategoryChange(event) {
@@ -436,10 +521,24 @@ export default function ManageCatalog() {
     setUpdatingCategory(true);
     setMessage('');
 
+    let iconUrl = editingCategory.icon_url || null;
+    try {
+      if (editingCategoryIconFile) {
+        iconUrl = await uploadCategoryIcon(editingCategoryIconFile);
+      }
+    } catch (iconError) {
+      setMessage(iconError.message);
+      setMessageTone('warning');
+      setUpdatingCategory(false);
+      return;
+    }
+
     const { error: updateError } = await supabase
       .from('categories')
       .update({
         description: editingCategoryForm.description.trim() || null,
+        icon_key: editingCategoryForm.icon_key || 'box',
+        icon_url: iconUrl,
         is_active: Boolean(editingCategoryForm.is_active),
         name: trimmedName,
         parent_category_id: editingCategoryForm.parent_category_id || null,
@@ -800,10 +899,13 @@ export default function ManageCatalog() {
         onClose={closeAddCategory}
         open={showAddCategory}
         title="Add category"
+        contentClassName="category-editor-modal"
+        contentStyle={{ width: 'min(920px, calc(100vw - 32px))' }}
       >
-        <form id="add-category-form" onSubmit={handleCreateCategory} style={{ display: 'grid', gap: 14 }}>
-          <FormField label="Category name">
-            <Input name="name" onChange={handleCategoryFormChange} value={categoryForm.name} />
+        <form className="category-editor-form" id="add-category-form" onSubmit={handleCreateCategory}>
+          <div className="category-editor-fields">
+          <FormField label="Category name" required>
+            <Input name="name" onChange={handleCategoryFormChange} required value={categoryForm.name} />
           </FormField>
 
           <FormField label="Parent category">
@@ -836,6 +938,24 @@ export default function ManageCatalog() {
           <FormField label="Description">
             <Textarea name="description" onChange={handleCategoryFormChange} value={categoryForm.description} />
           </FormField>
+          </div>
+
+          <section className="category-icon-studio">
+            <div className="category-icon-studio-heading"><div className="category-icon-live-preview"><CategoryIcon iconKey={categoryForm.icon_key} iconUrl={categoryIconPreview} size={34} /></div><div><strong>Choose an icon</strong><small>Preview updates instantly</small></div></div>
+            <div className="category-vector-grid">
+              {CATEGORY_ICON_OPTIONS.map((option) => <button aria-label={option.label} aria-pressed={!categoryIconPreview && categoryForm.icon_key === option.key} className={!categoryIconPreview && categoryForm.icon_key === option.key ? 'active' : ''} key={option.key} onClick={() => { setCategoryForm((current) => ({ ...current, icon_key: option.key })); setCategoryIconFile(null); setCategoryIconPreview(''); }} title={option.label} type="button"><CategoryIcon iconKey={option.key} size={22}/><span>{option.label}</span></button>)}
+            </div>
+            <FormField label="Or upload your own">
+              <div className="admin-category-icon-field">
+              <label className="admin-category-icon-upload">
+                <input accept="image/png,image/jpeg,image/webp,image/svg+xml" onChange={(event) => handleCategoryIconChange(event)} type="file" />
+                <span>{categoryIconFile ? 'Choose a different icon' : 'Upload icon'}</span>
+              </label>
+              {categoryIconPreview ? <img alt="New category icon preview" src={categoryIconPreview} /> : null}
+              <small>PNG, JPEG, WebP, or SVG. Maximum 1 MB.</small>
+              </div>
+            </FormField>
+          </section>
         </form>
       </Modal>
 
@@ -853,6 +973,8 @@ export default function ManageCatalog() {
         onClose={closeEditCategory}
         open={Boolean(editingCategory)}
         title={editingCategory ? `Edit ${editingCategory.name}` : 'Edit category'}
+        contentClassName="category-editor-modal"
+        contentStyle={{ width: 'min(1040px, calc(100vw - 32px))' }}
       >
         <form
           id="edit-category-form"
@@ -868,8 +990,8 @@ export default function ManageCatalog() {
           }}
         >
           <div style={{ display: 'grid', gap: 14 }}>
-            <FormField label="Category name">
-              <Input name="name" onChange={handleEditCategoryChange} value={editingCategoryForm.name} />
+            <FormField label="Category name" required>
+              <Input name="name" onChange={handleEditCategoryChange} required value={editingCategoryForm.name} />
             </FormField>
 
             <FormField label="Parent category">
@@ -903,6 +1025,21 @@ export default function ManageCatalog() {
 
             <FormField label="Description">
               <Textarea name="description" onChange={handleEditCategoryChange} value={editingCategoryForm.description} />
+            </FormField>
+
+            <FormField label="Category icon">
+              <div className="category-icon-studio-heading"><div className="category-icon-live-preview"><CategoryIcon iconKey={editingCategoryForm.icon_key} iconUrl={editingCategoryIconPreview} size={34} /></div><div><strong>Live preview</strong><small>Shown across the marketplace</small></div></div>
+              <div className="category-vector-grid compact">
+                {CATEGORY_ICON_OPTIONS.map((option) => <button aria-label={option.label} aria-pressed={!editingCategoryIconPreview && editingCategoryForm.icon_key === option.key} className={!editingCategoryIconPreview && editingCategoryForm.icon_key === option.key ? 'active' : ''} key={option.key} onClick={() => { setEditingCategoryForm((current) => ({ ...current, icon_key: option.key })); setEditingCategoryIconFile(null); setEditingCategoryIconPreview(''); }} title={option.label} type="button"><CategoryIcon iconKey={option.key} size={20}/></button>)}
+              </div>
+              <div className="admin-category-icon-field">
+                <label className="admin-category-icon-upload">
+                  <input accept="image/png,image/jpeg,image/webp,image/svg+xml" onChange={(event) => handleCategoryIconChange(event, true)} type="file" />
+                  <span>{editingCategoryIconPreview ? 'Replace icon' : 'Upload icon'}</span>
+                </label>
+                {editingCategoryIconPreview ? <img alt={`${editingCategory?.name || 'Category'} icon preview`} src={editingCategoryIconPreview} /> : null}
+                <small>Custom icons appear on the landing page and category filters.</small>
+              </div>
             </FormField>
 
             <label style={{ alignItems: 'center', color: theme.colors.ink, display: 'flex', gap: 10, fontWeight: 600 }}>

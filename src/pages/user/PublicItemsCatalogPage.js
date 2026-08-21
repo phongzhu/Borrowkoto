@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../api/supabaseClient';
 import { useUISettings } from '../../context/UISettingsContext';
 import { RENTABLE_ITEM_STATUSES } from '../../utils/bookingEnums';
+import SearchableSelect from '../../ui/SearchableSelect';
 import '../../App.css';
 
 const currencyFormatter = new Intl.NumberFormat('en-PH', {
@@ -203,6 +204,7 @@ export default function PublicItemsCatalogPage() {
   const [categoryMinRating, setCategoryMinRating] = useState('0');
   const [categoryConditions, setCategoryConditions] = useState([]);
   const [categorySubcategory, setCategorySubcategory] = useState('all');
+  const [categoryRefineSearch, setCategoryRefineSearch] = useState('');
   const [categorySort, setCategorySort] = useState('relevance');
 
   const brandName = settings.system_name?.trim() || "Borrow Ko 'To";
@@ -510,6 +512,11 @@ export default function PublicItemsCatalogPage() {
       : categories.filter((category) => !category.parent_category_id),
     [categories, categoryId, mode]
   );
+  const filteredCategorySubcategories = useMemo(() => {
+    const query = categoryRefineSearch.trim().toLowerCase();
+    if (!query) return categorySubcategories;
+    return categorySubcategories.filter((category) => category.name.toLowerCase().includes(query));
+  }, [categoryRefineSearch, categorySubcategories]);
 
   const filteredItems = useMemo(() => {
     if (!isRefinedCatalog) return baseFilteredItems;
@@ -655,15 +662,18 @@ export default function PublicItemsCatalogPage() {
         <section className="landing-toolbar landing-toolbar-top">
           <div className="landing-search-row">
             <div className="landing-controls inline">
-              <select aria-label="Filter by Baliuag barangay" id="catalog-barangay-filter" onChange={handleBarangayChange} value={barangayFilter}>
-                <option value="all">All barangays</option>
-                {BALIUAG_BARANGAYS.map((barangay) => (
-                  <option key={barangay} value={barangay}>
-                    {barangay}
-                  </option>
-                ))}
-                <option value="Unspecified">Unspecified</option>
-              </select>
+              <SearchableSelect
+                ariaLabel="Filter by Baliuag barangay"
+                onChange={(value) => handleBarangayChange({ target: { value } })}
+                options={[
+                  { label: 'All barangays', value: 'all' },
+                  ...BALIUAG_BARANGAYS.map((barangay) => ({ label: barangay, value: barangay })),
+                  { label: 'Unspecified', value: 'Unspecified' },
+                ]}
+                placeholder="All barangays"
+                searchPlaceholder="Search barangay"
+                value={barangayFilter}
+              />
             </div>
 
             <form className="landing-search" onSubmit={handleSearchSubmit}>
@@ -740,7 +750,7 @@ export default function PublicItemsCatalogPage() {
           {isRefinedCatalog ? (
             <aside className="category-refine" aria-label="Refine category results">
               <div className="category-refine-title"><span>Refine by</span><button onClick={() => { setCategoryMinPrice(''); setCategoryMaxPrice(''); setCategoryMinRating('0'); setCategoryConditions([]); setCategorySubcategory('all'); }} type="button">Clear</button></div>
-              {categorySubcategories.length ? <fieldset><legend>{mode === 'category' ? 'Type' : 'Category'}</legend><label><input checked={categorySubcategory === 'all'} name="subcategory" onChange={() => setCategorySubcategory('all')} type="radio" /> {mode === 'category' ? `All ${selectedCategory?.name || 'items'}` : 'All categories'}</label>{categorySubcategories.map((subcategory) => <label key={subcategory.id}><input checked={categorySubcategory === subcategory.id} name="subcategory" onChange={() => setCategorySubcategory(subcategory.id)} type="radio" /> {subcategory.name}</label>)}</fieldset> : null}
+              {categorySubcategories.length ? <fieldset><legend>{mode === 'category' ? 'Type' : 'Category'}</legend><input aria-label={`Search ${mode === 'category' ? 'types' : 'categories'}`} className="category-refine-search" onChange={(event) => setCategoryRefineSearch(event.target.value)} placeholder={`Search ${mode === 'category' ? 'type' : 'category'}`} type="search" value={categoryRefineSearch} /><label><input checked={categorySubcategory === 'all'} name="subcategory" onChange={() => setCategorySubcategory('all')} type="radio" /> {mode === 'category' ? `All ${selectedCategory?.name || 'items'}` : 'All categories'}</label>{filteredCategorySubcategories.map((subcategory) => <label key={subcategory.id}><input checked={categorySubcategory === subcategory.id} name="subcategory" onChange={() => setCategorySubcategory(subcategory.id)} type="radio" /> {subcategory.name}</label>)}</fieldset> : null}
               <fieldset><legend>Daily price</legend><div className="category-price-fields"><label><span>Minimum</span><input min="0" onChange={(event) => setCategoryMinPrice(event.target.value)} placeholder="₱ 0" type="number" value={categoryMinPrice} /></label><label><span>Maximum</span><input min="0" onChange={(event) => setCategoryMaxPrice(event.target.value)} placeholder="₱ Any" type="number" value={categoryMaxPrice} /></label></div></fieldset>
               <fieldset><legend>Minimum review</legend><select onChange={(event) => setCategoryMinRating(event.target.value)} value={categoryMinRating}><option value="0">Any rating</option><option value="3">3+ stars</option><option value="4">4+ stars</option><option value="4.5">4.5+ stars</option></select></fieldset>
               <fieldset><legend>Condition</legend><div className="category-condition-grid">{[['new','New'],['like_new','Like New'],['good','Good'],['fair','Fair']].map(([value,label]) => <label key={value}><input checked={categoryConditions.includes(value)} onChange={() => toggleCategoryCondition(value)} type="checkbox" /> {label}</label>)}</div></fieldset>

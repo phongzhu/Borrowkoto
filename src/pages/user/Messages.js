@@ -605,6 +605,7 @@ export default function Messages() {
   const [selectedItemId, setSelectedItemId] = useState(requestedItemId || '');
   const [search, setSearch] = useState('');
   const [composer, setComposer] = useState('');
+  const [activeFaq, setActiveFaq] = useState(null);
   const [attachmentFile, setAttachmentFile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -693,7 +694,7 @@ export default function Messages() {
         )
       );
 
-      const [bookingsResult, meetupsResult, addonsResult, profilesResult, itemsResult, imagesResult] = await Promise.all([
+      const [bookingsResult, meetupsResult, addonsResult, profilesResult, itemsResult, imagesResult, faqsResult] = await Promise.all([
         bookingIds.length
           ? supabase
               .from('bookings')
@@ -736,6 +737,9 @@ export default function Messages() {
               .in('item_id', itemIds)
               .order('sort_order', { ascending: true })
           : Promise.resolve({ data: [], error: null }),
+        itemIds.length
+          ? supabase.from('item_faqs').select('id, item_id, question, answer, sort_order').in('item_id', itemIds).eq('is_active', true).order('sort_order', { ascending: true })
+          : Promise.resolve({ data: [], error: null }),
       ]);
 
       if (!mounted) {
@@ -765,6 +769,7 @@ export default function Messages() {
       if (imagesResult.error) {
         nextErrors.push(`item images: ${imagesResult.error.message}`);
       }
+      if (faqsResult.error) nextErrors.push(`listing FAQs: ${faqsResult.error.message}`);
 
       const bookingMap = new Map((bookingsResult.data || []).map((booking) => [booking.id, booking]));
       const itemMap = new Map((itemsResult.data || []).map((item) => [item.id, item]));
@@ -774,6 +779,7 @@ export default function Messages() {
       const meetupsByBooking = new Map();
       const addonsByBooking = new Map();
       const imagesByItem = new Map();
+      const faqsByItem = new Map();
 
       (conversationMembersResult.data || []).forEach((entry) => {
         const current = membersByConversation.get(entry.conversation_id) || [];
@@ -804,6 +810,11 @@ export default function Messages() {
         current.push(image);
         imagesByItem.set(image.item_id, current);
       });
+      (faqsResult.data || []).forEach((faq) => {
+        const current = faqsByItem.get(faq.item_id) || [];
+        current.push(faq);
+        faqsByItem.set(faq.item_id, current);
+      });
 
       const rawThreads = conversationRows
         .map((conversation) => {
@@ -811,7 +822,8 @@ export default function Messages() {
           const itemId = conversation.item_id || booking?.item_id || null;
           const itemImages = itemId ? (imagesByItem.get(itemId) || []).slice() : [];
           const sortedImages = itemImages.sort((left, right) => Number(right.is_primary) - Number(left.is_primary) || left.sort_order - right.sort_order);
-          const item = itemId ? itemMap.get(itemId) || null : null;
+          const rawItem = itemId ? itemMap.get(itemId) || null : null;
+          const item = rawItem ? { ...rawItem, faqs: faqsByItem.get(itemId) || [] } : null;
           const members = (membersByConversation.get(conversation.id) || []).map((member) => ({
             ...member,
             profile: profileMap.get(member.user_id) || null,
@@ -1197,6 +1209,7 @@ export default function Messages() {
 
   function handleSelectThreadItem(itemId) {
     setSelectedItemId(itemId);
+    setActiveFaq(null);
 
     if (!selectedThread) {
       return;
@@ -1245,6 +1258,7 @@ export default function Messages() {
   const selectedThreadWallpaper = selectedThreadItem?.primaryImage?.image_url
     ? `linear-gradient(180deg, rgba(255, 253, 248, 0.94) 0%, rgba(255, 253, 248, 0.98) 100%), radial-gradient(circle at top right, ${alpha(theme.colors.sky, 0.12)}, transparent 28%), radial-gradient(circle at bottom left, ${alpha(theme.colors.teal, 0.1)}, transparent 26%), url(${selectedThreadItem.primaryImage.image_url}) center/cover`
     : `linear-gradient(180deg, ${alpha(theme.colors.panel, 0.98)} 0%, ${alpha(theme.colors.canvas, 0.94)} 100%), radial-gradient(circle at top right, ${alpha(theme.colors.sky, 0.12)}, transparent 28%), radial-gradient(circle at bottom left, ${alpha(theme.colors.teal, 0.1)}, transparent 26%)`;
+  const selectedItemFaqs = selectedThreadItem?.faqs || [];
 
   return (
     <UserShell subtitle="" title="">
@@ -1499,31 +1513,16 @@ export default function Messages() {
                   padding: '18px 20px 22px',
                 }}
               >
-                {!selectedThread.messages.length ? (
-                  <div
-                    style={{
-                      alignItems: 'center',
-                      background: alpha(theme.colors.panel, 0.9),
-                      border: `1px solid ${alpha(theme.colors.ink, 0.08)}`,
-                      borderRadius: 24,
-                      color: theme.colors.slate,
-                      display: 'grid',
-                      gap: 10,
-                      justifyItems: 'center',
-                      minHeight: 220,
-                      padding: 24,
-                      textAlign: 'center',
-                    }}
-                  >
-                    <strong style={{ color: theme.colors.ink, fontFamily: theme.fonts.display, fontSize: 24, letterSpacing: '-0.04em' }}>
-                      Start the conversation
-                    </strong>
-                    <span style={{ lineHeight: 1.7, maxWidth: 520 }}>
-                      Ask about availability, meetup options, condition, deposit, or the details tied to the currently referenced listing.
-                    </span>
-                  </div>
-                ) : (
-                  selectedThread.messages.map((message, index) => {
+                {selectedItemFaqs.length ? (
+                  <section className="faq-assistant-card">
+                    <div className="faq-assistant-head"><span>?</span><div><strong>Quick questions</strong><small>Choose a question to chat with the seller's FAQ assistant</small></div></div>
+                    <div className="faq-assistant-prompts">
+                      {selectedItemFaqs.map((faq) => <button className={activeFaq?.id === faq.id ? 'active' : ''} key={faq.id} onClick={() => setActiveFaq(faq)} type="button">{faq.question}</button>)}
+                    </div>
+                  </section>
+                ) : null}
+                {activeFaq ? <div className="faq-chat-exchange"><div className="faq-chat-question">{activeFaq.question}</div><div className="faq-chat-answer"><span className="faq-chat-avatar">?</span><div><strong>Seller FAQ assistant</strong><p>{activeFaq.answer}</p><small>Answer provided by the lender for {selectedThreadItem?.title}</small></div></div></div> : null}
+                {selectedThread.messages.map((message, index) => {
                     const previousMessage = index > 0 ? selectedThread.messages[index - 1] : null;
                     const showItemReference =
                       (selectedThread.items?.length || 0) > 1 && Boolean(message.item?.id) && previousMessage?.item?.id !== message.item?.id;
@@ -1536,8 +1535,7 @@ export default function Messages() {
                         showItemReference={showItemReference}
                       />
                     );
-                  })
-                )}
+                  })}
               </div>
 
               <form

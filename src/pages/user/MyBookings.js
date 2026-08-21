@@ -18,6 +18,7 @@ import './MyBookings.css';
 
 const ITEM_IMAGES_BUCKET = 'item-images';
 const MAX_LISTING_IMAGES = 5;
+const LISTING_DRAFT_STORAGE_KEY = 'borrowkoto:listing-draft:v1';
 
 const currencyFormatter = new Intl.NumberFormat('en-PH', {
   currency: 'PHP',
@@ -223,11 +224,13 @@ function buildListingForm(profile) {
     pickup_country: profile?.country || 'Philippines',
     pickup_latitude: profile?.latitude === null || profile?.latitude === undefined ? '' : String(profile.latitude),
     pickup_longitude: profile?.longitude === null || profile?.longitude === undefined ? '' : String(profile.longitude),
+    pickup_time: '09:00',
     pickup_province: profile?.province || '',
     pickup_region: profile?.region || '',
     pickup_street: profile?.street || '',
     quantity: '1',
     rental_price_per_day: '',
+    return_time: '18:00',
     sale_inclusions: '',
     sale_price: '',
     search_tags: '',
@@ -235,6 +238,34 @@ function buildListingForm(profile) {
     subcategory_ids: [],
     title: '',
   };
+}
+
+function readListingDraft() {
+  try {
+    const raw = window.sessionStorage.getItem(LISTING_DRAFT_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || !parsed.form || typeof parsed.form !== 'object') return null;
+    return { ...buildListingForm(null), ...parsed.form };
+  } catch {
+    return null;
+  }
+}
+
+function saveListingDraft(form) {
+  try {
+    window.sessionStorage.setItem(LISTING_DRAFT_STORAGE_KEY, JSON.stringify({ form, savedAt: new Date().toISOString() }));
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+function clearListingDraft() {
+  try {
+    window.sessionStorage.removeItem(LISTING_DRAFT_STORAGE_KEY);
+  } catch {
+    // Ignore storage failures.
+  }
 }
 
 function normalizeItemCondition(value) {
@@ -258,11 +289,13 @@ function buildListingFormFromItem(item) {
     pickup_country: item?.pickup_country || 'Philippines',
     pickup_latitude: item?.pickup_latitude === null || item?.pickup_latitude === undefined ? '' : String(item.pickup_latitude),
     pickup_longitude: item?.pickup_longitude === null || item?.pickup_longitude === undefined ? '' : String(item.pickup_longitude),
+    pickup_time: String(item?.pickup_time || '09:00').slice(0, 5),
     pickup_province: item?.pickup_province || '',
     pickup_region: item?.pickup_region || '',
     pickup_street: item?.pickup_street || '',
     quantity: item?.quantity === null || item?.quantity === undefined ? '1' : String(item.quantity),
     rental_price_per_day: item?.rental_price_per_day === null || item?.rental_price_per_day === undefined ? '' : String(item.rental_price_per_day),
+    return_time: String(item?.return_time || '18:00').slice(0, 5),
     sale_inclusions: item?.sale_inclusions || '',
     sale_price: item?.sale_price === null || item?.sale_price === undefined ? '' : String(item.sale_price),
     search_tags: parsedMeta.tags.join(', '),
@@ -647,6 +680,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
   const [savingListing, setSavingListing] = useState(false);
   const [loadingListingDetails, setLoadingListingDetails] = useState(false);
   const [listingForm, setListingForm] = useState(buildListingForm(null));
+  const [categorySearch, setCategorySearch] = useState('');
   const [listingImageFiles, setListingImageFiles] = useState([]);
   const [listingImagePreviews, setListingImagePreviews] = useState([]);
   const [savedListingImages, setSavedListingImages] = useState([]);
@@ -657,6 +691,9 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
   const [savingStatusId, setSavingStatusId] = useState('');
   const [deletingItemId, setDeletingItemId] = useState('');
   const [bookingActionBusyId, setBookingActionBusyId] = useState('');
+  const [paymentReturnProcessing, setPaymentReturnProcessing] = useState(
+    () => new URLSearchParams(window.location.search).get('paymongo') === 'success'
+  );
   const [bookingDetailId, setBookingDetailId] = useState('');
   const [activeBookingFilter, setActiveBookingFilter] = useState(() => {
     const queryTab = new URLSearchParams(window.location.search).get('tab');
@@ -758,7 +795,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
         supabase
           .from('items')
           .select(
-            'id, owner_id, category_id, title, description, item_condition, rental_price_per_day, security_deposit, estimated_value, is_for_sale, sale_price, sale_inclusions, min_rental_days, max_rental_days, quantity, pickup_barangay, pickup_city, pickup_country, pickup_latitude, pickup_longitude, pickup_province, pickup_region, pickup_street, meetup_notes, status, is_active, created_at, updated_at'
+            'id, owner_id, category_id, title, description, item_condition, rental_price_per_day, security_deposit, estimated_value, is_for_sale, sale_price, sale_inclusions, min_rental_days, max_rental_days, quantity, pickup_barangay, pickup_city, pickup_country, pickup_latitude, pickup_longitude, pickup_province, pickup_region, pickup_street, pickup_time, return_time, meetup_notes, status, is_active, created_at, updated_at'
           )
           .eq('owner_id', user.id)
           .order('created_at', { ascending: false }),
@@ -874,7 +911,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
       ? await supabase
           .from('items')
           .select(
-            'id, owner_id, category_id, title, description, item_condition, rental_price_per_day, security_deposit, estimated_value, is_for_sale, sale_price, sale_inclusions, min_rental_days, max_rental_days, quantity, pickup_barangay, pickup_city, pickup_country, pickup_latitude, pickup_longitude, pickup_province, pickup_region, pickup_street, meetup_notes, status, is_active, created_at, updated_at'
+            'id, owner_id, category_id, title, description, item_condition, rental_price_per_day, security_deposit, estimated_value, is_for_sale, sale_price, sale_inclusions, min_rental_days, max_rental_days, quantity, pickup_barangay, pickup_city, pickup_country, pickup_latitude, pickup_longitude, pickup_province, pickup_region, pickup_street, pickup_time, return_time, meetup_notes, status, is_active, created_at, updated_at'
           )
           .in('id', bookingItemIds)
       : { data: [], error: null };
@@ -1094,6 +1131,15 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
   }, [loadListings]);
 
   useEffect(() => {
+    if (!showAddListing || editingItem) {
+      return undefined;
+    }
+
+    saveListingDraft(listingForm);
+    return undefined;
+  }, [editingItem, listingForm, showAddListing]);
+
+  useEffect(() => {
     if (!listingImageFiles.length) {
       setListingImagePreviews([]);
       return undefined;
@@ -1202,9 +1248,12 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
       issues.push('Complete your profile details first.');
     }
 
-    if (!verification) {
+    const profileVerified = Boolean(profile?.is_verified)
+      || isAcceptedVerificationStatus(profile?.verification_status);
+
+    if (!profileVerified && !verification) {
       issues.push('Submit your identity verification.');
-    } else if (!isAcceptedVerificationStatus(verification.status)) {
+    } else if (!profileVerified && !isAcceptedVerificationStatus(verification.status)) {
       issues.push(`Wait for identity verification approval. Current status: ${getVerificationStatusLabel(verification.status)}.`);
     }
 
@@ -1440,7 +1489,8 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
     setMessage('');
 
     revokeAddonPreviews(listingAddons);
-    setListingForm(buildListingForm(profile));
+    setListingForm(readListingDraft() || buildListingForm(profile));
+    setCategorySearch('');
     setListingImageFiles([]);
     setSavedListingImages([]);
     setListingAddons([]);
@@ -1530,6 +1580,8 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
     setDeleteTargetItem(null);
     setEditingItem(null);
     setListingForm(buildListingForm(profile));
+    setCategorySearch('');
+    clearListingDraft();
     if (isListingFormPage) {
       navigate('/user/rental-items');
     }
@@ -1538,6 +1590,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
   function addAddonRow() {
     setListingAddons((current) => [...current, createEmptyAddon()]);
   }
+
 
   function removeAddonRow(index) {
     setListingAddons((current) => {
@@ -1716,6 +1769,8 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
       const pickupBarangay = sanitizeText(listingForm.pickup_barangay);
       const pickupCity = sanitizeText(listingForm.pickup_city);
       const pickupProvince = sanitizeText(listingForm.pickup_province);
+      const pickupTime = String(listingForm.pickup_time || '').trim();
+      const returnTime = String(listingForm.return_time || '').trim();
 
       if (!title) {
         throw new Error('Product title is required.');
@@ -1743,6 +1798,10 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
 
       if (!pickupBarangay || !pickupCity || !pickupProvince) {
         throw new Error('Pickup barangay, city, and province are required.');
+      }
+
+      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(pickupTime) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(returnTime)) {
+        throw new Error('Valid pickup and return times are required.');
       }
 
       const rentalPricePerDay = parseCurrency(listingForm.rental_price_per_day, 'Rental price per day');
@@ -1832,8 +1891,10 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
         pickup_province: pickupProvince,
         pickup_region: sanitizeText(listingForm.pickup_region) || null,
         pickup_street: sanitizeText(listingForm.pickup_street) || null,
+        pickup_time: pickupTime,
         quantity,
         rental_price_per_day: rentalPricePerDay,
+        return_time: returnTime,
         sale_inclusions: saleInclusions,
         sale_price: salePrice,
         security_deposit: securityDeposit,
@@ -1946,6 +2007,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
       }
 
       setMessage(followUpMessage);
+      clearListingDraft();
       closeAddListing();
       await loadListings(false);
     } catch (saveError) {
@@ -2118,27 +2180,17 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
       return { failedIds: [], updatedCount: 0 };
     }
 
-    const bookingIdSet = new Set(normalizedBookingIds);
-    const loadedBookingsById = new Map(bookings.filter((booking) => bookingIdSet.has(booking.id)).map((booking) => [booking.id, booking]));
-    const missingBookingIds = normalizedBookingIds.filter((bookingId) => !loadedBookingsById.has(bookingId));
+    const { data: fetchedBookings, error: fetchError } = await supabase
+      .from('bookings')
+      .select('id, item_id, borrower_id, owner_id, requested_start, requested_end, approved_start, approved_end, rental_days, rental_price_per_day, rental_fee_total, security_deposit, total_due, borrower_message, status, cancelled_by, cancellation_reason, created_at, updated_at')
+      .in('id', normalizedBookingIds)
+      .eq('borrower_id', userId);
 
-    if (missingBookingIds.length) {
-      const { data: fetchedBookings, error: fetchError } = await supabase
-        .from('bookings')
-        .select('id, item_id, borrower_id, owner_id, requested_start, requested_end, approved_start, approved_end, rental_days, rental_price_per_day, rental_fee_total, security_deposit, total_due, borrower_message, status, cancelled_by, cancellation_reason, created_at, updated_at')
-        .in('id', missingBookingIds)
-        .eq('borrower_id', userId);
-
-      if (fetchError) {
-        throw new Error(fetchError.message);
-      }
-
-      (fetchedBookings || []).forEach((booking) => {
-        loadedBookingsById.set(booking.id, booking);
-      });
+    if (fetchError) {
+      throw new Error(fetchError.message);
     }
 
-    const borrowerBookingsFromPayment = Array.from(loadedBookingsById.values()).filter((booking) => booking.borrower_id === userId);
+    const borrowerBookingsFromPayment = fetchedBookings || [];
     const transactionRecordFailures = await recordRentalCheckoutTransactions(borrowerBookingsFromPayment);
     const targetBookings = borrowerBookingsFromPayment.filter(
       (booking) => String(booking.status || '').toLowerCase() === BOOKING_STATUS.PENDING
@@ -2204,7 +2256,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
       transactionRecordFailures,
       updatedCount: updatesById.size,
     };
-  }, [bookings, recordRentalCheckoutTransactions, userId]);
+  }, [recordRentalCheckoutTransactions, userId]);
 
   async function updateBookingStatusWithFallback(booking, statuses, extraPayload = {}) {
     let lastError = null;
@@ -2326,7 +2378,9 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
       } finally {
         if (!ignore) {
           await loadListings(false);
+          setActiveBookingFilter('borrowed');
           setBookingActionBusyId('');
+          setPaymentReturnProcessing(false);
           window.history.replaceState({}, '', window.location.pathname);
         }
       }
@@ -3647,9 +3701,10 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
   return (
     <UserShell subtitle={pageSubtitle} title={pageTitle}>
       {error ? <StatusMessage tone="warning">{error}</StatusMessage> : null}
+      {paymentReturnProcessing ? <StatusMessage tone="info">Payment received. Finalizing your booking and loading the latest records...</StatusMessage> : null}
 
       <div className="my-bookings-page" style={{ alignContent: 'start', alignItems: 'start', display: 'grid', gap: 10 }}>
-        {showManageBooking ? (
+        {showManageBooking && !paymentReturnProcessing ? (
         <Panel
           className="workspace-flat-panel booking-workspace-panel"
           style={{ borderRadius: 0, marginTop: 0 }}
@@ -4934,14 +4989,33 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
             <div className="listing-form-section-title">Product Info</div>
             <div className="listing-product-info-layout">
               <div className="listing-product-info-left">
-                <FormField label="Product title">
+                <FormField label="Product title" required>
                   <Input name="title" onChange={handleFormChange} value={listingForm.title} />
                 </FormField>
 
-                <FormField label="Category / classification">
+                <FormField label="Category / classification" required>
+                  <input
+                    aria-label="Search categories"
+                    onChange={(event) => setCategorySearch(event.target.value)}
+                    placeholder="Search categories"
+                    style={{
+                      border: `1px solid ${alpha(theme.colors.ink, 0.1)}`,
+                      borderRadius: 12,
+                      color: theme.colors.ink,
+                      font: 'inherit',
+                      marginBottom: 8,
+                      minHeight: 42,
+                      padding: '0 12px',
+                      width: '100%',
+                    }}
+                    type="search"
+                    value={categorySearch}
+                  />
                   <select name="category_id" onChange={handleFormChange} style={selectStyle} value={listingForm.category_id}>
                     <option value="">Select a main category</option>
-                    {activeMainCategories.map((category) => (
+                    {activeMainCategories
+                      .filter((category) => category.name.toLowerCase().includes(categorySearch.trim().toLowerCase()))
+                      .map((category) => (
                       <option key={category.id} value={category.id}>
                         {category.name}
                       </option>
@@ -4976,7 +5050,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                   )}
                 </FormField>
 
-                <FormField hint="Choose one of the valid item conditions from your database enum." label="Item condition">
+                <FormField hint="Choose one of the valid item conditions from your database enum." label="Item condition" required>
                   <select name="item_condition" onChange={handleFormChange} style={selectStyle} value={listingForm.item_condition}>
                     <option value="">Select item condition</option>
                     {itemConditionOptions.map((option) => (
@@ -4989,7 +5063,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
               </div>
 
               <div className="listing-product-info-right">
-                <FormField label="Product details">
+                <FormField label="Product details" required>
                   <Textarea name="description" onChange={handleFormChange} value={listingForm.description} />
                 </FormField>
               </div>
@@ -5175,11 +5249,11 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
 
           <div className="listing-form-section listing-form-section-grid listing-form-section-grid-3" style={{ gridColumn: '1 / -1' }}>
             <div className="listing-form-section-title">Pricing & Value</div>
-            <FormField label="Rental price per day">
+            <FormField label="Rental price per day" required>
               <Input min="0" name="rental_price_per_day" onChange={handleFormChange} step="0.01" type="number" value={listingForm.rental_price_per_day} />
             </FormField>
 
-            <FormField label="Security deposit">
+            <FormField label="Security deposit" required>
               <Input min="0" name="security_deposit" onChange={handleFormChange} step="0.01" type="number" value={listingForm.security_deposit} />
             </FormField>
 
@@ -5216,12 +5290,12 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
 
             {listingForm.is_for_sale ? (
               <div className="listing-form-section-grid">
-                <FormField label="Sale price">
+                <FormField label="Sale price" required>
                   <Input min="0" name="sale_price" onChange={handleFormChange} step="0.01" type="number" value={listingForm.sale_price} />
                 </FormField>
 
                 <div style={{ gridColumn: '1 / -1' }}>
-                  <FormField label="Sale inclusions">
+                  <FormField label="Sale inclusions" required>
                     <Textarea
                       name="sale_inclusions"
                       onChange={handleFormChange}
@@ -5236,11 +5310,11 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
 
           <div className="listing-form-section listing-form-section-grid listing-form-section-grid-3" style={{ gridColumn: '1 / -1' }}>
             <div className="listing-form-section-title">Rental Constraints</div>
-            <FormField label="Quantity">
+            <FormField label="Quantity" required>
               <Input min="1" name="quantity" onChange={handleFormChange} step="1" type="number" value={listingForm.quantity} />
             </FormField>
 
-            <FormField label="Minimum rental days">
+            <FormField label="Minimum rental days" required>
               <Input min="1" name="min_rental_days" onChange={handleFormChange} step="1" type="number" value={listingForm.min_rental_days} />
             </FormField>
 
@@ -5265,6 +5339,14 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
 
           <div className="listing-form-section" style={{ gridColumn: '1 / -1' }}>
             <div className="listing-form-section-title">Pickup Location</div>
+            <div className="listing-form-section-grid listing-form-section-grid-3" style={{ marginBottom: 20 }}>
+              <FormField hint="Borrowers can claim the item at this time on their selected check-in date." label="Daily pickup time" required>
+                <Input name="pickup_time" onChange={handleFormChange} required type="time" value={listingForm.pickup_time} />
+              </FormField>
+              <FormField hint="Returns after this time on the selected check-out date are late and accrue the daily late fee." label="Daily return deadline" required>
+                <Input name="return_time" onChange={handleFormChange} required type="time" value={listingForm.return_time} />
+              </FormField>
+            </div>
             <PhilippineAddressFields
               fieldMap={{
                 barangay: 'pickup_barangay',
@@ -5295,6 +5377,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
               setForm={setListingForm}
               showCoordinates={false}
               showUseProfileAddress
+              requiredFields={['barangay', 'city', 'province']}
             />
           </div>
 
@@ -5853,7 +5936,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
             <div className="damage-report-field">
               <div className="damage-report-field-head">
                 <div>
-                  <strong>Describe the damage</strong>
+                  <strong>Describe the damage<span aria-hidden="true" className="required-asterisk">*</span></strong>
                   <span>Include the affected parts, visible condition, and what happened during return.</span>
                 </div>
                 <small>{damageReportForm.description.length}/1000</small>
@@ -5862,6 +5945,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                 maxLength={1000}
                 onChange={(event) => setDamageReportForm((current) => ({ ...current, description: event.target.value }))}
                 placeholder="Example: The screen has a visible crack in the upper-right corner and no longer displays correctly..."
+                required
                 rows={5}
                 value={damageReportForm.description}
               />
@@ -5870,7 +5954,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
             <div className="damage-report-field">
               <div className="damage-report-field-head">
                 <div>
-                  <strong>Upload photo evidence</strong>
+                  <strong>Upload photo evidence<span aria-hidden="true" className="required-asterisk">*</span></strong>
                   <span>Add clear images showing the item and damaged areas.</span>
                 </div>
                 <small>{damageReportForm.files.length} selected</small>
@@ -5883,6 +5967,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                 accept="image/*"
                 multiple
                 onChange={(event) => setDamageReportForm((current) => ({ ...current, files: Array.from(event.target.files || []) }))}
+                required
                 type="file"
               />
               </label>
@@ -5941,7 +6026,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
           <section className="review-rating-section">
             <div className="review-field-heading">
               <div>
-                <strong>How was your experience?</strong>
+                <strong>How was your experience?<span aria-hidden="true" className="required-asterisk">*</span></strong>
                 <span>Select a rating from 1 to 5 stars.</span>
               </div>
               <div className="review-rating-result">
