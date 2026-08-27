@@ -14,7 +14,6 @@ const categoryOptions = [
   { label: 'Reviews', value: 'reviews' },
   { label: 'Payments', value: 'payments' },
   { label: 'Promotion income', value: 'promotion_income' },
-  { label: 'Verifications', value: 'verifications' },
 ];
 
 const currencyFormatter = new Intl.NumberFormat('en-PH', {
@@ -96,32 +95,12 @@ function joinParts(parts) {
   return parts.filter(Boolean).join(' | ');
 }
 
-function readValue(value, fallback = 'Not set') {
-  if (typeof value === 'string') {
-    return value.trim() || fallback;
-  }
-
-  if (value === null || value === undefined || value === '') {
-    return fallback;
-  }
-
-  return value;
-}
-
 function buildProfileName(profile) {
   if (!profile) {
     return '';
   }
 
   return [profile.first_name, profile.middle_name, profile.last_name, profile.suffix].filter(Boolean).join(' ');
-}
-
-function buildProfileLocation(profile) {
-  if (!profile) {
-    return '';
-  }
-
-  return [profile.street, profile.barangay, profile.city, profile.province, profile.region, profile.country].filter(Boolean).join(', ');
 }
 
 function resolveIdentity(profileById, userId) {
@@ -297,42 +276,6 @@ function normalizePromotionIncome(records, profileById = new Map()) {
   }));
 }
 
-function normalizeVerifications(records) {
-  return (records || []).map((item) => ({
-    assets: [
-      item.id_front_url ? { label: 'Front ID', url: item.id_front_url } : null,
-      item.id_back_url ? { label: 'Back ID', url: item.id_back_url } : null,
-      item.selfie_url ? { label: 'Selfie', url: item.selfie_url } : null,
-    ].filter(Boolean),
-    category: 'verifications',
-    categoryLabel: 'Verifications',
-    date: item.reviewed_at || item.submitted_at,
-    details: joinParts([
-      buildProfileName(item.profile) ? `Name: ${buildProfileName(item.profile)}` : `User: ${item.user_id}`,
-      item.profile?.username ? `Username: ${item.profile.username}` : '',
-      item.id_number_masked ? `ID: ${item.id_number_masked}` : '',
-      item.remarks,
-    ]),
-    id: `verifications-${item.id}`,
-    reference: buildProfileName(item.profile) || item.user_id,
-    reviewAccountStatus: item.profile?.account_status || '',
-    reviewJoinedAt: item.profile?.created_at || '',
-    reviewId: item.id,
-    reviewMaskedId: item.id_number_masked || '',
-    reviewProfile: item.profile || null,
-    reviewProfileLocation: buildProfileLocation(item.profile),
-    reviewProfileName: buildProfileName(item.profile) || item.user_id,
-    reviewProfileState: item.profile?.is_profile_complete ? 'Complete' : 'Needs completion',
-    reviewProvider: 'Didit',
-    reviewRemarks: item.remarks || '',
-    reviewSubmittedAt: item.submitted_at,
-    reviewUserId: item.user_id,
-    subjectMemberName: buildProfileName(item.profile) || 'Unknown member',
-    status: item.status || 'pending',
-    subject: item.id_type || 'Identity verification',
-  }));
-}
-
 export default function ManageReports() {
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -340,7 +283,6 @@ export default function ManageReports() {
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [selectedRecord, setSelectedRecord] = useState(null);
-  const [selectedVerification, setSelectedVerification] = useState(null);
   const [reviewFeedback, setReviewFeedback] = useState('');
   const [reviewFeedbackTone, setReviewFeedbackTone] = useState('info');
   const [selectedDamageClaim, setSelectedDamageClaim] = useState(null);
@@ -411,17 +353,6 @@ export default function ManageReports() {
             .from('promotion_payments')
             .select('id, promotion_id, lender_id, item_id, paymongo_checkout_session_id, paymongo_payment_id, amount, currency, status, paid_at')
             .order('paid_at', { ascending: false })
-            .limit(50),
-        },
-        {
-          label: 'identity_verifications',
-          normalize: normalizeVerifications,
-          request: supabase
-            .from('identity_verifications')
-            .select(
-              'id, user_id, id_type, id_number_masked, id_front_url, id_back_url, selfie_url, submitted_at, reviewed_at, status, remarks, profile:profiles!identity_verifications_user_id_fkey(id, first_name, middle_name, last_name, suffix, username, phone_number, street, barangay, city, province, region, country, account_status, verification_status, is_profile_complete, created_at)'
-            )
-            .order('submitted_at', { ascending: false })
             .limit(50),
         },
       ];
@@ -496,12 +427,6 @@ export default function ManageReports() {
     loadReportFeeds();
 
   }, []);
-
-  function openVerificationReview(record) {
-    setSelectedVerification(record);
-    setReviewFeedback('');
-    setReviewFeedbackTone('info');
-  }
 
   async function openDamageClaimReview(record) {
     setSelectedDamageClaim(record);
@@ -701,11 +626,7 @@ export default function ManageReports() {
               </table>
             </div>
             <div className="admin-report-detail-actions">
-              {selectedRecord.category === 'verifications' ? (
-                <Button onClick={() => { setSelectedRecord(null); openVerificationReview(selectedRecord); }} type="button" variant="secondary">
-                  View verification
-                </Button>
-              ) : selectedRecord.category === 'damage_claims' ? (
+              {selectedRecord.category === 'damage_claims' ? (
                 <Button onClick={() => { setSelectedRecord(null); openDamageClaimReview(selectedRecord); }} type="button" variant="secondary">
                   Review damage
                 </Button>
@@ -718,169 +639,6 @@ export default function ManageReports() {
               ) : (
                 <span>No attached files.</span>
               )}
-            </div>
-          </div>
-        ) : null}
-      </Modal>
-
-      <Modal onClose={() => setSelectedVerification(null)} open={Boolean(selectedVerification)} title="Verified identity record">
-        {selectedVerification ? (
-          <div style={{ display: 'grid', gap: 18 }}>
-            <StatusMessage tone="success">
-              This identity was automatically validated by Didit. This record is view-only and does not require admin approval.
-            </StatusMessage>
-
-            <SectionGrid columns={3} style={{ gap: 14 }}>
-              <MetricCard
-                detail="Automatically validated by Didit."
-                icon={<span style={{ fontSize: 18, fontWeight: 700 }}>!</span>}
-                label="Didit status"
-                style={{ borderRadius: 18, minHeight: 0, padding: 12 }}
-                tone={theme.colors.amber}
-                value={getVerificationStatusLabel(selectedVerification.status)}
-              />
-              <MetricCard
-                detail={`Masked ID: ${readValue(selectedVerification.reviewMaskedId)}`}
-                icon={<span style={{ fontSize: 18, fontWeight: 700 }}>ID</span>}
-                label="ID type"
-                style={{ borderRadius: 18, minHeight: 0, padding: 12 }}
-                tone={theme.colors.sky}
-                value={selectedVerification.subject}
-              />
-              <MetricCard
-                detail={`Submitted ${formatDate(selectedVerification.reviewSubmittedAt)}`}
-                icon={<span style={{ fontSize: 18, fontWeight: 700 }}>&#10003;</span>}
-                label="Member"
-                style={{ borderRadius: 18, minHeight: 0, padding: 12 }}
-                tone={theme.colors.teal}
-                value={selectedVerification.reviewProfileName}
-              />
-            </SectionGrid>
-
-            <div className="panel-grid" style={{ display: 'grid', gap: 14, gridTemplateColumns: '1.1fr 0.9fr' }}>
-              <div
-                className="glass-panel"
-                style={{
-                  borderRadius: 22,
-                  display: 'grid',
-                  gap: 10,
-                  minHeight: 0,
-                  padding: 18,
-                }}
-              >
-                <strong
-                  style={{
-                    color: theme.colors.ink,
-                    fontFamily: theme.fonts.display,
-                    fontSize: 24,
-                    letterSpacing: '-0.05em',
-                  }}
-                >
-                  Profile credentials
-                </strong>
-                {selectedVerification.reviewProfile ? (
-                  <div style={{ display: 'grid' }}>
-                    <ReviewDetailRow label="Name" value={readValue(selectedVerification.reviewProfileName)} />
-                    <ReviewDetailRow
-                      label="Username"
-                      value={selectedVerification.reviewProfile?.username ? `@${selectedVerification.reviewProfile.username}` : 'Not set'}
-                    />
-                    <ReviewDetailRow label="Phone" value={readValue(selectedVerification.reviewProfile?.phone_number)} />
-                    <ReviewDetailRow label="Address" value={readValue(selectedVerification.reviewProfileLocation)} />
-                    <ReviewDetailRow label="Account status" value={readValue(selectedVerification.reviewAccountStatus, 'Active')} />
-                    <ReviewDetailRow label="Profile state" value={readValue(selectedVerification.reviewProfileState)} />
-                  </div>
-                ) : (
-                  <StatusMessage tone="info">No linked profile snapshot was returned for this verification record.</StatusMessage>
-                )}
-              </div>
-
-              <div
-                className="glass-panel"
-                style={{
-                  borderRadius: 22,
-                  display: 'grid',
-                  gap: 10,
-                  minHeight: 0,
-                  padding: 18,
-                }}
-              >
-                <strong
-                  style={{
-                    color: theme.colors.ink,
-                    fontFamily: theme.fonts.display,
-                    fontSize: 24,
-                    letterSpacing: '-0.05em',
-                  }}
-                >
-                  Submission record
-                </strong>
-                <div style={{ display: 'grid' }}>
-                  <ReviewDetailRow label="Verification provider" value={selectedVerification.reviewProvider} />
-                  <ReviewDetailRow label="User ID" value={selectedVerification.reviewUserId} />
-                  <ReviewDetailRow label="ID type" value={selectedVerification.subject} />
-                  <ReviewDetailRow label="Masked ID" value={readValue(selectedVerification.reviewMaskedId)} />
-                  <ReviewDetailRow label="Submitted" value={formatDate(selectedVerification.reviewSubmittedAt)} />
-                  <ReviewDetailRow label="Profile joined" value={formatDate(selectedVerification.reviewJoinedAt)} />
-                  <ReviewDetailRow label="Current status" value={getVerificationStatusLabel(selectedVerification.status)} />
-                </div>
-              </div>
-            </div>
-
-            <div className="panel-grid" style={{ display: 'grid', gap: 14, gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
-              {selectedVerification.assets.map((asset) => (
-                <div
-                  key={`${selectedVerification.id}-${asset.label}`}
-                  className="glass-panel"
-                  style={{
-                    borderRadius: 22,
-                    display: 'grid',
-                    gap: 8,
-                    minHeight: 0,
-                    overflow: 'hidden',
-                    padding: 12,
-                  }}
-                >
-                  <strong
-                    style={{
-                      color: theme.colors.ink,
-                      fontFamily: theme.fonts.display,
-                      fontSize: 16,
-                      letterSpacing: '-0.04em',
-                    }}
-                  >
-                    {asset.label}
-                  </strong>
-                  <div
-                    style={{
-                      background: alpha(theme.colors.ink, 0.04),
-                      border: `1px solid ${alpha(theme.colors.ink, 0.08)}`,
-                      borderRadius: 18,
-                      height: 150,
-                      overflow: 'hidden',
-                    }}
-                  >
-                    <img
-                      alt={asset.label}
-                      src={asset.url}
-                      style={{
-                        display: 'block',
-                        height: '100%',
-                        objectFit: 'cover',
-                        width: '100%',
-                      }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {selectedVerification.reviewRemarks ? <StatusMessage tone="info">Verification note: {selectedVerification.reviewRemarks}</StatusMessage> : null}
-
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, justifyContent: 'flex-end' }}>
-              <Button onClick={() => setSelectedVerification(null)} type="button" variant="ghost">
-                Close
-              </Button>
             </div>
           </div>
         ) : null}
@@ -1112,17 +870,11 @@ export default function ManageReports() {
                               letterSpacing: '-0.03em',
                             }}
                           >
-                            {record.category === 'verifications' ? record.subjectMemberName : record.subject}
+                            {record.subject}
                           </strong>
-                          {record.category === 'verifications' ? (
-                            <div style={{ color: theme.colors.slate, display: 'grid', fontSize: 13, gap: 3, marginTop: 6 }}>
-                              <span>{record.subject}</span>
-                              <span style={{ fontFamily: 'monospace', overflowWrap: 'anywhere' }}>User ID: {record.reviewUserId}</span>
-                            </div>
-                          ) : null}
                         </td>
                         <td style={bodyCellStyle}>
-                          {record.category === 'verifications' ? <Badge tone="info">Didit</Badge> : <span style={{ color: theme.colors.slate }}>System</span>}
+                          <span style={{ color: theme.colors.slate }}>System</span>
                         </td>
                         <td style={bodyCellStyle}>
                           <Badge tone={statusTone(record.status)}>{getVerificationStatusLabel(record.status)}</Badge>
@@ -1132,7 +884,7 @@ export default function ManageReports() {
                         </td>
                         <td style={bodyCellStyle}>
                           <Button
-                            onClick={() => record.category === 'verifications' ? openVerificationReview(record) : setSelectedRecord(record)}
+                            onClick={() => setSelectedRecord(record)}
                             type="button"
                             variant="secondary"
                           >

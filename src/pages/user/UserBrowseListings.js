@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../api/supabaseClient';
+import { getNubProgramsForSchool, itemMatchesAcademicFilters, NUB_PROGRAMS, NUB_SCHOOLS } from '../../data/nubAcademicData';
 import { getDamageClaimsForBorrower, userHasActiveDamageHold } from '../../services/damageClaimsService';
 import { CatalogIcon, CloseIcon, FilterIcon } from '../../ui/icons';
 import { Badge, Button, Modal, Panel, StarRating, StatusMessage } from '../../ui/primitives';
 import { alpha, theme } from '../../ui/theme';
+import { filterListingsByActiveOwners } from '../../utils/marketplaceVisibility';
 import UserShell from './UserShell';
 import './UserBrowseListings.css';
 
@@ -334,6 +336,8 @@ export default function UserBrowseListings() {
   const [barangayFilters, setBarangayFilters] = useState([]);
   const [categoryFilters, setCategoryFilters] = useState([]);
   const [conditionFilters, setConditionFilters] = useState([]);
+  const [schoolFilter, setSchoolFilter] = useState('all');
+  const [programFilter, setProgramFilter] = useState('all');
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
   const [activeDamageHold, setActiveDamageHold] = useState(false);
   const [pendingDamageClaim, setPendingDamageClaim] = useState(null);
@@ -353,7 +357,7 @@ export default function UserBrowseListings() {
         supabase
           .from('items')
           .select(
-            'id, owner_id, category_id, title, description, item_condition, rental_price_per_day, security_deposit, estimated_value, min_rental_days, max_rental_days, quantity, pickup_barangay, pickup_city, pickup_country, pickup_latitude, pickup_longitude, pickup_province, pickup_region, pickup_street, meetup_notes, status, is_active, created_at, updated_at'
+            'id, owner_id, category_id, subcategory_id, applies_to_all_programs, title, description, item_condition, rental_price_per_day, security_deposit, estimated_value, min_rental_days, max_rental_days, quantity, pickup_barangay, pickup_city, pickup_country, pickup_latitude, pickup_longitude, pickup_province, pickup_region, pickup_street, meetup_notes, status, is_active, created_at, updated_at'
           )
           .eq('is_active', true)
           .eq('status', 'available')
@@ -430,11 +434,11 @@ export default function UserBrowseListings() {
       const itemIds = rawItems.map((item) => item.id);
       const categoryMap = new Map(nextCategories.map((category) => [category.id, category]));
 
-      const [ownersResult, imagesResult, profileResult, itemSubcategoriesResult, itemViewHistoryResult, promotionsResult] = await Promise.all([
+      const [ownersResult, imagesResult, profileResult, itemSubcategoriesResult, itemProgramsResult, itemViewHistoryResult, promotionsResult] = await Promise.all([
         ownerIds.length
           ? supabase
               .from('profiles')
-              .select('id, first_name, middle_name, last_name, suffix, username, profile_photo_url, average_rating, total_reviews, is_verified, verification_status')
+              .select('id, first_name, middle_name, last_name, suffix, username, profile_photo_url, average_rating, total_reviews, is_verified, verification_status, account_status')
               .in('id', ownerIds)
           : Promise.resolve({ data: [], error: null }),
         itemIds.length
@@ -455,6 +459,12 @@ export default function UserBrowseListings() {
           ? supabase
               .from('item_subcategories')
               .select('item_id, subcategory_id, categories!item_subcategories_subcategory_id_fkey(id, name, parent_category_id)')
+              .in('item_id', itemIds)
+          : Promise.resolve({ data: [], error: null }),
+        itemIds.length
+          ? supabase
+              .from('item_programs')
+              .select('item_id, program_code')
               .in('item_id', itemIds)
           : Promise.resolve({ data: [], error: null }),
         currentUserId
@@ -486,6 +496,9 @@ export default function UserBrowseListings() {
       if (itemSubcategoriesResult.error) {
         nextErrors.push(`item_subcategories: ${itemSubcategoriesResult.error.message}`);
       }
+      if (itemProgramsResult.error) {
+        nextErrors.push(`item_programs: ${itemProgramsResult.error.message}`);
+      }
       if (itemViewHistoryResult.error) {
         nextErrors.push(`item_view_history: ${itemViewHistoryResult.error.message}`);
       }
@@ -498,6 +511,7 @@ export default function UserBrowseListings() {
       const ownerMap = new Map((ownersResult.data || []).map((profile) => [profile.id, profile]));
       const imagesByItemId = new Map();
       const subcategoriesByItemId = new Map();
+      const programCodesByItemId = new Map();
 
       (imagesResult.data || []).forEach((image) => {
         const current = imagesByItemId.get(image.item_id) || [];
@@ -511,8 +525,14 @@ export default function UserBrowseListings() {
         }
         subcategoriesByItemId.set(row.item_id, current);
       });
+      (itemProgramsResult.data || []).forEach((row) => {
+        const current = programCodesByItemId.get(row.item_id) || [];
+        current.push(row.program_code);
+        programCodesByItemId.set(row.item_id, current);
+      });
 
-      const nextItems = rawItems.map((item) => {
+      const visibleItems = filterListingsByActiveOwners(rawItems, ownersResult.data || []);
+      const nextItems = visibleItems.map((item) => {
         const images = (imagesByItemId.get(item.id) || [])
           .slice()
           .sort((left, right) => Number(right.is_primary) - Number(left.is_primary) || left.sort_order - right.sort_order);
@@ -524,6 +544,7 @@ export default function UserBrowseListings() {
           images,
           owner: ownerMap.get(item.owner_id) || null,
           primaryImage: images[0] || null,
+          programCodes: programCodesByItemId.get(item.id) || [],
           subcategories: subcategoriesByItemId.get(item.id) || [],
         };
       });
@@ -580,12 +601,27 @@ export default function UserBrowseListings() {
     const normalizedSearch = search.trim().toLowerCase();
 
     return items.filter((item) => {
+      const selectedSchoolCodes = schoolFilter === 'all' ? [] : [schoolFilter];
+      const selectedProgramCodes = programFilter === 'all' ? [] : [programFilter];
+      if (!itemMatchesAcademicFilters(item, selectedSchoolCodes, selectedProgramCodes)) {
+        return false;
+      }
+
       if (barangayFilters.length && !barangayFilters.includes(String(item.pickup_barangay || '').trim())) {
         return false;
       }
 
-      if (categoryFilters.length && !categoryFilters.includes(item.category_id)) {
-        return false;
+      if (categoryFilters.length) {
+        const matchesCategory = categoryFilters.some((categoryId) => {
+          if (item.category_id === categoryId || item.subcategory_id === categoryId) return true;
+          const itemSubcategoryIds = (item.subcategories || []).map((subcategory) => subcategory.id);
+          return categories.some((category) => category.id === item.category_id && category.parent_category_id === categoryId)
+            || itemSubcategoryIds.some((subcategoryId) => {
+              const subcategory = categories.find((category) => category.id === subcategoryId);
+              return subcategory?.parent_category_id === categoryId;
+            });
+        });
+        if (!matchesCategory) return false;
       }
 
       if (conditionFilters.length && !conditionFilters.includes(item.item_condition)) {
@@ -613,7 +649,7 @@ export default function UserBrowseListings() {
 
       return haystack.includes(normalizedSearch);
     });
-  }, [barangayFilters, categoryFilters, conditionFilters, items, search]);
+  }, [barangayFilters, categories, categoryFilters, conditionFilters, items, programFilter, schoolFilter, search]);
 
   const newestItems = useMemo(
     () => createSectionItems(filteredItems, (left, right) => new Date(right.created_at) - new Date(left.created_at)),
@@ -850,6 +886,8 @@ export default function UserBrowseListings() {
     setBarangayFilters([]);
     setCategoryFilters([]);
     setConditionFilters([]);
+    setSchoolFilter('all');
+    setProgramFilter('all');
   }
 
   function toggleBarangayFilter(barangay) {
@@ -866,6 +904,14 @@ export default function UserBrowseListings() {
     setConditionFilters((current) =>
       current.includes(conditionValue) ? current.filter((value) => value !== conditionValue) : [...current, conditionValue]
     );
+  }
+
+  function handleSchoolFilterChange(event) {
+    const nextSchool = event.target.value;
+    const programStillValid = nextSchool === 'all'
+      || getNubProgramsForSchool(nextSchool).some((program) => program.code === programFilter);
+    setSchoolFilter(nextSchool);
+    if (!programStillValid) setProgramFilter('all');
   }
 
   return (
@@ -1144,6 +1190,26 @@ export default function UserBrowseListings() {
         <button className="browse-filter-clear" onClick={clearFilters} type="button">
           Clear all
         </button>
+
+        <div className="browse-filter-section">
+          <h4>NU Baliwag school</h4>
+          <select className="browse-filter-select" onChange={handleSchoolFilterChange} value={schoolFilter}>
+            <option value="all">All schools</option>
+            {NUB_SCHOOLS.map((school) => (
+              <option key={school.code} value={school.code}>{school.code} — {school.name}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="browse-filter-section">
+          <h4>NU Baliwag course</h4>
+          <select className="browse-filter-select" onChange={(event) => setProgramFilter(event.target.value)} value={programFilter}>
+            <option value="all">All courses</option>
+            {(schoolFilter === 'all' ? NUB_PROGRAMS : getNubProgramsForSchool(schoolFilter)).map((program) => (
+              <option key={program.code} value={program.code}>{program.displayCode} — {program.name}</option>
+            ))}
+          </select>
+        </div>
 
         <div className="browse-filter-section">
           <h4>Barangay</h4>

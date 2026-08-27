@@ -6,7 +6,12 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
   const [sessionInitialized, setSessionInitialized] = useState(false);
-  const [resolvedRole, setResolvedRole] = useState({ userId: null, role: null });
+  const [resolvedAccess, setResolvedAccess] = useState({
+    accountStatus: null,
+    nubRegistryManaged: false,
+    role: null,
+    userId: null,
+  });
   const userId = session?.user?.id;
 
   useEffect(() => {
@@ -42,43 +47,68 @@ export function AuthProvider({ children }) {
     let active = true;
 
     if (!userId) {
-      setResolvedRole({ userId: null, role: null });
+      setResolvedAccess({ accountStatus: null, nubRegistryManaged: false, role: null, userId: null });
       return undefined;
     }
 
-    supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', userId)
-      .maybeSingle()
-      .then(({ data, error }) => {
+    async function resolveSignedInAccess() {
+      try {
+        const { data: roleProfile, error: roleError } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', userId)
+          .maybeSingle();
+
         if (!active) return;
-        if (error) console.warn('Unable to load the signed-in user role:', error.message);
-        setResolvedRole({
+        if (roleError) throw roleError;
+
+        const role = String(roleProfile?.role || '').toLowerCase() || null;
+        if (role === 'admin') {
+          setResolvedAccess({ accountStatus: null, nubRegistryManaged: false, role: 'admin', userId });
+          return;
+        }
+
+        const { data: studentProfile, error: studentError } = await supabase
+          .from('profiles')
+          .select('account_status, nub_registry_managed')
+          .eq('id', userId)
+          .maybeSingle();
+
+        if (!active) return;
+        if (studentError) throw studentError;
+
+        setResolvedAccess({
+          accountStatus: String(studentProfile?.account_status || '').toLowerCase() || null,
+          nubRegistryManaged: Boolean(studentProfile?.nub_registry_managed),
+          role,
           userId,
-          role: String(data?.role || '').toLowerCase() || null,
         });
-      })
-      .catch((error) => {
+      } catch (error) {
         if (!active) return;
-        console.warn('Unable to load the signed-in user role:', error?.message || error);
-        setResolvedRole({ userId, role: null });
-      });
+        console.warn('Unable to load the signed-in user access:', error?.message || error);
+        setResolvedAccess({ accountStatus: null, nubRegistryManaged: false, role: null, userId });
+      }
+    }
+
+    resolveSignedInAccess();
 
     return () => {
       active = false;
     };
   }, [userId]);
 
-  const role = resolvedRole.userId === userId ? resolvedRole.role : null;
-  const loading = !sessionInitialized || Boolean(userId && resolvedRole.userId !== userId);
+  const access = resolvedAccess.userId === userId ? resolvedAccess : null;
+  const role = access?.role || null;
+  const studentAccess = role === 'admin' || Boolean(access?.nubRegistryManaged && access?.accountStatus === 'active');
+  const loading = !sessionInitialized || Boolean(userId && resolvedAccess.userId !== userId);
 
   const value = useMemo(() => ({
     loading,
     role,
     session,
+    studentAccess,
     user: session?.user || null,
-  }), [loading, role, session]);
+  }), [loading, role, session, studentAccess]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

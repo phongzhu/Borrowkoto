@@ -8,136 +8,57 @@ export const suffixOptions = [
   { label: 'V', value: 'V' },
 ];
 
-export const verificationIdTypeOptions = [
-  { label: 'Select ID type', value: '' },
-  { label: 'PhilSys National ID', value: 'PhilSys National ID' },
-  { label: 'Passport', value: 'Passport' },
-  { label: "Driver's License", value: "Driver's License" },
-  { label: 'UMID / SSS', value: 'UMID / SSS' },
-  { label: 'PRC ID', value: 'PRC ID' },
-  { label: 'Postal ID', value: 'Postal ID' },
-  { label: "Voter's ID", value: "Voter's ID" },
-  { label: 'Senior Citizen ID', value: 'Senior Citizen ID' },
-];
-
-const verificationIdTypeRules = {
-  'PhilSys National ID': {
-    description: 'Use 16 characters in four groups of four. Digits may be hidden with X.',
-    example: 'XXXX-XXXX-1234-5678',
-    maxLength: 19,
-    placeholder: 'XXXX-XXXX-1234-5678',
-    regex: /^[0-9X]{4}-[0-9X]{4}-[0-9X]{4}-[0-9X]{4}$/i,
-  },
-  Passport: {
-    description: 'Use the passport reference as 8 to 9 letters or digits. Hidden characters may use X.',
-    example: 'PX34567X',
-    maxLength: 9,
-    placeholder: 'PX34567X',
-    regex: /^[A-Z0-9X]{8,9}$/i,
-  },
-  "Driver's License": {
-    description: 'Use the license number in three groups. Letters or digits may be hidden with X.',
-    example: 'N01-23-456789',
-    maxLength: 13,
-    placeholder: 'N01-23-456789',
-    regex: /^[A-Z0-9X]{1,4}-[A-Z0-9X]{2}-[A-Z0-9X]{6}$/i,
-  },
-  'UMID / SSS': {
-    description: 'Use the UMID or SSS number in the standard three-part format.',
-    example: 'XXXX-1234567-8',
-    maxLength: 14,
-    placeholder: 'XXXX-1234567-8',
-    regex: /^[0-9X]{4}-[0-9X]{7}-[0-9X]$/i,
-  },
-  'PRC ID': {
-    description: 'Use the seven-digit PRC number. Hidden digits may use X.',
-    example: 'XXX4567',
-    maxLength: 7,
-    placeholder: 'XXX4567',
-    regex: /^[0-9X]{7}$/i,
-  },
-  'Postal ID': {
-    description: 'Use the printed Postal ID reference. Letters or digits may be hidden with X.',
-    example: 'XX-123456789-0',
-    maxLength: 20,
-    placeholder: 'XX-123456789-0',
-    regex: /^[A-Z0-9X-]{8,20}$/i,
-  },
-  "Voter's ID": {
-    description: 'Use the voter reference exactly as printed. Letters or digits may be hidden with X.',
-    example: 'XXXX-XXXX-1234',
-    maxLength: 20,
-    placeholder: 'XXXX-XXXX-1234',
-    regex: /^[A-Z0-9X-]{8,20}$/i,
-  },
-  'Senior Citizen ID': {
-    description: 'Use the card number as printed. Letters or digits may be hidden with X.',
-    example: 'SC-XXXX-123456',
-    maxLength: 20,
-    placeholder: 'SC-XXXX-123456',
-    regex: /^[A-Z0-9X-]{6,20}$/i,
-  },
-};
-
-const fallbackVerificationIdRule = {
-  description: 'Select an ID type to load the correct masked number format.',
-  example: '',
-  maxLength: 24,
-  placeholder: '',
-  regex: /^[A-Z0-9X-]{6,24}$/i,
-};
-
 export function sanitizeText(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-export function normalizeMaskedIdNumber(value) {
-  return sanitizeText(value).toUpperCase();
-}
+export const requiredStudentProfileDetails = [
+  { label: 'first name', name: 'first_name' },
+  { label: 'last name', name: 'last_name' },
+  { label: 'username', name: 'username' },
+  { label: 'phone number', name: 'phone_number' },
+  { label: 'date of birth', name: 'date_of_birth' },
+  { label: 'profile photo', name: 'profile_photo_url' },
+  { label: 'school', name: 'school_code' },
+  { label: 'program', name: 'program_code' },
+  { label: 'street address', name: 'street' },
+  { label: 'barangay', name: 'barangay' },
+  { label: 'city', name: 'city' },
+  { label: 'province', name: 'province' },
+  { label: 'region', name: 'region' },
+  { label: 'country', name: 'country' },
+];
 
-export function getVerificationIdTypeRule(idType) {
-  return verificationIdTypeRules[idType] || fallbackVerificationIdRule;
-}
-
-export function validateMaskedIdNumber(idType, value) {
-  const selectedIdType = sanitizeText(idType);
-  const maskedValue = normalizeMaskedIdNumber(value);
-
-  if (!selectedIdType) {
-    throw new Error('Select an ID type before entering the masked ID number.');
-  }
-
-  if (!maskedValue) {
-    throw new Error('Masked ID number is required.');
-  }
-
-  const rule = getVerificationIdTypeRule(selectedIdType);
-
-  if (!rule.regex.test(maskedValue)) {
-    throw new Error(`Masked ID number must follow this format: ${rule.example}.`);
-  }
-
-  return maskedValue;
+export function getMissingStudentProfileDetails(profileValue) {
+  return requiredStudentProfileDetails
+    .filter(({ name }) => !sanitizeText(profileValue?.[name]))
+    .map(({ label }) => label);
 }
 
 export function buildProfileForm(user, profile, defaultRole = 'user') {
+  const metadata = user?.user_metadata || {};
   return {
     barangay: profile?.barangay || '',
     city: profile?.city || '',
     country: profile?.country || 'Philippines',
     date_of_birth: profile?.date_of_birth || '',
-    first_name: profile?.first_name || '',
-    last_name: profile?.last_name || '',
+    campus_name: profile?.campus_name || '',
+    first_name: profile?.first_name || metadata.first_name || '',
+    last_name: profile?.last_name || metadata.last_name || '',
     latitude: profile?.latitude === null || profile?.latitude === undefined ? '' : String(profile.latitude),
     longitude: profile?.longitude === null || profile?.longitude === undefined ? '' : String(profile.longitude),
-    middle_name: profile?.middle_name || '',
+    middle_name: profile?.middle_name || metadata.middle_name || '',
     phone_number: profile?.phone_number || '',
     profile_photo_url: profile?.profile_photo_url || '',
     province: profile?.province || '',
     region: profile?.region || '',
     role: profile?.role || user?.user_metadata?.role || defaultRole,
+    school_code: profile?.school_code || metadata.school_code || '',
+    section: profile?.section || metadata.section || '',
     street: profile?.street || '',
+    student_number: profile?.student_number || '',
     suffix: profile?.suffix || '',
+    program_code: profile?.program_code || metadata.program_code || '',
     username: profile?.username || '',
   };
 }
@@ -261,22 +182,6 @@ export function validateCoordinates(latitudeValue, longitudeValue) {
   return { latitude, longitude };
 }
 
-export function validateBaliwagLocation({ city, province, region }) {
-  const normalizedCity = sanitizeText(city).toLowerCase();
-  const normalizedProvince = sanitizeText(province).toLowerCase();
-  const normalizedRegion = sanitizeText(region).toLowerCase();
-  const cityAllowed =
-    normalizedCity === 'baliwag' ||
-    normalizedCity === 'baliuag' ||
-    normalizedCity === 'city of baliwag' ||
-    normalizedCity.includes('baliwag') ||
-    normalizedCity.includes('baliuag');
-
-  if (!cityAllowed || normalizedProvince !== 'bulacan' || (normalizedRegion && !normalizedRegion.includes('region iii') && !normalizedRegion.includes('central luzon'))) {
-    throw new Error('Location is limited to Baliwag/Baliuag, Bulacan only.');
-  }
-}
-
 export function buildAddressQuery(form) {
   return [
     sanitizeText(form?.street),
@@ -291,10 +196,15 @@ export function buildAddressQuery(form) {
 }
 
 export function buildMapEmbedUrl(latitudeValue, longitudeValue) {
+  if (latitudeValue === null || latitudeValue === undefined || sanitizeText(String(latitudeValue)) === '' ||
+      longitudeValue === null || longitudeValue === undefined || sanitizeText(String(longitudeValue)) === '') {
+    return '';
+  }
+
   const latitude = Number(latitudeValue);
   const longitude = Number(longitudeValue);
 
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || (latitude === 0 && longitude === 0)) {
     return '';
   }
 

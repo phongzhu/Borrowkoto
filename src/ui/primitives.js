@@ -22,8 +22,8 @@ const buttonVariants = {
     color: theme.colors.ink,
   },
   primary: {
-    background: theme.colors.ink,
-    border: `1px solid ${theme.colors.ink}`,
+    background: `var(--ui-primary-color, ${theme.colors.teal})`,
+    border: `1px solid var(--ui-primary-color, ${theme.colors.teal})`,
     color: 'var(--ui-background-color, #ffffff)',
   },
   secondary: {

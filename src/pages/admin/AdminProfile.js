@@ -13,7 +13,6 @@ import {
   ensureUniqueUsername,
   sanitizeText,
   suffixOptions,
-  validateBaliwagLocation,
   validateCoordinates,
 } from '../../ui/profileFormUtils';
 
@@ -241,7 +240,6 @@ export default function AdminProfile() {
       const normalizedPhoneNumber = await ensureUniquePhoneNumber(supabase, form.phone_number, user.id);
       const normalizedUsername = await ensureUniqueUsername(supabase, form.username, user.id);
       const { latitude, longitude } = validateCoordinates(form.latitude, form.longitude);
-      validateBaliwagLocation({ city: form.city, province: form.province, region: form.region });
       const payload = {
         barangay: sanitizeText(form.barangay),
         city: sanitizeText(form.city),

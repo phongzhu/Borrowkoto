@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from './api/supabaseClient';
 import { useUISettings } from './context/UISettingsContext';
+import { getNubProgramsForSchool, itemMatchesAcademicFilters, NUB_PROGRAMS, NUB_SCHOOLS } from './data/nubAcademicData';
 import { RENTABLE_ITEM_STATUSES } from './utils/bookingEnums';
+import { filterListingsByActiveOwners, selectPromotedMarketplaceItems } from './utils/marketplaceVisibility';
 import borrowToolsCampaign from './assets/campaigns/borrow-tools.png';
 import borrowTechCampaign from './assets/campaigns/borrow-tech.png';
 import borrowWeekendCampaign from './assets/campaigns/borrow-weekend.png';
@@ -15,26 +17,26 @@ const welcomeStorageKey = (userId) => `borrowkoto:landing-welcome-seen:${userId}
 
 const MARKET_CAMPAIGNS = [
   {
-    eyebrow: 'DIY without the price tag',
+    eyebrow: 'Course-ready equipment',
     title: 'Build more. Buy less.',
-    description: 'Borrow trusted tools from neighbors and get that weekend project done.',
-    action: 'Explore tools',
+    description: 'Borrow reusable tools approved for your NU Baliwag school or program.',
+    action: 'Explore equipment',
     image: borrowToolsCampaign,
     tone: 'dark',
   },
   {
-    eyebrow: 'Create your best weekend',
+    eyebrow: 'Technology for every program',
     title: 'Big tech. Small daily price.',
-    description: 'Cameras, projectors, and speakers—ready when inspiration strikes.',
+    description: 'Laptops, cameras, projectors, and speakers available to all NUB students.',
     action: 'Browse electronics',
     image: borrowTechCampaign,
     tone: 'dark',
   },
   {
-    eyebrow: 'Make plans, not purchases',
-    title: 'Your next escape starts here.',
-    description: 'Rent outdoor essentials nearby and make every weekend count.',
-    action: 'Find outdoor gear',
+    eyebrow: 'Use what your course needs',
+    title: 'Access beats ownership.',
+    description: 'Find engineering, business, education, hospitality, and architecture equipment.',
+    action: 'Browse by school',
     image: borrowWeekendCampaign,
     tone: 'warm',
   },
@@ -47,38 +49,6 @@ const currencyFormatter = new Intl.NumberFormat('en-PH', {
 });
 
 const TAGS_META_PREFIX = '[TAGS]::';
-const BALIUAG_BARANGAYS = [
-  'Adias',
-  'Bagong Nayon',
-  'Balon',
-  'Banag',
-  'Barihan',
-  'Calantipay',
-  'Catulinan',
-  'Concepcion',
-  'Hinukay',
-  'Makinabang',
-  'Matangtubig',
-  'Pagala',
-  'Paitan',
-  'Piel',
-  'Pinagbarilan',
-  'Poblacion',
-  'Sabang',
-  'San Jose',
-  'San Roque',
-  'Santa Barbara',
-  'Santo Cristo',
-  'Santo Nino',
-  'Subic',
-  'Sulivan',
-  'Tangos',
-  'Tarcan',
-  'Tibag',
-  'Tilapayong',
-  'Virgen Delas Flores',
-];
-
 function getLocation(item) {
   return [item.pickup_city, item.pickup_province].filter(Boolean).join(', ') || 'Location on request';
 }
@@ -88,6 +58,14 @@ function formatCondition(value) {
     .split('_')
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
+}
+
+function formatItemProgramAudience(item) {
+  if (item?.applies_to_all_programs) return 'All NUB programs';
+  const labels = (item?.programCodes || [])
+    .map((code) => NUB_PROGRAMS.find((program) => program.code === code)?.displayCode || code)
+    .filter(Boolean);
+  return labels.join(', ') || item?.category?.name || 'NUB course resource';
 }
 
 function parseItemTagsFromNotes(meetupNotesValue) {
@@ -201,40 +179,13 @@ function getCategoryIconType(categoryName) {
   return 'item';
 }
 
-function detectBaliuagBarangay(item) {
-  const ownerBarangay = String(item?.owner?.barangay || '').trim();
-  if (ownerBarangay) {
-    return ownerBarangay;
-  }
-
-  const pickupBarangay = String(item?.pickup_barangay || '').trim();
-  if (pickupBarangay) {
-    return pickupBarangay;
-  }
-
-  const haystack = [
-    item.pickup_barangay,
-    item.pickup_city,
-    item.pickup_province,
-    item.meetup_notes,
-    item.description,
-    item.owner?.street,
-    item.owner?.barangay,
-    item.owner?.city,
-    item.owner?.province,
-    ...(item.searchTags || []),
-  ]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase();
-
-  const matched = BALIUAG_BARANGAYS.find((name) => haystack.includes(name.toLowerCase()));
-  return matched || 'Unspecified';
+function getItemArea(item) {
+  return getLocation(item);
 }
 
 function formatItemRating(item) {
-  const ratingValue = Number(item?.ownerAverageRating ?? item?.owner?.average_rating);
-  const reviewCount = Number((item?.ownerTotalReviews ?? item?.owner?.total_reviews) || 0);
+  const ratingValue = Number(item?.itemAverageRating);
+  const reviewCount = Number(item?.itemTotalReviews || 0);
 
   if (Number.isFinite(ratingValue) && ratingValue > 0) {
     return `★ ${ratingValue.toFixed(1)} (${reviewCount})`;
@@ -252,14 +203,15 @@ export default function App() {
   const [categories, setCategories] = useState([]);
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
-  const [barangayFilter, setBarangayFilter] = useState('all');
+  const [expandedHeaderCategoryId, setExpandedHeaderCategoryId] = useState('');
+  const [expandedFooterCategoryId, setExpandedFooterCategoryId] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [activeCampaign, setActiveCampaign] = useState(0);
   const [campaignPaused, setCampaignPaused] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [selectedBarangays, setSelectedBarangays] = useState([]);
-  const [barangaySearch, setBarangaySearch] = useState('');
+  const [selectedSchoolCodes, setSelectedSchoolCodes] = useState([]);
+  const [selectedProgramCodes, setSelectedProgramCodes] = useState([]);
   const [filterCategorySearch, setFilterCategorySearch] = useState('');
   const [selectedFilterCategories, setSelectedFilterCategories] = useState([]);
   const [selectedConditions, setSelectedConditions] = useState([]);
@@ -277,6 +229,7 @@ export default function App() {
   const [recentCarouselPaused, setRecentCarouselPaused] = useState(false);
   const [activeArrival, setActiveArrival] = useState(0);
   const [arrivalCarouselPaused, setArrivalCarouselPaused] = useState(false);
+  const [trendingVisibleCount, setTrendingVisibleCount] = useState(5);
 
   const brandName = settings.system_name?.trim() || "Borrow Ko 'To";
   const logoUrl = settings.logo_url?.trim() || '';
@@ -297,11 +250,16 @@ export default function App() {
 
   useEffect(() => {
     if (!filtersOpen) return undefined;
+    const previousOverflow = document.body.style.overflow;
     const closeOnEscape = (event) => {
       if (event.key === 'Escape') setFiltersOpen(false);
     };
+    document.body.style.overflow = 'hidden';
     document.addEventListener('keydown', closeOnEscape);
-    return () => document.removeEventListener('keydown', closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', closeOnEscape);
+    };
   }, [filtersOpen]);
 
   useEffect(() => {
@@ -398,7 +356,7 @@ export default function App() {
     async function loadCurrentUserProfile() {
       const { data, error: profileError } = await supabase
         .from('profiles')
-        .select('first_name, last_name, username, profile_photo_url, is_profile_complete')
+        .select('first_name, last_name, username, profile_photo_url, is_profile_complete, school_code, program_code')
         .eq('id', currentUser.id)
         .maybeSingle();
       if (!mounted) return;
@@ -438,7 +396,7 @@ export default function App() {
         supabase
           .from('items')
           .select(
-            'id, owner_id, category_id, title, description, item_condition, rental_price_per_day, security_deposit, pickup_barangay, pickup_city, pickup_province, pickup_region, pickup_street, meetup_notes, status, is_active, created_at'
+            'id, owner_id, category_id, subcategory_id, applies_to_all_programs, title, description, item_condition, rental_price_per_day, security_deposit, pickup_barangay, pickup_city, pickup_province, pickup_region, pickup_street, meetup_notes, status, is_active, created_at'
           )
           .eq('is_active', true)
           .in('status', Array.from(RENTABLE_ITEM_STATUSES))
@@ -470,7 +428,7 @@ export default function App() {
       const ownerIds = Array.from(new Set(rawItems.map((item) => item.owner_id).filter(Boolean)));
       const categoryMap = new Map(nextCategories.map((category) => [category.id, category]));
 
-      const [imagesResult, ownersResult, ownerRatingsResult, itemSubcategoriesResult, bookingRentalsResult] = await Promise.all([
+      const [imagesResult, ownersResult, itemRatingsResult, itemSubcategoriesResult, itemProgramsResult, bookingRentalsResult] = await Promise.all([
         itemIds.length
           ? supabase
               .from('item_images')
@@ -481,20 +439,27 @@ export default function App() {
         ownerIds.length
           ? supabase
               .from('profiles')
-              .select('id, username, is_verified, verification_status, average_rating, total_reviews, street, barangay, city, province, region')
+              .select('id, username, is_verified, verification_status, average_rating, total_reviews, street, barangay, city, province, region, account_status')
               .in('id', ownerIds)
           : { data: [], error: null },
-        ownerIds.length
+        itemIds.length
           ? supabase
               .from('reviews')
-              .select('reviewee_id, rating')
-              .in('reviewee_id', ownerIds)
+              .select('item_id, reviewer_id, rating')
+              .in('item_id', itemIds)
+              .eq('reviewer_role', 'borrower')
               .not('rating', 'is', null)
           : { data: [], error: null },
         itemIds.length
           ? supabase
               .from('item_subcategories')
               .select('item_id, subcategory_id, categories!item_subcategories_subcategory_id_fkey(id, name, description, parent_category_id)')
+              .in('item_id', itemIds)
+          : { data: [], error: null },
+        itemIds.length
+          ? supabase
+              .from('item_programs')
+              .select('item_id, program_code')
               .in('item_id', itemIds)
           : { data: [], error: null },
         itemIds.length
@@ -510,23 +475,26 @@ export default function App() {
 
       if (imagesResult.error) nextErrors.push(`item_images: ${imagesResult.error.message}`);
       if (ownersResult.error) nextErrors.push(`profiles: ${ownersResult.error.message}`);
-      if (ownerRatingsResult.error) nextErrors.push(`reviews: ${ownerRatingsResult.error.message}`);
+      if (itemRatingsResult.error) nextErrors.push(`reviews: ${itemRatingsResult.error.message}`);
       if (itemSubcategoriesResult.error) nextErrors.push(`item_subcategories: ${itemSubcategoriesResult.error.message}`);
+      if (itemProgramsResult.error) nextErrors.push(`item_programs: ${itemProgramsResult.error.message}`);
       if (bookingRentalsResult.error) nextErrors.push(`bookings: ${bookingRentalsResult.error.message}`);
 
       const imagesByItemId = new Map();
       const subcategoriesByItemId = new Map();
+      const programCodesByItemId = new Map();
       const ownersById = new Map((ownersResult.data || []).map((owner) => [owner.id, owner]));
-      const ownerRatingStatsById = new Map();
+      const ownerByItemId = new Map(rawItems.map((item) => [item.id, item.owner_id]));
+      const itemRatingStatsById = new Map();
 
-      (ownerRatingsResult.data || []).forEach((row) => {
-        const ownerId = row?.reviewee_id;
+      (itemRatingsResult.data || []).forEach((row) => {
+        const itemId = row?.item_id;
         const rating = Number(row?.rating);
 
-        if (!ownerId || !Number.isFinite(rating)) return;
+        if (!itemId || row?.reviewer_id === ownerByItemId.get(itemId) || !Number.isFinite(rating)) return;
 
-        const current = ownerRatingStatsById.get(ownerId) || { count: 0, total: 0 };
-        ownerRatingStatsById.set(ownerId, {
+        const current = itemRatingStatsById.get(itemId) || { count: 0, total: 0 };
+        itemRatingStatsById.set(itemId, {
           count: current.count + 1,
           total: current.total + rating,
         });
@@ -545,27 +513,36 @@ export default function App() {
         }
         subcategoriesByItemId.set(row.item_id, list);
       });
+      (itemProgramsResult.data || []).forEach((row) => {
+        const list = programCodesByItemId.get(row.item_id) || [];
+        list.push(row.program_code);
+        programCodesByItemId.set(row.item_id, list);
+      });
 
-      const nextItems = rawItems.map((item) => {
+      const visibleItems = filterListingsByActiveOwners(rawItems, ownersResult.data || []);
+      const nextItems = visibleItems.map((item) => {
         const images = (imagesByItemId.get(item.id) || [])
           .slice()
           .sort((a, b) => Number(b.is_primary) - Number(a.is_primary) || a.sort_order - b.sort_order);
         const ownerProfile = ownersById.get(item.owner_id) || null;
-        const ownerRatingStats = ownerRatingStatsById.get(item.owner_id) || null;
+        const itemRatingStats = itemRatingStatsById.get(item.id) || null;
         const profileAverageRating = Number(ownerProfile?.average_rating);
         const profileTotalReviews = Number(ownerProfile?.total_reviews || 0);
-        const ownerAverageRating = ownerRatingStats?.count
-          ? ownerRatingStats.total / ownerRatingStats.count
-          : (Number.isFinite(profileAverageRating) && profileAverageRating > 0 ? profileAverageRating : null);
-        const ownerTotalReviews = ownerRatingStats?.count || profileTotalReviews;
+        const ownerAverageRating = Number.isFinite(profileAverageRating) && profileAverageRating > 0 ? profileAverageRating : null;
+        const ownerTotalReviews = profileTotalReviews;
+        const itemAverageRating = itemRatingStats?.count ? itemRatingStats.total / itemRatingStats.count : null;
+        const itemTotalReviews = itemRatingStats?.count || 0;
 
         return {
           ...item,
           category: categoryMap.get(item.category_id) || null,
           owner: ownerProfile,
+          itemAverageRating,
+          itemTotalReviews,
           ownerAverageRating,
           ownerTotalReviews,
           primaryImage: images[0] || null,
+          programCodes: programCodesByItemId.get(item.id) || [],
           searchTags: parseItemTagsFromNotes(item.meetup_notes),
           subcategories: subcategoriesByItemId.get(item.id) || [],
           subcategoryIds: (subcategoriesByItemId.get(item.id) || []).map((subcategory) => subcategory.id),
@@ -591,6 +568,7 @@ export default function App() {
     const selectedCategoryIds = categoryFilter === 'all' ? null : buildDescendantIds(categoryFilter, categories);
 
     return items.filter((item) => {
+      if (!itemMatchesAcademicFilters(item, selectedSchoolCodes, selectedProgramCodes)) return false;
       if (selectedCategoryIds) {
         const inMainCategory = selectedCategoryIds.has(item.category_id);
         const inSubcategory = (item.subcategoryIds || []).some((subcategoryId) => selectedCategoryIds.has(subcategoryId));
@@ -615,7 +593,7 @@ export default function App() {
         if (!selectedConditions.includes(normalizedCondition)) return false;
       }
 
-      const itemRating = Number(item?.ownerAverageRating ?? item?.owner?.average_rating) || 0;
+      const itemRating = Number(item?.itemAverageRating) || 0;
       if (Number(minimumRating) > 0 && itemRating < Number(minimumRating)) return false;
 
       if (!q) return true;
@@ -636,34 +614,13 @@ export default function App() {
         .toLowerCase()
         .includes(q);
     });
-  }, [categoryFilter, categories, items, maximumPrice, minimumPrice, minimumRating, search, selectedConditions, selectedFilterCategories]);
+  }, [categoryFilter, categories, items, maximumPrice, minimumPrice, minimumRating, search, selectedConditions, selectedFilterCategories, selectedProgramCodes, selectedSchoolCodes]);
 
   const featuredItems = filteredItems;
-  const itemsWithBarangay = useMemo(
-    () =>
-      featuredItems.map((item) => ({
-        barangay: detectBaliuagBarangay(item),
-        item,
-      })),
+  const academicFilteredItems = useMemo(
+    () => featuredItems.slice().sort((left, right) => String(left.title || '').localeCompare(String(right.title || ''))),
     [featuredItems]
   );
-
-  const barangayFilteredItems = useMemo(() => {
-    const scoped = itemsWithBarangay.filter((entry) => {
-      if (barangayFilter !== 'all' && entry.barangay !== barangayFilter) return false;
-      if (selectedBarangays.length && !selectedBarangays.includes(entry.barangay)) return false;
-      return true;
-    });
-
-    return scoped
-      .slice()
-      .sort(
-        (left, right) =>
-          left.barangay.localeCompare(right.barangay) ||
-          String(left.item.title || '').localeCompare(String(right.item.title || ''))
-      )
-      .map((entry) => entry.item);
-  }, [barangayFilter, itemsWithBarangay, selectedBarangays]);
 
   const totalViewsByItemId = useMemo(() => {
     const map = new Map();
@@ -678,7 +635,7 @@ export default function App() {
   }, [mostViewedCounts]);
 
   const mostViewedItems = useMemo(() => {
-    return barangayFilteredItems
+    return academicFilteredItems
       .map((item) => ({
         item,
         totalViews: totalViewsByItemId.get(item.id) || 0,
@@ -688,10 +645,10 @@ export default function App() {
           right.totalViews - left.totalViews ||
           String(left.item.title || '').localeCompare(String(right.item.title || ''))
       );
-  }, [barangayFilteredItems, totalViewsByItemId]);
+  }, [academicFilteredItems, totalViewsByItemId]);
 
   const mostRentedItems = useMemo(() => {
-    const itemMap = new Map(items.map((item) => [item.id, item]));
+    const itemMap = new Map(academicFilteredItems.map((item) => [item.id, item]));
     const statsByItemId = new Map();
 
     mostRentedCounts.forEach((booking) => {
@@ -726,13 +683,15 @@ export default function App() {
           String(left.item.title || '').localeCompare(String(right.item.title || ''))
       )
       .slice(0, 5);
-  }, [items, mostRentedCounts]);
+  }, [academicFilteredItems, mostRentedCounts]);
 
-  const nearbyItems = useMemo(() => barangayFilteredItems.slice(0, 4), [barangayFilteredItems]);
-  const trendingItems = useMemo(() => mostViewedItems.slice(0, 5), [mostViewedItems]);
+  const nearbyItems = academicFilteredItems;
+  const trendingItems = mostViewedItems;
+  const visibleTrendingItems = trendingItems.slice(0, trendingVisibleCount);
+  const hasMoreTrendingItems = trendingVisibleCount < trendingItems.length;
   const cheapestItems = useMemo(
     () =>
-      barangayFilteredItems
+      academicFilteredItems
         .slice()
         .sort(
           (left, right) =>
@@ -740,11 +699,11 @@ export default function App() {
             String(left.title || '').localeCompare(String(right.title || ''))
         )
         .slice(0, 5),
-    [barangayFilteredItems]
+    [academicFilteredItems]
   );
   const priciestItems = useMemo(
     () =>
-      barangayFilteredItems
+      academicFilteredItems
         .slice()
         .sort(
           (left, right) =>
@@ -752,28 +711,40 @@ export default function App() {
             String(left.title || '').localeCompare(String(right.title || ''))
         )
         .slice(0, 5),
-    [barangayFilteredItems]
+    [academicFilteredItems]
   );
   const quickCategories = useMemo(
-    () =>
-      categories.map((category) => ({
+    () => {
+      const mainCategories = categories.filter((category) => !category.parent_category_id);
+      const visibleCategories = mainCategories.length ? mainCategories : categories;
+      return visibleCategories.map((category) => ({
         description: category.description,
         id: category.id,
         icon_url: category.icon_url,
         icon_key: category.icon_key,
         name: category.name,
-      })),
+      }));
+    },
     [categories]
   );
+  const subcategoriesByParentId = useMemo(() => {
+    const next = new Map();
+    categories.forEach((category) => {
+      if (!category.parent_category_id) return;
+      const siblings = next.get(category.parent_category_id) || [];
+      siblings.push(category);
+      next.set(category.parent_category_id, siblings);
+    });
+    return next;
+  }, [categories]);
   const parentCategories = useMemo(() => {
     const parents = categories.filter((category) => !category.parent_category_id);
     return parents.length ? parents : categories;
   }, [categories]);
-  const filteredFilterBarangays = useMemo(() => {
-    const query = barangaySearch.trim().toLowerCase();
-    if (!query) return BALIUAG_BARANGAYS;
-    return BALIUAG_BARANGAYS.filter((barangay) => barangay.toLowerCase().includes(query));
-  }, [barangaySearch]);
+  const filterPrograms = useMemo(() => {
+    if (!selectedSchoolCodes.length) return NUB_PROGRAMS;
+    return NUB_PROGRAMS.filter((program) => selectedSchoolCodes.includes(program.schoolCode));
+  }, [selectedSchoolCodes]);
   const filteredFilterCategories = useMemo(() => {
     const query = filterCategorySearch.trim().toLowerCase();
     if (!query) return parentCategories;
@@ -791,7 +762,7 @@ export default function App() {
       parentCategories
         .map((category) => {
           const categoryIds = buildDescendantIds(category.id, categories);
-          const itemsForCategory = barangayFilteredItems
+          const itemsForCategory = academicFilteredItems
             .filter((item) => {
               const inMainCategory = categoryIds.has(item.category_id);
               const inSubcategory = (item.subcategoryIds || []).some((subcategoryId) => categoryIds.has(subcategoryId));
@@ -805,23 +776,26 @@ export default function App() {
           };
         })
         .filter((entry) => entry.items.length),
-    [barangayFilteredItems, categories, parentCategories]
+    [academicFilteredItems, categories, parentCategories]
   );
   const newArrivalItems = useMemo(
     () =>
-      [...barangayFilteredItems]
+      [...academicFilteredItems]
         .sort((first, second) => new Date(second.created_at || 0).getTime() - new Date(first.created_at || 0).getTime())
         .slice(0, 5),
-    [barangayFilteredItems]
+    [academicFilteredItems]
   );
-  const activeFilterCount = selectedBarangays.length + selectedFilterCategories.length + selectedConditions.length +
+  const activeFilterCount = selectedSchoolCodes.length + selectedProgramCodes.length + selectedFilterCategories.length + selectedConditions.length +
     (minimumPrice !== '' ? 1 : 0) + (maximumPrice !== '' ? 1 : 0) + (Number(minimumRating) > 0 ? 1 : 0);
   const recentlyViewedItems = useMemo(() => {
     const itemsById = new Map(items.map((item) => [item.id, item]));
     return recentlyViewedIds.map((itemId) => itemsById.get(itemId)).filter(Boolean);
   }, [items, recentlyViewedIds]);
   const activeRecentItem = recentlyViewedItems[activeRecentIndex] || recentlyViewedItems[0] || null;
-  const promotedItems = promotedItemIds.map((id) => items.find((item) => item.id === id)).filter(Boolean).slice(0, 8);
+  const promotedItems = selectPromotedMarketplaceItems(promotedItemIds, items, {
+    programCodes: selectedProgramCodes,
+    schoolCodes: selectedSchoolCodes,
+  });
 
   useEffect(() => {
     if (!currentUser || recentCarouselPaused || recentlyViewedItems.length < 2) return undefined;
@@ -852,8 +826,8 @@ export default function App() {
   }
 
   function clearMarketplaceFilters() {
-    setSelectedBarangays([]);
-    setBarangaySearch('');
+    setSelectedSchoolCodes([]);
+    setSelectedProgramCodes([]);
     setFilterCategorySearch('');
     setSelectedFilterCategories([]);
     setSelectedConditions([]);
@@ -897,7 +871,7 @@ export default function App() {
     setSavingItemId('');
   }
 
-  function openCatalogPage({ categoryId = '', mode = 'all', q = search, barangay = barangayFilter } = {}) {
+  function openCatalogPage({ categoryId = '', mode = 'all', q = search, schoolCode = selectedSchoolCodes[0] || '', programCode = selectedProgramCodes[0] || '' } = {}) {
     const params = new URLSearchParams();
 
     if (mode && mode !== 'all') {
@@ -909,9 +883,8 @@ export default function App() {
     if (q && q.trim()) {
       params.set('q', q.trim());
     }
-    if (barangay && barangay !== 'all') {
-      params.set('barangay', barangay);
-    }
+    if (schoolCode) params.set('school', schoolCode);
+    if (programCode) params.set('program', programCode);
 
     const queryString = params.toString();
     navigate(`/items${queryString ? `?${queryString}` : ''}`);
@@ -922,11 +895,19 @@ export default function App() {
     openCatalogPage({ mode: 'all' });
   }
 
-  function handleHeaderBarangayChange(event) {
-    const nextBarangay = event.target.value;
-    setBarangayFilter(nextBarangay);
-    openCatalogPage({ barangay: nextBarangay, mode: 'all' });
+  function toggleCategoryExpansion(categoryId, setExpandedCategoryId) {
+    const subcategories = subcategoriesByParentId.get(categoryId) || [];
+    if (!subcategories.length) {
+      openCatalogPage({ categoryId, mode: 'all' });
+      return;
+    }
+    setExpandedCategoryId((current) => current === categoryId ? '' : categoryId);
   }
+
+  const expandedHeaderCategory = quickCategories.find((category) => category.id === expandedHeaderCategoryId) || null;
+  const expandedHeaderSubcategories = expandedHeaderCategory
+    ? subcategoriesByParentId.get(expandedHeaderCategory.id) || []
+    : [];
 
   return (
     <div
@@ -952,16 +933,31 @@ export default function App() {
           <div className="landing-search-row">
             <div className="landing-controls inline">
               <SearchableSelect
-                ariaLabel="Filter by Baliuag barangay"
-                onChange={(value) => handleHeaderBarangayChange({ target: { value } })}
+                ariaLabel="Filter by NU Baliwag school"
+                onChange={(value) => {
+                  const nextSchools = value === 'all' ? [] : [value];
+                  setSelectedSchoolCodes(nextSchools);
+                  setSelectedProgramCodes((current) => current.filter((code) => !value || value === 'all' || getNubProgramsForSchool(value).some((program) => program.code === code)));
+                }}
                 options={[
-                  { label: 'All barangays', value: 'all' },
-                  ...BALIUAG_BARANGAYS.map((barangay) => ({ label: barangay, value: barangay })),
-                  { label: 'Unspecified', value: 'Unspecified' },
+                  { label: 'All schools', value: 'all' },
+                  ...NUB_SCHOOLS.map((school) => ({ label: school.code, value: school.code })),
                 ]}
-                placeholder="All barangays"
-                searchPlaceholder="Search barangay"
-                value={barangayFilter}
+                placeholder="All schools"
+                searchPlaceholder="Search school"
+                value={selectedSchoolCodes.length === 1 ? selectedSchoolCodes[0] : 'all'}
+              />
+              <SearchableSelect
+                ariaLabel="Filter by NU Baliwag course"
+                onChange={(value) => setSelectedProgramCodes(value === 'all' ? [] : [value])}
+                options={[
+                  { label: 'All courses', value: 'all' },
+                  ...(selectedSchoolCodes.length === 1 ? getNubProgramsForSchool(selectedSchoolCodes[0]) : NUB_PROGRAMS)
+                    .map((program) => ({ label: program.displayCode, value: program.code })),
+                ]}
+                placeholder="All courses"
+                searchPlaceholder="Search course"
+                value={selectedProgramCodes.length === 1 ? selectedProgramCodes[0] : 'all'}
               />
             </div>
 
@@ -982,7 +978,7 @@ export default function App() {
         </section>
 
         <nav aria-label="Main links" className="landing-nav-links">
-          <button className="landing-filter-trigger" onClick={() => setFiltersOpen(true)} type="button">
+          <button aria-expanded={filtersOpen} className={`landing-filter-trigger ${filtersOpen ? 'active' : ''}`} onClick={() => setFiltersOpen((current) => !current)} type="button">
             <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 7h16M7 12h10M10 17h4" /></svg>
             <span>Filters</span>
             {activeFilterCount ? <b>{activeFilterCount}</b> : null}
@@ -999,32 +995,40 @@ export default function App() {
 
       <div className={`market-filter-layer ${filtersOpen ? 'open' : ''}`} aria-hidden={!filtersOpen}>
         <button aria-label="Close filters" className="market-filter-backdrop" onClick={() => setFiltersOpen(false)} tabIndex={filtersOpen ? 0 : -1} type="button" />
-        <aside aria-label="Marketplace filters" aria-modal="true" className="market-filter-drawer" role="dialog">
+        <aside aria-labelledby="market-filter-title" aria-modal="true" className="market-filter-drawer" role="dialog">
           <div className="market-filter-header">
-            <div><span>Refine your search</span><h2>Filters</h2></div>
+            <div><span>Refine your search</span><h2 id="market-filter-title">Filters</h2></div>
             <button aria-label="Close filters" onClick={() => setFiltersOpen(false)} type="button">×</button>
           </div>
 
           <div className="market-filter-body">
             <fieldset>
-              <legend>Barangay</legend>
-              <input
-                aria-label="Search barangays"
-                className="market-filter-search"
-                onChange={(event) => setBarangaySearch(event.target.value)}
-                placeholder="Search barangay"
-                type="search"
-                value={barangaySearch}
-              />
-              <div className="market-filter-options market-filter-barangays">
+              <legend>Schools</legend>
+              <div className="market-filter-options market-filter-academics">
                 <label className="market-filter-all-option">
-                  <input checked={selectedBarangays.length === 0} onChange={() => setSelectedBarangays([])} type="checkbox" />
-                  <span>All barangays</span>
+                  <input checked={selectedSchoolCodes.length === 0} onChange={() => setSelectedSchoolCodes([])} type="checkbox" />
+                  <span>All schools</span>
                 </label>
-                {filteredFilterBarangays.map((barangay) => (
-                  <label key={`filter-barangay-${barangay}`}>
-                    <input checked={selectedBarangays.includes(barangay)} onChange={() => toggleFilterValue(barangay, setSelectedBarangays)} type="checkbox" />
-                    <span>{barangay}</span>
+                {NUB_SCHOOLS.map((school) => (
+                  <label key={`filter-school-${school.code}`}>
+                    <input checked={selectedSchoolCodes.includes(school.code)} onChange={() => toggleFilterValue(school.code, setSelectedSchoolCodes)} type="checkbox" />
+                    <span>{school.code} — {school.name}</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>Courses</legend>
+              <div className="market-filter-options market-filter-academics">
+                <label className="market-filter-all-option">
+                  <input checked={selectedProgramCodes.length === 0} onChange={() => setSelectedProgramCodes([])} type="checkbox" />
+                  <span>All courses</span>
+                </label>
+                {filterPrograms.map((program) => (
+                  <label key={`filter-program-${program.code}`}>
+                    <input checked={selectedProgramCodes.includes(program.code)} onChange={() => toggleFilterValue(program.code, setSelectedProgramCodes)} type="checkbox" />
+                    <span>{program.displayCode} — {program.name}</span>
                   </label>
                 ))}
               </div>
@@ -1090,28 +1094,47 @@ export default function App() {
 
           <div className="market-filter-footer">
             <button className="clear" onClick={clearMarketplaceFilters} type="button">Clear all</button>
-            <button className="apply" onClick={() => setFiltersOpen(false)} type="button">Show {barangayFilteredItems.length} results</button>
+            <button className="apply" onClick={() => setFiltersOpen(false)} type="button">Show {academicFilteredItems.length} results</button>
           </div>
         </aside>
       </div>
 
       <section className="landing-categories landing-categories-sticky">
         <div className="landing-categories-grid">
-          {quickCategories.map((category) => (
-            <button
-              aria-pressed={categoryFilter === category.id}
-              className={categoryFilter === category.id ? 'active' : ''}
-              key={category.id}
-              onClick={() => openCatalogPage({ categoryId: category.id, mode: 'all' })}
-              type="button"
-            >
-              <span className="landing-category-icon">
-                <CategoryIcon iconKey={category.icon_key || getCategoryIconType(category.name)} iconUrl={category.icon_url} size={18} />
-              </span>
-              <strong>{category.name}</strong>
-            </button>
-          ))}
+          {quickCategories.map((category) => {
+            const hasSubcategories = (subcategoriesByParentId.get(category.id) || []).length > 0;
+            const isExpanded = expandedHeaderCategoryId === category.id;
+            return (
+              <button
+                aria-controls={hasSubcategories ? `landing-subcategories-${category.id}` : undefined}
+                aria-expanded={hasSubcategories ? isExpanded : undefined}
+                className={isExpanded ? 'active' : ''}
+                key={category.id}
+                onClick={() => toggleCategoryExpansion(category.id, setExpandedHeaderCategoryId)}
+                type="button"
+              >
+                <span className="landing-category-icon">
+                  <CategoryIcon iconKey={category.icon_key || getCategoryIconType(category.name)} iconUrl={category.icon_url} size={18} />
+                </span>
+                <strong>{category.name}</strong>
+                {hasSubcategories ? <svg aria-hidden="true" className="landing-category-chevron" viewBox="0 0 20 20"><path d="m5 7.5 5 5 5-5" /></svg> : null}
+              </button>
+            );
+          })}
         </div>
+        {expandedHeaderCategory && expandedHeaderSubcategories.length ? (
+          <div className="landing-subcategories-panel" id={`landing-subcategories-${expandedHeaderCategory.id}`}>
+            <span>{expandedHeaderCategory.name}</span>
+            <button className="view-all" onClick={() => openCatalogPage({ categoryId: expandedHeaderCategory.id, mode: 'all' })} type="button">
+              View all
+            </button>
+            {expandedHeaderSubcategories.map((subcategory) => (
+              <button key={`header-subcategory-${subcategory.id}`} onClick={() => openCatalogPage({ categoryId: subcategory.id, mode: 'all' })} type="button">
+                {subcategory.name}
+              </button>
+            ))}
+          </div>
+        ) : null}
       </section>
 
       <main className="landing-main">
@@ -1126,7 +1149,7 @@ export default function App() {
                 <div className="landing-recent-feature-copy" key={`recent-copy-${activeRecentItem.id}`}>
                   <span>Continue where you left off</span>
                   <h2>{activeRecentItem.title}</h2>
-                  <p>Available in {detectBaliuagBarangay(activeRecentItem)} for <strong>{currencyFormatter.format(Number(activeRecentItem.rental_price_per_day) || 0)} per day</strong>.</p>
+                  <p>Available in {getItemArea(activeRecentItem)} for <strong>{currencyFormatter.format(Number(activeRecentItem.rental_price_per_day) || 0)} per day</strong>.</p>
                   <div>
                     <button onClick={() => openPublicItem(activeRecentItem.id)} type="button">View again <b aria-hidden="true">→</b></button>
                     <button onClick={() => openCatalogPage({ mode: 'all' })} type="button">Explore more</button>
@@ -1152,7 +1175,7 @@ export default function App() {
               </div>
             ) : (
               <div className="landing-recently-empty">
-                <span className="landing-recent-eyebrow">Borrow around Baliuag</span>
+                <span className="landing-recent-eyebrow">Borrow within the NUB community</span>
                 <h2>Useful things, shared closer to home.</h2>
                 <p>Discover items from trusted neighbors, borrow only what you need, and make more room for what matters.</p>
                 <div className="landing-recent-empty-actions">
@@ -1235,7 +1258,7 @@ export default function App() {
               {promotedItems.map((item) => (
                 <button key={item.id} onClick={() => openPublicItem(item.id)} type="button">
                   <span className="landing-promoted-media"><ProductImage item={item}/><em><b aria-hidden="true">ϟ</b> Promoted</em><i aria-label={savedItemIds.has(item.id) ? `Remove ${item.title} from saved listings` : `Save ${item.title}`} aria-pressed={savedItemIds.has(item.id)} className={`landing-promoted-favorite ${savedItemIds.has(item.id) ? 'saved' : ''} ${savingItemId === item.id ? 'saving' : ''}`} onClick={(event)=>toggleSavedPromotedItem(event,item.id)} onKeyDown={(event)=>{if(event.key==='Enter'||event.key===' '){toggleSavedPromotedItem(event,item.id)}}} role="button" tabIndex="0">{savedItemIds.has(item.id) ? '♥' : '♡'}</i><span className="landing-promoted-features"><i>◖ <b>Powerful<br/>performance</b></i><i>⌁ <b>Easy to<br/>use</b></i><i>▣ <b>Rental<br/>ready</b></i></span></span>
-                  <span className="landing-promoted-content"><span className="landing-promoted-category">{item.category?.name || 'Featured rental'}</span><strong>{item.title}</strong><b>{currencyFormatter.format(Number(item.rental_price_per_day) || 0)} <i>/ day</i></b><small className="landing-promoted-meta"><i>Portable</i><i>{formatCondition(item.item_condition)}</i><i>{detectBaliuagBarangay(item)}</i></small><small className="landing-promoted-rating">{formatItemRating(item)}</small><span className="landing-promoted-action">View rental details <i>→</i></span></span>
+                  <span className="landing-promoted-content"><span className="landing-promoted-category">{formatItemProgramAudience(item)}</span><strong>{item.title}</strong><b>{currencyFormatter.format(Number(item.rental_price_per_day) || 0)} <i>/ day</i></b><small className="landing-promoted-meta"><i>Reusable</i><i>{formatCondition(item.item_condition)}</i><i>{getItemArea(item)}</i></small><small className="landing-promoted-rating">{formatItemRating(item)}</small><span className="landing-promoted-action">View rental details <i>→</i></span></span>
                 </button>
               ))}
             </div>
@@ -1244,15 +1267,15 @@ export default function App() {
         ) : null}
 
         {!currentUser ? <section className="landing-trust-row landing-trust-row-after-promotion">
-          <article><RentalIcon type="return" /><div><strong>Verified Neighbors</strong><span>Identity checked community members</span></div></article>
+          <article><RentalIcon type="return" /><div><strong>Registry-linked Students</strong><span>Active members from the official NUB roster</span></div></article>
           <article><RentalIcon type="item" /><div><strong>Insurance Protection</strong><span>Coverage up to {currencyFormatter.format(50000)}</span></div></article>
           <article><RentalIcon type="price" /><div><strong>Secure Payments</strong><span>100% secure escrow payments</span></div></article>
         </section> : null}
 
         {categorySections.length ? (
           <section className="landing-category-editorial">
-            <div className="landing-category-editorial-grid">
-              {categorySections.slice(0, 4).map(({ category, items: categoryItems }, index) => (
+            <div aria-label="Marketplace categories" className="landing-category-editorial-grid" role="region" tabIndex={0}>
+              {categorySections.map(({ category, items: categoryItems }, index) => (
                 <button
                   className={`landing-category-feature feature-${index + 1}`}
                   key={category.id}
@@ -1270,7 +1293,7 @@ export default function App() {
               ))}
             </div>
             <div className="landing-category-editorial-copy">
-              <span>Borrow around Baliuag</span>
+              <span>Reusable equipment for NUB students</span>
               <h2>Find more. Own less.</h2>
               <p>Explore useful finds shared by people in your community—from everyday essentials to something special for the weekend.</p>
               <button onClick={() => openCatalogPage({ mode: 'all' })} type="button">Explore all categories <b aria-hidden="true">→</b></button>
@@ -1292,7 +1315,7 @@ export default function App() {
                 <div className="landing-arrival-shade" />
                 <div className="landing-arrival-copy">
                   <span>New arrival</span><h2>{item.title}</h2>
-                  <p>Newly available in {detectBaliuagBarangay(item)} for {currencyFormatter.format(Number(item.rental_price_per_day) || 0)} per day.</p>
+                  <p>Newly available in {getItemArea(item)} for {currencyFormatter.format(Number(item.rental_price_per_day) || 0)} per day.</p>
                   <button onClick={() => openPublicItem(item.id)} tabIndex={activeArrival === index ? 0 : -1} type="button">View item <b aria-hidden="true">→</b></button>
                 </div>
               </article>
@@ -1304,9 +1327,9 @@ export default function App() {
         <section className="landing-nearby-wrap">
           <article className="landing-nearby">
             <div className="landing-section-head landing-collection-head">
-              <h2>Available Near You</h2>
+              <h2>Available for Your School or Course</h2>
             </div>
-            <div className="landing-nearby-grid">
+            <div aria-label="Available rentals" className="landing-nearby-grid" role="region" tabIndex={0}>
               {nearbyItems.map((item) => (
                 <button className="landing-item-card" key={item.id} onClick={() => openPublicItem(item.id)} type="button">
                   <div className="landing-item-media">
@@ -1317,7 +1340,7 @@ export default function App() {
                   <strong>{currencyFormatter.format(Number(item.rental_price_per_day) || 0)} / day</strong>
                   <small className="landing-item-rating">{formatItemRating(item)}</small>
                   <small className="landing-item-meta-line"><b>Condition:</b> {formatCondition(item.item_condition)}</small>
-                  <small className="landing-item-meta-line"><b>Located at:</b> {detectBaliuagBarangay(item)}</small>
+                  <small className="landing-item-meta-line"><b>Located at:</b> {getItemArea(item)}</small>
                   <small>Est. value: {currencyFormatter.format(Number(item.security_deposit) || Number(item.rental_price_per_day) * 10 || 0)}</small>
                 </button>
               ))}
@@ -1337,7 +1360,7 @@ export default function App() {
           </div>
 
           <div className="landing-trending-grid">
-            {trendingItems.map(({ item, totalViews }) => (
+            {visibleTrendingItems.map(({ item, totalViews }) => (
               <button className="landing-trending-card" key={item.id} onClick={() => openPublicItem(item.id)} type="button">
                 <div className="landing-item-media">
                   <ProductImage item={item} promoted={promotedItemIds.includes(item.id)} />
@@ -1350,21 +1373,36 @@ export default function App() {
                 <strong>{currencyFormatter.format(Number(item.rental_price_per_day) || 0)} / day</strong>
                 <small className="landing-item-rating">{formatItemRating(item)}</small>
                 <small className="landing-item-meta-line"><b>Condition:</b> {formatCondition(item.item_condition)}</small>
-                <small className="landing-item-meta-line"><b>Located at:</b> {detectBaliuagBarangay(item)}</small>
+                <small className="landing-item-meta-line"><b>Located at:</b> {getItemArea(item)}</small>
                 <small>* {totalViews || 0} ({mostRentedItems.find((entry) => entry.item.id === item.id)?.rentalCount || 0})</small>
               </button>
             ))}
-            {!loading && trendingItems.length === 0 ? (
+            {!loading && visibleTrendingItems.length === 0 ? (
               <p className="landing-empty-note">No listed items for rent.</p>
             ) : null}
           </div>
 
-          <button className="landing-load-more" onClick={() => setCategoryFilter('all')} type="button">Load More</button>
+          <button
+            className="landing-load-more"
+            onClick={() => {
+              if (hasMoreTrendingItems) {
+                setTrendingVisibleCount((current) => Math.min(current + 5, trendingItems.length));
+                return;
+              }
+              openCatalogPage({ mode: 'most-viewed' });
+            }}
+            type="button"
+          >
+            {hasMoreTrendingItems ? 'Load More' : 'View all most viewed'}
+          </button>
         </section>
 
         <section className="landing-trending landing-most-viewed landing-product-shelf">
           <div className="landing-section-head landing-lined-head">
-            <h2>Most Viewed</h2>
+            <div className="landing-shelf-heading">
+              <h2>Most Viewed</h2>
+              <button className="landing-shelf-link" onClick={() => openCatalogPage({ mode: 'most-viewed' })} type="button">View all</button>
+            </div>
           </div>
 
           <div className="landing-trending-grid">
@@ -1377,12 +1415,39 @@ export default function App() {
                 <strong>{currencyFormatter.format(Number(item.rental_price_per_day) || 0)} / day</strong>
                 <small className="landing-item-rating">{formatItemRating(item)}</small>
                 <small className="landing-item-meta-line"><b>Condition:</b> {formatCondition(item.item_condition)}</small>
-                <small className="landing-item-meta-line"><b>Located at:</b> {detectBaliuagBarangay(item)}</small>
+                <small className="landing-item-meta-line"><b>Located at:</b> {getItemArea(item)}</small>
                 <small>{totalViews || 0} view{Number(totalViews || 0) === 1 ? '' : 's'}</small>
               </button>
             ))}
             {!loading && mostViewedItems.length === 0 ? (
               <p className="landing-empty-note">No listed items for rent.</p>
+            ) : null}
+          </div>
+        </section>
+
+        <section className="landing-trending landing-most-rented landing-product-shelf">
+          <div className="landing-section-head landing-lined-head">
+            <div className="landing-shelf-heading">
+              <h2>Most Rented</h2>
+              <button className="landing-shelf-link" onClick={() => openCatalogPage({ mode: 'most-rented' })} type="button">View all</button>
+            </div>
+          </div>
+
+          <div className="landing-trending-grid">
+            {mostRentedItems.map(({ item, rentalCount }) => (
+              <button className="landing-trending-card" key={`most-rented-${item.id}`} onClick={() => openPublicItem(item.id)} type="button">
+                <div className="landing-item-media">
+                  <ProductImage item={item} promoted={promotedItemIds.includes(item.id)} />
+                </div>
+                <h3>{item.title}</h3>
+                <strong>{currencyFormatter.format(Number(item.rental_price_per_day) || 0)} / day</strong>
+                <small className="landing-item-rating">{rentalCount} rental{rentalCount === 1 ? '' : 's'}</small>
+                <small className="landing-item-meta-line"><b>Condition:</b> {formatCondition(item.item_condition)}</small>
+                <small className="landing-item-meta-line"><b>Located at:</b> {getItemArea(item)}</small>
+              </button>
+            ))}
+            {!loading && mostRentedItems.length === 0 ? (
+              <p className="landing-empty-note">No rental history yet.</p>
             ) : null}
           </div>
         </section>
@@ -1401,7 +1466,7 @@ export default function App() {
                 <strong>{currencyFormatter.format(Number(item.rental_price_per_day) || 0)} / day</strong>
                 <small className="landing-item-rating">{formatItemRating(item)}</small>
                 <small className="landing-item-meta-line"><b>Condition:</b> {formatCondition(item.item_condition)}</small>
-                <small className="landing-item-meta-line"><b>Located at:</b> {detectBaliuagBarangay(item)}</small>
+                <small className="landing-item-meta-line"><b>Located at:</b> {getItemArea(item)}</small>
               </button>
             ))}
             {!loading && cheapestItems.length === 0 ? (
@@ -1424,7 +1489,7 @@ export default function App() {
                 <strong>{currencyFormatter.format(Number(item.rental_price_per_day) || 0)} / day</strong>
                 <small className="landing-item-rating">{formatItemRating(item)}</small>
                 <small className="landing-item-meta-line"><b>Condition:</b> {formatCondition(item.item_condition)}</small>
-                <small className="landing-item-meta-line"><b>Located at:</b> {detectBaliuagBarangay(item)}</small>
+                <small className="landing-item-meta-line"><b>Located at:</b> {getItemArea(item)}</small>
               </button>
             ))}
             {!loading && priciestItems.length === 0 ? (
@@ -1444,25 +1509,44 @@ export default function App() {
             <h2>{brandName}</h2>
           </div>
           <p>{settings.system_tagline?.trim() || 'Borrow what you need. Share what you have.'}</p>
-          <p className="landing-footer-description">A community rental marketplace for useful items around Baliuag.</p>
+          <p className="landing-footer-description">A reusable-equipment marketplace for verified NU Baliwag students, wherever they are located.</p>
         </div>
 
         <nav aria-label="Browse all categories" className="landing-footer-categories">
           <h3>Browse all categories</h3>
-          <div>
-            {quickCategories.map((category) => (
-              <button
-                key={`footer-category-${category.id}`}
-                onClick={() => openCatalogPage({ categoryId: category.id, mode: 'all' })}
-                type="button"
-              >
-                {category.name}
-              </button>
-            ))}
+          <div className="landing-footer-category-grid">
+            {quickCategories.map((category) => {
+              const subcategories = subcategoriesByParentId.get(category.id) || [];
+              const isExpanded = expandedFooterCategoryId === category.id;
+              return (
+                <div className="landing-footer-category-group" key={`footer-category-${category.id}`}>
+                  <button
+                    aria-controls={subcategories.length ? `footer-subcategories-${category.id}` : undefined}
+                    aria-expanded={subcategories.length ? isExpanded : undefined}
+                    className="landing-footer-category-parent"
+                    onClick={() => toggleCategoryExpansion(category.id, setExpandedFooterCategoryId)}
+                    type="button"
+                  >
+                    <span>{category.name}</span>
+                    {subcategories.length ? <svg aria-hidden="true" className={isExpanded ? 'expanded' : ''} viewBox="0 0 20 20"><path d="m5 7.5 5 5 5-5" /></svg> : null}
+                  </button>
+                  {isExpanded && subcategories.length ? (
+                    <div className="landing-footer-subcategories" id={`footer-subcategories-${category.id}`}>
+                      <button className="view-all" onClick={() => openCatalogPage({ categoryId: category.id, mode: 'all' })} type="button">View all {category.name}</button>
+                      {subcategories.map((subcategory) => (
+                        <button key={`footer-subcategory-${subcategory.id}`} onClick={() => openCatalogPage({ categoryId: subcategory.id, mode: 'all' })} type="button">
+                          {subcategory.name}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
           </div>
         </nav>
 
-        <p className="landing-footer-note">© {new Date().getFullYear()} {brandName}. Built for the Baliuag community.</p>
+        <p className="landing-footer-note">© {new Date().getFullYear()} {brandName}. Built for the NU Baliwag student community.</p>
       </footer>
 
       <Modal
@@ -1484,7 +1568,7 @@ export default function App() {
           </div>
           <div>
             <h3>Let’s finish setting up your account.</h3>
-            <p>Complete your profile details and submit your identity verification before borrowing or listing items in the community.</p>
+            <p>Review your NUB registry details, then complete your contact information and address. You can also add a profile photo before borrowing or listing items.</p>
           </div>
         </div>
       </Modal>

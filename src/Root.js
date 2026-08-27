@@ -3,7 +3,6 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import App from './App';
 import { UISettingsProvider } from './context/UISettingsContext';
 import UserLoginPage from './pages/user/UserLoginPage';
-import UserSignupPage from './pages/user/UserSignupPage';
 import UserDashboard from './pages/user/UserDashboard';
 import MyBookings from './pages/user/MyBookings';
 import ListingFAQs from './pages/user/ListingFAQs';
@@ -42,7 +41,7 @@ export default function Root() {
           <Route path="/items/:itemId" element={<ViewItemList publicMode />} />
           <Route path="/list-item" element={<ListItemLanding />} />
           <Route path="/login" element={<UserLoginPage />} />
-          <Route path="/signup" element={<UserSignupPage />} />
+          <Route path="/signup" element={<Navigate to="/login" replace />} />
           <Route element={<ProtectedRoute />}>
             <Route path="/user/dashboard" element={<UserDashboard />} />
             <Route path="/user/browse-listings" element={<Navigate to="/" replace />} />
@@ -62,7 +61,7 @@ export default function Root() {
             <Route path="/user/messages" element={<Messages />} />
             <Route path="/user/listing-faqs" element={<ListingFAQs />} />
             <Route path="/user/profile" element={<Profile />} />
-            <Route path="/user/profile/verification" element={<Profile verificationPage />} />
+            <Route path="/user/profile/verification" element={<Navigate to="/user/profile" replace />} />
           </Route>
           <Route path="/admin/login" element={<Navigate to="/login" replace />} />
           <Route element={<ProtectedRoute adminOnly />}>

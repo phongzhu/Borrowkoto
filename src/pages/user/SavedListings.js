@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../api/supabaseClient';
 import { Button, StatusMessage } from '../../ui/primitives';
+import { filterListingsByActiveOwners } from '../../utils/marketplaceVisibility';
 import UserShell from './UserShell';
 import './SavedListings.css';
 
@@ -49,7 +50,7 @@ export default function SavedListings() {
       if (!itemIds.length) { setSavedListings([]); setLoading(false); return; }
 
       const [itemsResult, imagesResult, promotionsResult] = await Promise.all([
-        supabase.from('items').select('id, title, rental_price_per_day, quantity, status, is_active').in('id', itemIds),
+        supabase.from('items').select('id, owner_id, title, rental_price_per_day, quantity, status, is_active').in('id', itemIds),
         supabase.from('item_images').select('id, item_id, image_url, is_primary, sort_order').in('item_id', itemIds).order('sort_order', { ascending: true }),
         supabase.from('active_item_promotions').select('item_id').in('item_id', itemIds),
       ]);
@@ -58,7 +59,16 @@ export default function SavedListings() {
       if (itemsResult.error) nextErrors.push(`items: ${itemsResult.error.message}`);
       if (imagesResult.error) nextErrors.push(`item images: ${imagesResult.error.message}`);
       if (promotionsResult.error) nextErrors.push(`active promotions: ${promotionsResult.error.message}`);
-      setSavedListings(mapSavedItems(savedRows, itemsResult.data || [], imagesResult.data || [], new Set((promotionsResult.data || []).map((row) => row.item_id))));
+      const ownerIds = [...new Set((itemsResult.data || []).map((item) => item.owner_id).filter(Boolean))];
+      const ownersResult = ownerIds.length
+        ? await supabase.from('profiles').select('id, account_status').in('id', ownerIds)
+        : { data: [], error: null };
+      if (!mounted) return;
+      if (ownersResult.error) nextErrors.push(`listing owners: ${ownersResult.error.message}`);
+      const visibleItems = filterListingsByActiveOwners(itemsResult.data || [], ownersResult.data || []);
+      const visibleItemIds = new Set(visibleItems.map((item) => item.id));
+      const visibleSavedRows = savedRows.filter((row) => visibleItemIds.has(row.item_id));
+      setSavedListings(mapSavedItems(visibleSavedRows, visibleItems, imagesResult.data || [], new Set((promotionsResult.data || []).map((row) => row.item_id))));
       setError(nextErrors.join(' '));
       setLoading(false);
     }

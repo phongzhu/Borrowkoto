@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../api/supabaseClient';
 import { useUISettings } from '../../context/UISettingsContext';
+import { getNubProgramsForSchool, itemMatchesAcademicFilters, NUB_PROGRAMS, NUB_SCHOOLS } from '../../data/nubAcademicData';
 import { RENTABLE_ITEM_STATUSES } from '../../utils/bookingEnums';
+import { filterListingsByActiveOwners } from '../../utils/marketplaceVisibility';
 import SearchableSelect from '../../ui/SearchableSelect';
 import '../../App.css';
 
@@ -13,38 +15,6 @@ const currencyFormatter = new Intl.NumberFormat('en-PH', {
 });
 
 const TAGS_META_PREFIX = '[TAGS]::';
-const BALIUAG_BARANGAYS = [
-  'Adias',
-  'Bagong Nayon',
-  'Balon',
-  'Banag',
-  'Barihan',
-  'Calantipay',
-  'Catulinan',
-  'Concepcion',
-  'Hinukay',
-  'Makinabang',
-  'Matangtubig',
-  'Pagala',
-  'Paitan',
-  'Piel',
-  'Pinagbarilan',
-  'Poblacion',
-  'Sabang',
-  'San Jose',
-  'San Roque',
-  'Santa Barbara',
-  'Santo Cristo',
-  'Santo Nino',
-  'Subic',
-  'Sulivan',
-  'Tangos',
-  'Tarcan',
-  'Tibag',
-  'Tilapayong',
-  'Virgen Delas Flores',
-];
-
 function getLocation(item) {
   return [item.pickup_city, item.pickup_province].filter(Boolean).join(', ') || 'Location on request';
 }
@@ -89,40 +59,9 @@ function buildDescendantIds(categoryId, categories) {
   return descendants;
 }
 
-function detectBaliuagBarangay(item) {
-  const ownerBarangay = String(item?.owner?.barangay || '').trim();
-  if (ownerBarangay) {
-    return ownerBarangay;
-  }
-
-  const pickupBarangay = String(item?.pickup_barangay || '').trim();
-  if (pickupBarangay) {
-    return pickupBarangay;
-  }
-
-  const haystack = [
-    item.pickup_barangay,
-    item.pickup_city,
-    item.pickup_province,
-    item.meetup_notes,
-    item.description,
-    item.owner?.street,
-    item.owner?.barangay,
-    item.owner?.city,
-    item.owner?.province,
-    ...(item.searchTags || []),
-  ]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase();
-
-  const matched = BALIUAG_BARANGAYS.find((name) => haystack.includes(name.toLowerCase()));
-  return matched || 'Unspecified';
-}
-
 function formatItemRating(item) {
-  const ratingValue = Number(item?.ownerAverageRating ?? item?.owner?.average_rating);
-  const reviewCount = Number((item?.ownerTotalReviews ?? item?.owner?.total_reviews) || 0);
+  const ratingValue = Number(item?.itemAverageRating);
+  const reviewCount = Number(item?.itemTotalReviews || 0);
 
   if (Number.isFinite(ratingValue) && ratingValue > 0) {
     return `★ ${ratingValue.toFixed(1)} (${reviewCount})`;
@@ -180,6 +119,7 @@ export default function PublicItemsCatalogPage() {
   const [items, setItems] = useState([]);
   const [categories, setCategories] = useState([]);
   const [mostViewedCounts, setMostViewedCounts] = useState([]);
+  const [mostRentedCounts, setMostRentedCounts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [currentUser, setCurrentUser] = useState(null);
@@ -188,7 +128,8 @@ export default function PublicItemsCatalogPage() {
   const [savingItemId, setSavingItemId] = useState('');
 
   const initialQ = searchParams.get('q') || '';
-  const initialBarangay = searchParams.get('barangay') || 'all';
+  const initialSchool = searchParams.get('school') || 'all';
+  const initialProgram = searchParams.get('program') || 'all';
   const categoryId = searchParams.get('categoryId') || '';
   const requestedMode = searchParams.get('mode') || '';
   const mode = requestedMode || (categoryId ? 'category' : 'all');
@@ -198,7 +139,8 @@ export default function PublicItemsCatalogPage() {
   const isRefinedCatalog = mode === 'all' || mode === 'category' || Boolean(initialQ.trim());
 
   const [search, setSearch] = useState(initialQ);
-  const [barangayFilter, setBarangayFilter] = useState(initialBarangay);
+  const [schoolFilter, setSchoolFilter] = useState(initialSchool);
+  const [programFilter, setProgramFilter] = useState(initialProgram);
   const [categoryMinPrice, setCategoryMinPrice] = useState('');
   const [categoryMaxPrice, setCategoryMaxPrice] = useState('');
   const [categoryMinRating, setCategoryMinRating] = useState('0');
@@ -251,8 +193,9 @@ export default function PublicItemsCatalogPage() {
 
   useEffect(() => {
     setSearch(initialQ);
-    setBarangayFilter(initialBarangay);
-  }, [initialBarangay, initialQ]);
+    setSchoolFilter(initialSchool);
+    setProgramFilter(initialProgram);
+  }, [initialProgram, initialQ, initialSchool]);
 
   useEffect(() => {
     let mounted = true;
@@ -270,7 +213,7 @@ export default function PublicItemsCatalogPage() {
         supabase
           .from('items')
           .select(
-            'id, owner_id, category_id, title, description, item_condition, rental_price_per_day, security_deposit, pickup_barangay, pickup_city, pickup_province, pickup_region, pickup_street, meetup_notes, status, is_active, created_at'
+            'id, owner_id, category_id, subcategory_id, applies_to_all_programs, title, description, item_condition, rental_price_per_day, security_deposit, pickup_barangay, pickup_city, pickup_province, pickup_region, pickup_street, meetup_notes, status, is_active, created_at'
           )
           .eq('is_active', true)
           .in('status', Array.from(RENTABLE_ITEM_STATUSES))
@@ -303,7 +246,7 @@ export default function PublicItemsCatalogPage() {
       const ownerIds = Array.from(new Set(rawItems.map((item) => item.owner_id).filter(Boolean)));
       const categoryMap = new Map(nextCategories.map((category) => [category.id, category]));
 
-      const [imagesResult, ownersResult, ownerRatingsResult, itemSubcategoriesResult] = await Promise.all([
+      const [imagesResult, ownersResult, itemRatingsResult, itemSubcategoriesResult, itemProgramsResult, bookingRentalsResult] = await Promise.all([
         itemIds.length
           ? supabase
               .from('item_images')
@@ -314,14 +257,15 @@ export default function PublicItemsCatalogPage() {
         ownerIds.length
           ? supabase
               .from('profiles')
-              .select('id, average_rating, total_reviews, street, barangay, city, province, region')
+              .select('id, average_rating, total_reviews, street, barangay, city, province, region, account_status')
               .in('id', ownerIds)
           : { data: [], error: null },
-        ownerIds.length
+        itemIds.length
           ? supabase
               .from('reviews')
-              .select('reviewee_id, rating')
-              .in('reviewee_id', ownerIds)
+              .select('item_id, reviewer_id, rating')
+              .in('item_id', itemIds)
+              .eq('reviewer_role', 'borrower')
               .not('rating', 'is', null)
           : { data: [], error: null },
         itemIds.length
@@ -330,28 +274,45 @@ export default function PublicItemsCatalogPage() {
               .select('item_id, subcategory_id, categories!item_subcategories_subcategory_id_fkey(id, name, parent_category_id)')
               .in('item_id', itemIds)
           : { data: [], error: null },
+        itemIds.length
+          ? supabase
+              .from('item_programs')
+              .select('item_id, program_code')
+              .in('item_id', itemIds)
+          : { data: [], error: null },
+        itemIds.length
+          ? supabase
+              .from('bookings')
+              .select('item_id, status, total_due')
+              .in('item_id', itemIds)
+              .in('status', ['accepted', 'completed'])
+          : { data: [], error: null },
       ]);
 
       if (!mounted) return;
 
       if (imagesResult.error) nextErrors.push(`item_images: ${imagesResult.error.message}`);
       if (ownersResult.error) nextErrors.push(`profiles: ${ownersResult.error.message}`);
-      if (ownerRatingsResult.error) nextErrors.push(`reviews: ${ownerRatingsResult.error.message}`);
+      if (itemRatingsResult.error) nextErrors.push(`reviews: ${itemRatingsResult.error.message}`);
       if (itemSubcategoriesResult.error) nextErrors.push(`item_subcategories: ${itemSubcategoriesResult.error.message}`);
+      if (itemProgramsResult.error) nextErrors.push(`item_programs: ${itemProgramsResult.error.message}`);
+      if (bookingRentalsResult.error) nextErrors.push(`bookings: ${bookingRentalsResult.error.message}`);
 
       const imagesByItemId = new Map();
       const subcategoriesByItemId = new Map();
+      const programCodesByItemId = new Map();
       const ownersById = new Map((ownersResult.data || []).map((owner) => [owner.id, owner]));
-      const ownerRatingStatsById = new Map();
+      const ownerByItemId = new Map(rawItems.map((item) => [item.id, item.owner_id]));
+      const itemRatingStatsById = new Map();
 
-      (ownerRatingsResult.data || []).forEach((row) => {
-        const ownerId = row?.reviewee_id;
+      (itemRatingsResult.data || []).forEach((row) => {
+        const itemId = row?.item_id;
         const rating = Number(row?.rating);
 
-        if (!ownerId || !Number.isFinite(rating)) return;
+        if (!itemId || row?.reviewer_id === ownerByItemId.get(itemId) || !Number.isFinite(rating)) return;
 
-        const current = ownerRatingStatsById.get(ownerId) || { count: 0, total: 0 };
-        ownerRatingStatsById.set(ownerId, {
+        const current = itemRatingStatsById.get(itemId) || { count: 0, total: 0 };
+        itemRatingStatsById.set(itemId, {
           count: current.count + 1,
           total: current.total + rating,
         });
@@ -370,28 +331,37 @@ export default function PublicItemsCatalogPage() {
         }
         subcategoriesByItemId.set(row.item_id, list);
       });
+      (itemProgramsResult.data || []).forEach((row) => {
+        const list = programCodesByItemId.get(row.item_id) || [];
+        list.push(row.program_code);
+        programCodesByItemId.set(row.item_id, list);
+      });
 
-      const nextItems = rawItems.map((item) => {
+      const visibleItems = filterListingsByActiveOwners(rawItems, ownersResult.data || []);
+      const nextItems = visibleItems.map((item) => {
         const images = (imagesByItemId.get(item.id) || [])
           .slice()
           .sort((a, b) => Number(b.is_primary) - Number(a.is_primary) || a.sort_order - b.sort_order);
         const ownerProfile = ownersById.get(item.owner_id) || null;
-        const ownerRatingStats = ownerRatingStatsById.get(item.owner_id) || null;
+        const itemRatingStats = itemRatingStatsById.get(item.id) || null;
         const profileAverageRating = Number(ownerProfile?.average_rating);
         const profileTotalReviews = Number(ownerProfile?.total_reviews || 0);
-        const ownerAverageRating = ownerRatingStats?.count
-          ? ownerRatingStats.total / ownerRatingStats.count
-          : (Number.isFinite(profileAverageRating) && profileAverageRating > 0 ? profileAverageRating : null);
-        const ownerTotalReviews = ownerRatingStats?.count || profileTotalReviews;
+        const ownerAverageRating = Number.isFinite(profileAverageRating) && profileAverageRating > 0 ? profileAverageRating : null;
+        const ownerTotalReviews = profileTotalReviews;
+        const itemAverageRating = itemRatingStats?.count ? itemRatingStats.total / itemRatingStats.count : null;
+        const itemTotalReviews = itemRatingStats?.count || 0;
 
         return {
           ...item,
           isPromoted: promotedItemIds.has(item.id),
           category: categoryMap.get(item.category_id) || null,
           owner: ownerProfile,
+          itemAverageRating,
+          itemTotalReviews,
           ownerAverageRating,
           ownerTotalReviews,
           primaryImage: images[0] || null,
+          programCodes: programCodesByItemId.get(item.id) || [],
           searchTags: parseItemTagsFromNotes(item.meetup_notes),
           subcategories: subcategoriesByItemId.get(item.id) || [],
           subcategoryIds: (subcategoriesByItemId.get(item.id) || []).map((subcategory) => subcategory.id),
@@ -401,6 +371,7 @@ export default function PublicItemsCatalogPage() {
       setCategories(nextCategories);
       setItems(nextItems);
       setMostViewedCounts(viewCountsResult.data || []);
+      setMostRentedCounts(bookingRentalsResult.data || []);
       setError(nextErrors.join(' '));
       setLoading(false);
     }
@@ -423,17 +394,37 @@ export default function PublicItemsCatalogPage() {
     return map;
   }, [mostViewedCounts]);
 
+  const rentalStatsByItemId = useMemo(() => {
+    const map = new Map();
+
+    mostRentedCounts.forEach((booking) => {
+      const itemId = booking?.item_id;
+      if (!itemId) return;
+
+      const current = map.get(itemId) || { completedCount: 0, rentalCount: 0, totalDue: 0 };
+      const status = String(booking.status || '').toLowerCase();
+      map.set(itemId, {
+        completedCount: current.completedCount + (status === 'completed' ? 1 : 0),
+        rentalCount: current.rentalCount + 1,
+        totalDue: current.totalDue + (Number(booking.total_due) || 0),
+      });
+    });
+
+    return map;
+  }, [mostRentedCounts]);
+
   const baseFilteredItems = useMemo(() => {
     const q = initialQ.trim().toLowerCase();
-    let scoped = items.map((item) => ({
-      barangay: detectBaliuagBarangay(item),
-      item,
-      totalViews: totalViewsByItemId.get(item.id) || 0,
-    }));
-
-    if (initialBarangay !== 'all') {
-      scoped = scoped.filter((entry) => entry.barangay === initialBarangay);
-    }
+    const schoolCodes = initialSchool === 'all' ? [] : [initialSchool];
+    const programCodes = initialProgram === 'all' ? [] : [initialProgram];
+    let scoped = items
+      .filter((item) => itemMatchesAcademicFilters(item, schoolCodes, programCodes))
+      .map((item) => ({
+        barangay: getLocation(item),
+        item,
+        totalViews: totalViewsByItemId.get(item.id) || 0,
+        ...(rentalStatsByItemId.get(item.id) || { completedCount: 0, rentalCount: 0, totalDue: 0 }),
+      }));
 
     if (q) {
       scoped = scoped.filter(({ item }) =>
@@ -472,6 +463,19 @@ export default function PublicItemsCatalogPage() {
         );
     }
 
+    if (mode === 'most-rented') {
+      return scoped
+        .filter((entry) => entry.rentalCount > 0)
+        .slice()
+        .sort(
+          (left, right) =>
+            right.rentalCount - left.rentalCount ||
+            right.completedCount - left.completedCount ||
+            right.totalDue - left.totalDue ||
+            String(left.item.title || '').localeCompare(String(right.item.title || ''))
+        );
+    }
+
     if (mode === 'cheapest') {
       return scoped
         .slice()
@@ -499,7 +503,7 @@ export default function PublicItemsCatalogPage() {
           new Date(right.item.created_at || 0).getTime() - new Date(left.item.created_at || 0).getTime() ||
           String(left.item.title || '').localeCompare(String(right.item.title || ''))
       );
-  }, [categoryId, categories, initialBarangay, initialQ, items, mode, totalViewsByItemId]);
+  }, [categoryId, categories, initialProgram, initialQ, initialSchool, items, mode, rentalStatsByItemId, totalViewsByItemId]);
 
   const selectedCategory = useMemo(
     () => categories.find((category) => category.id === categoryId) || null,
@@ -523,7 +527,7 @@ export default function PublicItemsCatalogPage() {
 
     let next = baseFilteredItems.filter(({ item }) => {
       const price = Number(item.rental_price_per_day) || 0;
-      const rating = Number(item.ownerAverageRating ?? item.owner?.average_rating) || 0;
+      const rating = Number(item.itemAverageRating) || 0;
       const normalizedCondition = String(item.item_condition || '').toLowerCase();
       if (categoryMinPrice !== '' && price < Number(categoryMinPrice)) return false;
       if (categoryMaxPrice !== '' && price > Number(categoryMaxPrice)) return false;
@@ -539,13 +543,30 @@ export default function PublicItemsCatalogPage() {
 
     if (categorySort === 'price-low') next = next.slice().sort((a, b) => Number(a.item.rental_price_per_day) - Number(b.item.rental_price_per_day));
     if (categorySort === 'price-high') next = next.slice().sort((a, b) => Number(b.item.rental_price_per_day) - Number(a.item.rental_price_per_day));
-    if (categorySort === 'rating') next = next.slice().sort((a, b) => Number(b.item.ownerAverageRating || 0) - Number(a.item.ownerAverageRating || 0));
+    if (categorySort === 'rating') next = next.slice().sort((a, b) => Number(b.item.itemAverageRating || 0) - Number(a.item.itemAverageRating || 0));
     if (categorySort === 'newest') next = next.slice().sort((a, b) => new Date(b.item.created_at || 0) - new Date(a.item.created_at || 0));
     return next;
   }, [baseFilteredItems, categories, categoryConditions, categoryMaxPrice, categoryMinPrice, categoryMinRating, categorySort, categorySubcategory, isRefinedCatalog]);
 
+  const activeFilterCount = (schoolFilter !== 'all' ? 1 : 0) +
+    (programFilter !== 'all' ? 1 : 0) +
+    (categorySubcategory !== 'all' ? 1 : 0) +
+    (categoryMinPrice !== '' ? 1 : 0) +
+    (categoryMaxPrice !== '' ? 1 : 0) +
+    (Number(categoryMinRating) > 0 ? 1 : 0) +
+    categoryConditions.length;
+
   function toggleCategoryCondition(condition) {
     setCategoryConditions((current) => current.includes(condition) ? current.filter((value) => value !== condition) : [...current, condition]);
+  }
+
+  function handleFilterTrigger() {
+    if (!isRefinedCatalog) {
+      navigate('/?filters=open');
+      return;
+    }
+
+    document.querySelector('.category-refine')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   async function toggleSavedItem(event, itemId) {
@@ -576,6 +597,7 @@ export default function PublicItemsCatalogPage() {
   const pageTitle = useMemo(() => {
     if (mode === 'trending') return 'Trending Rentals';
     if (mode === 'most-viewed') return 'Most Viewed Rentals';
+    if (mode === 'most-rented') return 'Most Rented Rentals';
     if (mode === 'cheapest') return 'Cheapest Rentals';
     if (mode === 'priciest') return 'Priciest Rentals';
     if (mode === 'category') return selectedCategory?.name ? `${selectedCategory.name} Rentals` : 'Category Rentals';
@@ -587,8 +609,11 @@ export default function PublicItemsCatalogPage() {
     const keywords = initialQ.trim().toLowerCase().split(/\s+/).filter(Boolean);
     if (!keywords.length || !items.length) return [];
 
-    let candidates = items.map((item) => ({ barangay: detectBaliuagBarangay(item), item }));
-    if (initialBarangay !== 'all') candidates = candidates.filter((entry) => entry.barangay === initialBarangay);
+    const schoolCodes = initialSchool === 'all' ? [] : [initialSchool];
+    const programCodes = initialProgram === 'all' ? [] : [initialProgram];
+    let candidates = items
+      .filter((item) => itemMatchesAcademicFilters(item, schoolCodes, programCodes))
+      .map((item) => ({ barangay: getLocation(item), item }));
     if (categoryId) {
       const categoryIds = buildDescendantIds(categoryId, categories);
       candidates = candidates.filter(({ item }) => categoryIds.has(item.category_id) || (item.subcategoryIds || []).some((id) => categoryIds.has(id)));
@@ -596,8 +621,8 @@ export default function PublicItemsCatalogPage() {
 
     const scored = candidates.map(({ item, barangay }) => {
       const price = Number(item.rental_price_per_day) || 0;
-      const rating = Number(item.ownerAverageRating ?? item.owner?.average_rating) || 0;
-      const reviews = Number(item.ownerTotalReviews ?? item.owner?.total_reviews) || 0;
+      const rating = Number(item.itemAverageRating) || 0;
+      const reviews = Number(item.itemTotalReviews) || 0;
       const quality = rating + conditionScore(item.item_condition) * .35 + Math.min(reviews, 10) * .03;
       return { barangay, item, match: keywordMatchScore(item, keywords), price, quality };
     });
@@ -612,18 +637,21 @@ export default function PublicItemsCatalogPage() {
       { ...cheapest, description: 'Lowest daily rental price among the available recommendations.', label: 'Cheapest', tone: 'budget' },
       { ...priciest, description: 'Premium-priced option currently available in this result set.', label: 'Priciest', tone: 'premium' },
     ];
-  }, [categories, categoryId, initialBarangay, initialQ, items]);
+  }, [categories, categoryId, initialProgram, initialQ, initialSchool, items]);
 
   function updateQuery(next = {}) {
     const params = new URLSearchParams(searchParams);
     const nextQ = typeof next.q === 'string' ? next.q.trim() : search.trim();
-    const nextBarangay = next.barangay ?? barangayFilter;
+    const nextSchool = next.school ?? schoolFilter;
+    const nextProgram = next.program ?? programFilter;
 
     if (nextQ) params.set('q', nextQ);
     else params.delete('q');
 
-    if (nextBarangay && nextBarangay !== 'all') params.set('barangay', nextBarangay);
-    else params.delete('barangay');
+    if (nextSchool && nextSchool !== 'all') params.set('school', nextSchool);
+    else params.delete('school');
+    if (nextProgram && nextProgram !== 'all') params.set('program', nextProgram);
+    else params.delete('program');
 
     setSearchParams(params, { replace: true });
   }
@@ -633,10 +661,17 @@ export default function PublicItemsCatalogPage() {
     updateQuery({ q: search });
   }
 
-  function handleBarangayChange(event) {
-    const next = event.target.value;
-    setBarangayFilter(next);
-    updateQuery({ barangay: next });
+  function handleSchoolChange(value) {
+    const programStillValid = value === 'all' || getNubProgramsForSchool(value).some((program) => program.code === programFilter);
+    const nextProgram = programStillValid ? programFilter : 'all';
+    setSchoolFilter(value);
+    setProgramFilter(nextProgram);
+    updateQuery({ program: nextProgram, school: value });
+  }
+
+  function handleProgramChange(value) {
+    setProgramFilter(value);
+    updateQuery({ program: value });
   }
 
   return (
@@ -663,16 +698,27 @@ export default function PublicItemsCatalogPage() {
           <div className="landing-search-row">
             <div className="landing-controls inline">
               <SearchableSelect
-                ariaLabel="Filter by Baliuag barangay"
-                onChange={(value) => handleBarangayChange({ target: { value } })}
+                ariaLabel="Filter by NU Baliwag school"
+                onChange={handleSchoolChange}
                 options={[
-                  { label: 'All barangays', value: 'all' },
-                  ...BALIUAG_BARANGAYS.map((barangay) => ({ label: barangay, value: barangay })),
-                  { label: 'Unspecified', value: 'Unspecified' },
+                  { label: 'All schools', value: 'all' },
+                  ...NUB_SCHOOLS.map((school) => ({ label: school.code, value: school.code })),
                 ]}
-                placeholder="All barangays"
-                searchPlaceholder="Search barangay"
-                value={barangayFilter}
+                placeholder="All schools"
+                searchPlaceholder="Search school"
+                value={schoolFilter}
+              />
+              <SearchableSelect
+                ariaLabel="Filter by NU Baliwag course"
+                onChange={handleProgramChange}
+                options={[
+                  { label: 'All courses', value: 'all' },
+                  ...(schoolFilter === 'all' ? NUB_PROGRAMS : getNubProgramsForSchool(schoolFilter))
+                    .map((program) => ({ label: program.displayCode, value: program.code })),
+                ]}
+                placeholder="All courses"
+                searchPlaceholder="Search course"
+                value={programFilter}
               />
             </div>
 
@@ -693,12 +739,11 @@ export default function PublicItemsCatalogPage() {
         </section>
 
         <nav aria-label="Main links" className="landing-nav-links">
-          {!isRefinedCatalog ? (
-            <button className="landing-filter-trigger" onClick={() => navigate('/?filters=open')} type="button">
-              <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 7h16M7 12h10M10 17h4" /></svg>
-              <span>Filters</span>
-            </button>
-          ) : null}
+          <button aria-label={activeFilterCount ? `Filters (${activeFilterCount} active)` : 'Filters'} className="landing-filter-trigger" onClick={handleFilterTrigger} type="button">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 7h16M7 12h10M10 17h4" /></svg>
+            <span>Filters</span>
+            {activeFilterCount ? <b>{activeFilterCount}</b> : null}
+          </button>
           <button aria-label={currentUser ? 'Open member dashboard' : 'Sign in'} className={`landing-icon-btn ${currentUser ? 'signed-in' : ''}`} onClick={() => navigate(currentUser ? '/user/dashboard' : '/login')} title={currentUserProfile?.first_name || currentUserProfile?.username || ''} type="button">
             {currentUserProfile?.profile_photo_url ? (
               <img alt="" src={currentUserProfile.profile_photo_url} />
@@ -750,6 +795,8 @@ export default function PublicItemsCatalogPage() {
           {isRefinedCatalog ? (
             <aside className="category-refine" aria-label="Refine category results">
               <div className="category-refine-title"><span>Refine by</span><button onClick={() => { setCategoryMinPrice(''); setCategoryMaxPrice(''); setCategoryMinRating('0'); setCategoryConditions([]); setCategorySubcategory('all'); }} type="button">Clear</button></div>
+              <fieldset><legend>School</legend><select onChange={(event) => handleSchoolChange(event.target.value)} value={schoolFilter}><option value="all">All NU Baliwag schools</option>{NUB_SCHOOLS.map((school) => <option key={school.code} value={school.code}>{school.code} — {school.name}</option>)}</select></fieldset>
+              <fieldset><legend>Course</legend><select onChange={(event) => handleProgramChange(event.target.value)} value={programFilter}><option value="all">All undergraduate courses</option>{(schoolFilter === 'all' ? NUB_PROGRAMS : getNubProgramsForSchool(schoolFilter)).map((program) => <option key={program.code} value={program.code}>{program.displayCode} — {program.name}</option>)}</select></fieldset>
               {categorySubcategories.length ? <fieldset><legend>{mode === 'category' ? 'Type' : 'Category'}</legend><input aria-label={`Search ${mode === 'category' ? 'types' : 'categories'}`} className="category-refine-search" onChange={(event) => setCategoryRefineSearch(event.target.value)} placeholder={`Search ${mode === 'category' ? 'type' : 'category'}`} type="search" value={categoryRefineSearch} /><label><input checked={categorySubcategory === 'all'} name="subcategory" onChange={() => setCategorySubcategory('all')} type="radio" /> {mode === 'category' ? `All ${selectedCategory?.name || 'items'}` : 'All categories'}</label>{filteredCategorySubcategories.map((subcategory) => <label key={subcategory.id}><input checked={categorySubcategory === subcategory.id} name="subcategory" onChange={() => setCategorySubcategory(subcategory.id)} type="radio" /> {subcategory.name}</label>)}</fieldset> : null}
               <fieldset><legend>Daily price</legend><div className="category-price-fields"><label><span>Minimum</span><input min="0" onChange={(event) => setCategoryMinPrice(event.target.value)} placeholder="₱ 0" type="number" value={categoryMinPrice} /></label><label><span>Maximum</span><input min="0" onChange={(event) => setCategoryMaxPrice(event.target.value)} placeholder="₱ Any" type="number" value={categoryMaxPrice} /></label></div></fieldset>
               <fieldset><legend>Minimum review</legend><select onChange={(event) => setCategoryMinRating(event.target.value)} value={categoryMinRating}><option value="0">Any rating</option><option value="3">3+ stars</option><option value="4">4+ stars</option><option value="4.5">4.5+ stars</option></select></fieldset>
@@ -759,7 +806,7 @@ export default function PublicItemsCatalogPage() {
           <div className={isRefinedCatalog ? 'category-results' : undefined}>
           {isRefinedCatalog ? <div className="category-results-toolbar"><label>Sort by <select onChange={(event) => setCategorySort(event.target.value)} value={categorySort}><option value="relevance">Relevance</option><option value="newest">Newest</option><option value="price-low">Price: low to high</option><option value="price-high">Price: high to low</option><option value="rating">Highest rated</option></select></label><span>{loading ? 'Loading…' : `${filteredItems.length} rental${filteredItems.length === 1 ? '' : 's'}`}</span></div> : null}
           <div className={`landing-catalog-grid ${isRefinedCatalog ? 'category-product-grid' : ''}`}>
-            {filteredItems.map(({ item, barangay, totalViews }) => (
+            {filteredItems.map(({ item, barangay, totalViews, rentalCount }) => (
               <article className="landing-trending-card" key={`catalog-${item.id}`} onClick={() => navigate(`/items/${item.id}`)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') navigate(`/items/${item.id}`); }} role="link" tabIndex="0">
                 <div className="landing-item-media">
                   <ProductImage item={item} />
@@ -775,7 +822,11 @@ export default function PublicItemsCatalogPage() {
                 <small className="landing-item-rating">{formatItemRating(item)}</small>
                 <small className="landing-item-meta-line"><b>Condition:</b> {formatCondition(item.item_condition)}</small>
                 <small className="landing-item-meta-line"><b>Located at:</b> {barangay}</small>
-                <small className="landing-item-views">{totalViews} view{totalViews === 1 ? '' : 's'}</small>
+                <small className="landing-item-views">
+                  {mode === 'most-rented'
+                    ? `${rentalCount} rental${rentalCount === 1 ? '' : 's'}`
+                    : `${totalViews} view${totalViews === 1 ? '' : 's'}`}
+                </small>
               </article>
             ))}
             {!loading && filteredItems.length === 0 ? (

@@ -215,6 +215,17 @@
   text-transform: uppercase;
 }
 
+.browse-filter-select {
+  background: #fff;
+  border: 1px solid #d7e0ee;
+  border-radius: 8px;
+  color: #10233f;
+  font: inherit;
+  min-height: 42px;
+  padding: 8px 10px;
+  width: 100%;
+}
+
 .browse-filter-section label {
   align-items: center;
   color: #455a78;

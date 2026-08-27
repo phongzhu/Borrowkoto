@@ -1,0 +1,7 @@
+-- Historical migration placeholder.
+--
+-- Version 20260827110000 was already applied to the linked Supabase project
+-- while the Student ID upload flow was under development. That flow has since
+-- been retired in favor of the administrator-managed NUB student registry.
+-- Keep this file so local migration history stays aligned with the remote
+-- database. Do not add new Student ID/OCR behavior here.

@@ -3,16 +3,9 @@ import { Button, FormField, Input, StatusMessage } from './primitives';
 import SearchableSelect from './SearchableSelect';
 import { alpha, theme } from './theme';
 import { buildAddressQuery, buildMapEmbedUrl, geocodePhilippineAddress, sanitizeText } from './profileFormUtils';
+import './PhilippineAddressFields.css';
 
 const PSGC_BASE_URL = 'https://psgc.gitlab.io/api';
-const FIXED_LOCATION = {
-  cityAliases: ['baliwag', 'baliuag', 'city of baliwag'],
-  cityCanonical: 'City of Baliwag',
-  country: 'Philippines',
-  province: 'Bulacan',
-  regionAliases: ['region iii', 'central luzon'],
-  regionCanonical: 'Region III (Central Luzon)',
-};
 
 const selectStyle = {
   background: alpha(theme.colors.panel, 0.92),
@@ -38,6 +31,8 @@ const defaultFieldMap = {
   street: 'street',
 };
 
+const addressFieldKeys = Object.keys(defaultFieldMap);
+
 const defaultLabels = {
   barangay: 'Barangay',
   city: 'City / Municipality',
@@ -56,21 +51,30 @@ function normalize(value) {
   return typeof value === 'string' ? value.trim().toLowerCase() : '';
 }
 
-function matchesAnyAlias(value, aliases) {
-  const normalizedValue = normalize(value);
-  return aliases.some((alias) => normalizedValue === alias || normalizedValue.includes(alias));
+function normalizePlaceName(value) {
+  return normalize(value)
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/\bsta\.?\b/g, 'santa')
+    .replace(/\bsto\.?\b/g, 'santo')
+    .replace(/\bpob\.?\b/g, 'poblacion')
+    .replace(/^\s*(?:city|municipality|municipal district)\s+of\s+/g, '')
+    .replace(/\s+(?:city|municipality|municipal district)\s*$/g, '')
+    .replace(/\bbaliuag\b/g, 'baliwag')
+    .replace(/[^a-z0-9]/g, '');
 }
 
-function getRegionLabel(region) {
+export function getRegionLabel(region) {
   if (!region) {
     return '';
   }
 
-  if (region.name === 'NCR' && region.regionName) {
-    return `${region.regionName} (${region.name})`;
-  }
-
-  return region.name;
+  const name = sanitizeText(region.name);
+  const regionName = sanitizeText(region.regionName);
+  return name && regionName && normalize(name) !== normalize(regionName)
+    ? `${name} (${regionName})`
+    : name || regionName;
 }
 
 function findByName(options, value, labelBuilder) {
@@ -83,11 +87,19 @@ function findByName(options, value, labelBuilder) {
   });
 }
 
+export function findCityMunicipalityByName(options, value) {
+  const normalizedValue = normalizePlaceName(value);
+  return options.find((option) => normalizePlaceName(option.name) === normalizedValue);
+}
+
+export function findRegionByName(options, value) {
+  const normalizedValue = normalize(value);
+  return options.find((region) => [region.name, region.regionName, getRegionLabel(region)]
+    .some((candidate) => normalize(candidate) === normalizedValue));
+}
+
 function normalizeBarangayName(value) {
-  return normalize(value)
-    .replace(/\([^)]*\)/g, '')
-    .replace(/\b(?:barangay|brgy)\.?\b/g, '')
-    .replace(/[^a-z0-9]/g, '');
+  return normalizePlaceName(normalize(value).replace(/\b(?:barangay|brgy)\.?\b/g, ' '));
 }
 
 function findBarangayByName(options, value) {
@@ -112,6 +124,18 @@ function createMappedFields(fieldMap, nextFields) {
   }, {});
 }
 
+export function mergeGeocodedAddressFields(currentAddress, geocodedAddress) {
+  return addressFieldKeys.reduce((merged, key) => {
+    const nextValue = geocodedAddress?.[key];
+    const hasNextValue = nextValue !== null
+      && nextValue !== undefined
+      && String(nextValue).trim() !== '';
+
+    merged[key] = hasNextValue ? nextValue : currentAddress?.[key] || '';
+    return merged;
+  }, {});
+}
+
 function getAddressPart(address, keys) {
   return keys.map((key) => sanitizeText(address?.[key])).find(Boolean) || '';
 }
@@ -130,22 +154,6 @@ function extractAddressFields(result) {
     region: getAddressPart(address, ['region', 'state']),
     street,
   };
-}
-
-function isBaliwagLocation(result) {
-  const address = result?.address || {};
-  const city = getAddressPart(address, ['city', 'town', 'municipality', 'village']);
-  const province = getAddressPart(address, ['state_district', 'province']);
-  const region = getAddressPart(address, ['region', 'state']);
-  const label = sanitizeText(result?.label);
-  const cityMatch = matchesAnyAlias(city, FIXED_LOCATION.cityAliases) || matchesAnyAlias(label, FIXED_LOCATION.cityAliases);
-  const provinceMatch = normalize(province) === normalize(FIXED_LOCATION.province) || normalize(label).includes(normalize(FIXED_LOCATION.province));
-  const regionMatch =
-    !region ||
-    matchesAnyAlias(region, FIXED_LOCATION.regionAliases) ||
-    FIXED_LOCATION.regionAliases.some((alias) => normalize(label).includes(alias));
-
-  return cityMatch && provinceMatch && regionMatch;
 }
 
 async function fetchPSGC(path) {
@@ -230,15 +238,6 @@ export default function PhilippineAddressFields({
   }, []);
 
   useEffect(() => {
-    setForm((current) => ({
-      ...current,
-      [fieldMap.country]: FIXED_LOCATION.country,
-      [fieldMap.province]: FIXED_LOCATION.province,
-      [fieldMap.region]: FIXED_LOCATION.regionCanonical,
-    }));
-  }, [fieldMap.country, fieldMap.province, fieldMap.region, setForm]);
-
-  useEffect(() => {
     if (!readValue(form, fieldMap, 'country')) {
       setForm((current) => ({
         ...current,
@@ -247,9 +246,9 @@ export default function PhilippineAddressFields({
     }
   }, [fieldMap.country, fieldMap, form, setForm]);
 
-  const selectedRegion = useMemo(() => findByName(regions, readValue(form, fieldMap, 'region'), getRegionLabel), [fieldMap, form, regions]);
+  const selectedRegion = useMemo(() => findRegionByName(regions, readValue(form, fieldMap, 'region')), [fieldMap, form, regions]);
   const selectedProvince = useMemo(() => findByName(provinces, readValue(form, fieldMap, 'province')), [fieldMap, form, provinces]);
-  const selectedCity = useMemo(() => findByName(cities, readValue(form, fieldMap, 'city')), [cities, fieldMap, form]);
+  const selectedCity = useMemo(() => findCityMunicipalityByName(cities, readValue(form, fieldMap, 'city')), [cities, fieldMap, form]);
   const savedBarangay = readValue(form, fieldMap, 'barangay');
   const selectedBarangay = useMemo(() => findBarangayByName(barangays, savedBarangay), [barangays, savedBarangay]);
   const barangayOptions = useMemo(() => {
@@ -262,20 +261,6 @@ export default function PhilippineAddressFields({
     return options;
   }, [barangays, savedBarangay, selectedBarangay]);
   const mapUrl = useMemo(() => buildMapEmbedUrl(readValue(form, fieldMap, 'latitude'), readValue(form, fieldMap, 'longitude')), [fieldMap, form]);
-  const fixedRegion = useMemo(
-    () => regions.find((region) => matchesAnyAlias(getRegionLabel(region), FIXED_LOCATION.regionAliases)),
-    [regions]
-  );
-  const fixedProvince = useMemo(
-    () => provinces.find((province) => normalize(province.name) === normalize(FIXED_LOCATION.province)),
-    [provinces]
-  );
-  const fixedCity = useMemo(
-    () =>
-      cities.find((city) => matchesAnyAlias(city.name, FIXED_LOCATION.cityAliases)) ||
-      cities.find((city) => normalize(city.name) === normalize(FIXED_LOCATION.cityCanonical)),
-    [cities]
-  );
 
   useEffect(() => {
     let mounted = true;
@@ -311,6 +296,7 @@ export default function PhilippineAddressFields({
 
           setRegionHasDirectCities(true);
           setCities(cityData || []);
+          updateAddressFields({ province: getRegionLabel(selectedRegion) });
           setAddressError('');
         }
       } catch (loadError) {
@@ -331,7 +317,7 @@ export default function PhilippineAddressFields({
     return () => {
       mounted = false;
     };
-  }, [selectedRegion]);
+  }, [selectedRegion, updateAddressFields]);
 
   useEffect(() => {
     let mounted = true;
@@ -415,49 +401,6 @@ export default function PhilippineAddressFields({
     };
   }, [selectedCity]);
 
-  useEffect(() => {
-    if (!fixedRegion) {
-      return;
-    }
-
-    const currentRegion = readValue(form, fieldMap, 'region');
-    if (normalize(currentRegion) !== normalize(getRegionLabel(fixedRegion))) {
-      updateAddressFields({
-        province: FIXED_LOCATION.province,
-        region: getRegionLabel(fixedRegion),
-      });
-    }
-  }, [fieldMap, fixedRegion, form, updateAddressFields]);
-
-  useEffect(() => {
-    if (!fixedProvince) {
-      return;
-    }
-
-    const currentProvince = readValue(form, fieldMap, 'province');
-    if (normalize(currentProvince) !== normalize(fixedProvince.name)) {
-      updateAddressFields({
-        barangay: '',
-        city: '',
-        province: fixedProvince.name,
-      });
-    }
-  }, [fieldMap, fixedProvince, form, updateAddressFields]);
-
-  useEffect(() => {
-    if (!fixedCity) {
-      return;
-    }
-
-    const currentCity = readValue(form, fieldMap, 'city');
-    if (!matchesAnyAlias(currentCity, FIXED_LOCATION.cityAliases)) {
-      updateAddressFields({
-        barangay: '',
-        city: fixedCity.name || FIXED_LOCATION.cityCanonical,
-      });
-    }
-  }, [fieldMap, fixedCity, form, updateAddressFields]);
-
   function handleStreetChange(event) {
     updateAddressFields({ street: event.target.value });
   }
@@ -519,18 +462,23 @@ export default function PhilippineAddressFields({
   }
 
   async function applyGeocodedResult(result, successMessage) {
-    if (!isBaliwagLocation(result)) {
-      throw new Error('Only addresses within Baliwag/Baliuag, Bulacan are allowed.');
-    }
-
     const nextAddress = extractAddressFields(result);
 
-    updateAddressFields({
-      ...nextAddress,
-      city: FIXED_LOCATION.cityCanonical,
-      country: nextAddress.country || 'Philippines',
-      province: FIXED_LOCATION.province,
-      region: FIXED_LOCATION.regionCanonical,
+    setForm((current) => {
+      const currentAddress = addressFieldKeys.reduce((address, key) => {
+        const fieldName = fieldMap[key];
+        address[key] = fieldName ? current?.[fieldName] || '' : '';
+        return address;
+      }, {});
+      const mergedAddress = mergeGeocodedAddressFields(currentAddress, {
+        ...nextAddress,
+        country: nextAddress.country || 'Philippines',
+      });
+
+      return {
+        ...current,
+        ...createMappedFields(fieldMap, mergedAddress),
+      };
     });
     setLocationMessage(successMessage);
     setLocationTone('success');
@@ -655,9 +603,9 @@ export default function PhilippineAddressFields({
         </FormField>
 
         <FormField label={labels.region} required={requiredFieldSet.has('region')}>
-          <select disabled={loadingRegions || !fixedRegion} onChange={handleRegionChange} style={selectStyle} value={fixedRegion?.code || ''}>
+          <select disabled={loadingRegions} onChange={handleRegionChange} style={selectStyle} value={selectedRegion?.code || ''}>
             <option value="">{loadingRegions ? 'Loading regions...' : 'Select region'}</option>
-            {(fixedRegion ? [fixedRegion] : []).map((region) => (
+            {regions.map((region) => (
               <option key={region.code} value={region.code}>
                 {getRegionLabel(region)}
               </option>
@@ -666,13 +614,13 @@ export default function PhilippineAddressFields({
         </FormField>
         <FormField label={labels.province} required={requiredFieldSet.has('province')}>
           <select
-            disabled={loadingProvinces || !fixedProvince}
+            disabled={loadingProvinces || !selectedRegion || regionHasDirectCities}
             onChange={handleProvinceChange}
             style={selectStyle}
-            value={fixedProvince?.code || ''}
+            value={selectedProvince?.code || ''}
           >
             <option value="">{loadingProvinces ? 'Loading provinces...' : 'Select province'}</option>
-            {(fixedProvince ? [fixedProvince] : []).map((province) => (
+            {provinces.map((province) => (
               <option key={province.code} value={province.code}>
                 {province.name}
               </option>
@@ -682,13 +630,13 @@ export default function PhilippineAddressFields({
 
         <FormField label={labels.city} required={requiredFieldSet.has('city')}>
           <select
-            disabled={loadingCities || !fixedCity}
+            disabled={loadingCities || !selectedRegion || (!regionHasDirectCities && !selectedProvince)}
             onChange={handleCityChange}
             style={selectStyle}
-            value={fixedCity?.code || ''}
+            value={selectedCity?.code || ''}
           >
             <option value="">{loadingCities ? 'Loading cities...' : 'Select city / municipality'}</option>
-            {(fixedCity ? [fixedCity] : []).map((city) => (
+            {cities.map((city) => (
               <option key={city.code} value={city.code}>
                 {city.name}
               </option>
@@ -716,7 +664,7 @@ export default function PhilippineAddressFields({
       <div
         className={flatMap ? 'address-map-section address-map-section-flat' : 'address-map-section'}
         style={{
-          background: flatMap ? 'transparent' : alpha(theme.colors.panel, 0.76),
+          background: flatMap ? 'transparent' : 'var(--ui-background-color, #ffffff)',
           border: flatMap ? 0 : `1px solid ${alpha(theme.colors.ink, 0.08)}`,
           borderRadius: flatMap ? 0 : 22,
           display: 'grid',
@@ -739,14 +687,20 @@ export default function PhilippineAddressFields({
 
         <div className="form-grid" style={{ alignItems: 'start', display: 'grid', gap: 16, gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
           <div style={{ display: 'grid', gap: 14 }}>
-            <div className="form-grid" style={{ display: 'grid', gap: 14, gridTemplateColumns: 'minmax(0, 1fr) auto' }}>
+            <div className="address-map-search-row">
               <FormField label={labels.search} required={requiredFieldSet.has('search')}>
                 <Input onChange={(event) => setLocationSearch(event.target.value)} placeholder={labels.searchPlaceholder} value={locationSearch} />
               </FormField>
 
-              <div style={{ alignItems: 'end', display: 'flex' }}>
+              <div className="address-map-search-action">
                 <Button disabled={locationBusy === 'search'} onClick={handleSearchPlace} type="button" variant="secondary">
                   {locationBusy === 'search' ? 'Searching...' : 'Search place'}
+                </Button>
+              </div>
+
+              <div className="address-map-search-action">
+                <Button disabled={locationBusy === 'device'} onClick={handleUseCurrentLocation} type="button" variant="ghost">
+                  {locationBusy === 'device' ? 'Locating device...' : 'Use current location'}
                 </Button>
               </div>
             </div>
@@ -773,18 +727,12 @@ export default function PhilippineAddressFields({
               </div>
             ) : null}
 
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-              <Button disabled={locationBusy === 'device'} onClick={handleUseCurrentLocation} type="button" variant="ghost">
-                {locationBusy === 'device' ? 'Locating device...' : 'Use current location'}
-              </Button>
-            </div>
-
             {locationMessage ? <StatusMessage tone={locationTone}>{locationMessage}</StatusMessage> : null}
           </div>
 
           <div
             style={{
-              background: alpha(theme.colors.panel, 0.86),
+              background: 'var(--ui-background-color, #ffffff)',
               border: `1px solid ${alpha(theme.colors.ink, 0.08)}`,
               borderRadius: 20,
               minHeight: 220,

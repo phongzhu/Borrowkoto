@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../../api/supabaseClient';
 import { useAuth } from '../../context/AuthContext';
+import { getNubProgramsForSchool, getTargetSchoolCodeForPrograms, NUB_PROGRAMS, NUB_SCHOOLS } from '../../data/nubAcademicData';
+import { isAcademicProjectCategory } from '../../data/nubMarketplaceCatalog';
 import { createDamageClaim, createDamageReport, getDamageClaimWithEvidence, uploadDamageEvidence, userHasActiveDamageHold } from '../../services/damageClaimsService';
 import { approveItemPurchaseRequest } from '../../services/purchaseRequestsService';
 import { createTestCheckoutSession } from '../../services/transaction';
@@ -9,16 +11,16 @@ import { CalendarIcon, CatalogIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon
 import { SectionGrid } from '../../ui/layouts';
 import PhilippineAddressFields from '../../ui/PhilippineAddressFields';
 import { Badge, Button, FormField, Input, MetricCard, Modal, Panel, StatusMessage, Textarea } from '../../ui/primitives';
-import { sanitizeText, validateBaliwagLocation, validateCoordinates } from '../../ui/profileFormUtils';
+import { sanitizeText, validateCoordinates } from '../../ui/profileFormUtils';
 import { alpha, theme } from '../../ui/theme';
 import { BOOKING_STATUS } from '../../utils/bookingEnums';
+import { clearListingDraft, readListingDraft, saveListingDraft, updateListingMainCategory, updateListingSubcategory } from '../../utils/listingDraft';
 import UserShell from './UserShell';
 import UserRentalsCalendar from './UserRentalsCalendar';
 import './MyBookings.css';
 
 const ITEM_IMAGES_BUCKET = 'item-images';
 const MAX_LISTING_IMAGES = 5;
-const LISTING_DRAFT_STORAGE_KEY = 'borrowkoto:listing-draft:v1';
 
 const currencyFormatter = new Intl.NumberFormat('en-PH', {
   currency: 'PHP',
@@ -122,20 +124,6 @@ const selectStyle = {
   width: '100%',
 };
 
-function isAcceptedVerificationStatus(status) {
-  return ['approved', 'verified'].includes(String(status || '').toLowerCase());
-}
-
-function getVerificationStatusLabel(status) {
-  const normalized = String(status || '').toLowerCase();
-
-  if (normalized === 'verified') {
-    return 'approved';
-  }
-
-  return status || 'pending';
-}
-
 const itemConditionOptions = ['new', 'like_new', 'good', 'fair', 'used'];
 const legacyItemConditionMap = {
   brand_new: 'new',
@@ -211,6 +199,8 @@ function buildMeetupNotesWithTags(meetupNotesValue, tagsValue) {
 
 function buildListingForm(profile) {
   return {
+    applicable_program_codes: profile?.program_code ? [profile.program_code] : [],
+    applies_to_all_programs: false,
     category_id: '',
     description: '',
     estimated_value: '',
@@ -235,37 +225,10 @@ function buildListingForm(profile) {
     sale_price: '',
     search_tags: '',
     security_deposit: '',
-    subcategory_ids: [],
+    subcategory_id: '',
+    target_school_code: profile?.school_code || 'all',
     title: '',
   };
-}
-
-function readListingDraft() {
-  try {
-    const raw = window.sessionStorage.getItem(LISTING_DRAFT_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object' || !parsed.form || typeof parsed.form !== 'object') return null;
-    return { ...buildListingForm(null), ...parsed.form };
-  } catch {
-    return null;
-  }
-}
-
-function saveListingDraft(form) {
-  try {
-    window.sessionStorage.setItem(LISTING_DRAFT_STORAGE_KEY, JSON.stringify({ form, savedAt: new Date().toISOString() }));
-  } catch {
-    // Ignore storage failures.
-  }
-}
-
-function clearListingDraft() {
-  try {
-    window.sessionStorage.removeItem(LISTING_DRAFT_STORAGE_KEY);
-  } catch {
-    // Ignore storage failures.
-  }
 }
 
 function normalizeItemCondition(value) {
@@ -276,6 +239,8 @@ function normalizeItemCondition(value) {
 function buildListingFormFromItem(item) {
   const parsedMeta = parseEmbeddedTags(item?.meetup_notes);
   return {
+    applicable_program_codes: Array.isArray(item?.programCodes) ? item.programCodes : [],
+    applies_to_all_programs: Boolean(item?.applies_to_all_programs),
     category_id: item?.category_id || '',
     description: item?.description || '',
     estimated_value: item?.estimated_value === null || item?.estimated_value === undefined ? '' : String(item.estimated_value),
@@ -300,7 +265,10 @@ function buildListingFormFromItem(item) {
     sale_price: item?.sale_price === null || item?.sale_price === undefined ? '' : String(item.sale_price),
     search_tags: parsedMeta.tags.join(', '),
     security_deposit: item?.security_deposit === null || item?.security_deposit === undefined ? '' : String(item.security_deposit),
-    subcategory_ids: Array.isArray(item?.subcategory_ids) ? item.subcategory_ids : [],
+    subcategory_id: item?.subcategory_id || item?.subcategory_ids?.[0] || '',
+    target_school_code: item?.applies_to_all_programs
+      ? 'all'
+      : getTargetSchoolCodeForPrograms(item?.programCodes),
     title: item?.title || '',
   };
 }
@@ -662,8 +630,8 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
   const isAddPage = listingMode === 'add';
   const isListingFormPage = isEditPage || isAddPage;
   const [userId, setUserId] = useState('');
+  const listingDraftOwnerId = authenticatedUser?.id || userId;
   const [profile, setProfile] = useState(null);
-  const [verification, setVerification] = useState(null);
   const [categories, setCategories] = useState([]);
   const [items, setItems] = useState([]);
   const [bookings, setBookings] = useState([]);
@@ -681,6 +649,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
   const [loadingListingDetails, setLoadingListingDetails] = useState(false);
   const [listingForm, setListingForm] = useState(buildListingForm(null));
   const [categorySearch, setCategorySearch] = useState('');
+  const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
   const [listingImageFiles, setListingImageFiles] = useState([]);
   const [listingImagePreviews, setListingImagePreviews] = useState([]);
   const [savedListingImages, setSavedListingImages] = useState([]);
@@ -714,6 +683,9 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
   const [damageReportForm, setDamageReportForm] = useState(createDamageReportForm);
   const [savingDamageReport, setSavingDamageReport] = useState(false);
   const listingImagesInputRef = useRef(null);
+  const categoryPickerRef = useRef(null);
+  const addListingRouteInitializedRef = useRef(false);
+  const editListingRouteInitializedRef = useRef('');
   const payMongoAutoApprovalHandledRef = useRef(false);
   const loadListingsInFlightRef = useRef(false);
   const adminPayeeIdRef = useRef('');
@@ -771,7 +743,6 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
       if (!user) {
         setUserId('');
         setProfile(null);
-        setVerification(null);
         setCategories([]);
         setItems([]);
         setPurchaseRequests([]);
@@ -782,20 +753,13 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
 
       setUserId(user.id);
 
-      const [profileResult, verificationResult, categoriesResult, itemsResult, bookingsResult, purchaseRequestsAsSellerResult, purchaseRequestsAsBuyerResult, damageHoldResult] = await Promise.all([
+      const [profileResult, categoriesResult, itemsResult, bookingsResult, purchaseRequestsAsSellerResult, purchaseRequestsAsBuyerResult, damageHoldResult] = await Promise.all([
         supabase.from('profiles').select('*').eq('id', user.id).maybeSingle(),
-        supabase
-          .from('identity_verifications')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('submitted_at', { ascending: false })
-          .limit(1)
-          .maybeSingle(),
         supabase.from('categories').select('id, name, parent_category_id, is_active').order('name', { ascending: true }),
         supabase
           .from('items')
           .select(
-            'id, owner_id, category_id, title, description, item_condition, rental_price_per_day, security_deposit, estimated_value, is_for_sale, sale_price, sale_inclusions, min_rental_days, max_rental_days, quantity, pickup_barangay, pickup_city, pickup_country, pickup_latitude, pickup_longitude, pickup_province, pickup_region, pickup_street, pickup_time, return_time, meetup_notes, status, is_active, created_at, updated_at'
+            'id, owner_id, category_id, subcategory_id, applies_to_all_programs, title, description, item_condition, rental_price_per_day, security_deposit, estimated_value, is_for_sale, sale_price, sale_inclusions, min_rental_days, max_rental_days, quantity, pickup_barangay, pickup_city, pickup_country, pickup_latitude, pickup_longitude, pickup_province, pickup_region, pickup_street, pickup_time, return_time, meetup_notes, status, is_active, created_at, updated_at'
           )
           .eq('owner_id', user.id)
           .order('created_at', { ascending: false }),
@@ -821,17 +785,12 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
 
       const nextErrors = [];
       const profileData = profileResult.data || null;
-      const verificationData = verificationResult.error ? null : verificationResult.data || null;
       const nextCategories = categoriesResult.data || [];
       const rawItems = itemsResult.data || [];
       setActiveDamageHold(Boolean(damageHoldResult));
 
     if (profileResult.error) {
       nextErrors.push(`profiles: ${profileResult.error.message}`);
-    }
-
-    if (verificationResult.error) {
-      nextErrors.push(`identity_verifications: ${verificationResult.error.message}`);
     }
 
     if (categoriesResult.error) {
@@ -889,6 +848,12 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
           .select('item_id, subcategory_id, categories!item_subcategories_subcategory_id_fkey(id, name, parent_category_id, is_active)')
           .in('item_id', itemIds)
       : { data: [], error: null };
+    const itemProgramsResult = itemIds.length
+      ? await supabase
+          .from('item_programs')
+          .select('item_id, program_code')
+          .in('item_id', itemIds)
+      : { data: [], error: null };
     const manilaToday = getManilaTodayDate();
     const currentWeekStart = getWeekStartMonday(manilaToday);
     const itemDailyViewsResult = itemIds.length
@@ -911,7 +876,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
       ? await supabase
           .from('items')
           .select(
-            'id, owner_id, category_id, title, description, item_condition, rental_price_per_day, security_deposit, estimated_value, is_for_sale, sale_price, sale_inclusions, min_rental_days, max_rental_days, quantity, pickup_barangay, pickup_city, pickup_country, pickup_latitude, pickup_longitude, pickup_province, pickup_region, pickup_street, pickup_time, return_time, meetup_notes, status, is_active, created_at, updated_at'
+            'id, owner_id, category_id, subcategory_id, applies_to_all_programs, title, description, item_condition, rental_price_per_day, security_deposit, estimated_value, is_for_sale, sale_price, sale_inclusions, min_rental_days, max_rental_days, quantity, pickup_barangay, pickup_city, pickup_country, pickup_latitude, pickup_longitude, pickup_province, pickup_region, pickup_street, pickup_time, return_time, meetup_notes, status, is_active, created_at, updated_at'
           )
           .in('id', bookingItemIds)
       : { data: [], error: null };
@@ -965,6 +930,9 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
     if (itemSubcategoriesResult.error) {
       nextErrors.push(`item_subcategories: ${itemSubcategoriesResult.error.message}`);
     }
+    if (itemProgramsResult.error) {
+      nextErrors.push(`item_programs: ${itemProgramsResult.error.message}`);
+    }
     if (itemDailyViewsResult.error) {
       nextErrors.push(`item_daily_view_counts: ${itemDailyViewsResult.error.message}`);
     }
@@ -1004,6 +972,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
 
     const imagesByItemId = new Map();
     const subcategoriesByItemId = new Map();
+    const programCodesByItemId = new Map();
     const dailyViewsByItemId = new Map();
     const weeklyViewsByItemId = new Map();
 
@@ -1018,6 +987,11 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
         current.push(row.categories);
       }
       subcategoriesByItemId.set(row.item_id, current);
+    });
+    (itemProgramsResult.data || []).forEach((row) => {
+      const current = programCodesByItemId.get(row.item_id) || [];
+      current.push(row.program_code);
+      programCodesByItemId.set(row.item_id, current);
     });
     (itemDailyViewsResult.data || []).forEach((row) => {
       dailyViewsByItemId.set(row.item_id, {
@@ -1069,6 +1043,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
         primaryImage: images[0] || null,
         subcategories: subcategoriesByItemId.get(item.id) || [],
         subcategory_ids: (subcategoriesByItemId.get(item.id) || []).map((subcategory) => subcategory.id),
+        programCodes: programCodesByItemId.get(item.id) || [],
         today_views_total: dailyViewsByItemId.get(item.id)?.total_views || 0,
         today_unique_viewers: dailyViewsByItemId.get(item.id)?.unique_viewers || 0,
         week_views_total: weeklyViewsByItemId.get(item.id)?.total_views || 0,
@@ -1110,12 +1085,10 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
     }));
 
       setProfile(profileData);
-      setVerification(verificationData);
       setCategories(nextCategories);
       setItems(nextItems);
       setBookings(nextBookings);
       setPurchaseRequests(nextPurchaseRequests);
-      setListingForm(buildListingForm(profileData));
       setError(nextErrors.join(' '));
       setLoading(false);
     } catch (loadError) {
@@ -1135,9 +1108,9 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
       return undefined;
     }
 
-    saveListingDraft(listingForm);
+    saveListingDraft(listingDraftOwnerId, listingForm, listingAddons);
     return undefined;
-  }, [editingItem, listingForm, showAddListing]);
+  }, [editingItem, listingAddons, listingDraftOwnerId, listingForm, showAddListing]);
 
   useEffect(() => {
     if (!listingImageFiles.length) {
@@ -1161,6 +1134,19 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
 
   useEffect(() => () => revokeAddonPreviews(listingAddons), [listingAddons]);
 
+  useEffect(() => {
+    if (!categoryPickerOpen) return undefined;
+
+    function handleCategoryPickerOutsideClick(event) {
+      if (categoryPickerRef.current?.contains(event.target)) return;
+      setCategoryPickerOpen(false);
+      setCategorySearch('');
+    }
+
+    document.addEventListener('pointerdown', handleCategoryPickerOutsideClick);
+    return () => document.removeEventListener('pointerdown', handleCategoryPickerOutsideClick);
+  }, [categoryPickerOpen]);
+
   const activeCategories = useMemo(() => categories.filter((category) => category.is_active), [categories]);
   const activeMainCategories = useMemo(
     () => activeCategories.filter((category) => !category.parent_category_id),
@@ -1181,6 +1167,24 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
   const availableSubcategories = useMemo(
     () => activeSubcategoriesByParentId.get(listingForm.category_id) || [],
     [activeSubcategoriesByParentId, listingForm.category_id]
+  );
+  const selectedListingMainCategory = useMemo(
+    () => activeMainCategories.find((category) => category.id === listingForm.category_id) || null,
+    [activeMainCategories, listingForm.category_id]
+  );
+  const selectedListingSubcategory = useMemo(
+    () => availableSubcategories.find((category) => category.id === listingForm.subcategory_id) || null,
+    [availableSubcategories, listingForm.subcategory_id]
+  );
+  const targetSchoolPrograms = useMemo(
+    () => listingForm.target_school_code === 'all'
+      ? NUB_PROGRAMS
+      : getNubProgramsForSchool(listingForm.target_school_code),
+    [listingForm.target_school_code]
+  );
+  const selectedTargetSchool = useMemo(
+    () => NUB_SCHOOLS.find((school) => school.code === listingForm.target_school_code) || null,
+    [listingForm.target_school_code]
   );
 
   const listingMainCategoryOptions = useMemo(() => {
@@ -1248,17 +1252,12 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
       issues.push('Complete your profile details first.');
     }
 
-    const profileVerified = Boolean(profile?.is_verified)
-      || isAcceptedVerificationStatus(profile?.verification_status);
-
-    if (!profileVerified && !verification) {
-      issues.push('Submit your identity verification.');
-    } else if (!profileVerified && !isAcceptedVerificationStatus(verification.status)) {
-      issues.push(`Wait for identity verification approval. Current status: ${getVerificationStatusLabel(verification.status)}.`);
+    if (!profile?.nub_registry_managed) {
+      issues.push('Your account must be linked to the official NUB student registry.');
     }
 
     return issues;
-  }, [profile, verification]);
+  }, [profile]);
 
   const canCreateListing = readinessIssues.length === 0 && !activeDamageHold;
   const activeListingCount = useMemo(() => items.filter((item) => isListingActiveStatus(item.status)).length, [items]);
@@ -1448,14 +1447,12 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
     const { name, value } = event.target;
 
     if (name === 'category_id') {
-      setListingForm((current) => ({
-        ...current,
-        category_id: value,
-        subcategory_ids: current.subcategory_ids.filter((subcategoryId) => {
-          const subcategory = activeCategories.find((category) => category.id === subcategoryId);
-          return Boolean(subcategory) && subcategory.parent_category_id === value;
-        }),
-      }));
+      setListingForm((current) => updateListingMainCategory(current, value));
+      return;
+    }
+
+    if (name === 'subcategory_id') {
+      setListingForm((current) => updateListingSubcategory(current, value));
       return;
     }
 
@@ -1465,17 +1462,67 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
     }));
   }
 
-  function handleSubcategoryToggle(subcategoryId, checked) {
+  function handleMainCategorySelection(value) {
+    handleFormChange({ target: { name: 'category_id', value } });
+    setCategorySearch('');
+    setCategoryPickerOpen(false);
+  }
+
+  function handleAllProgramsChange(event) {
+    const checked = event.target.checked;
+    setListingForm((current) => ({
+      ...current,
+      applicable_program_codes: checked ? [] : current.applicable_program_codes,
+      applies_to_all_programs: checked,
+      target_school_code: checked ? 'all' : current.target_school_code,
+    }));
+  }
+
+  function handleTargetSchoolChange(event) {
+    const targetSchoolCode = event.target.value;
     setListingForm((current) => {
-      const currentIds = new Set(current.subcategory_ids || []);
-      if (checked) {
-        currentIds.add(subcategoryId);
-      } else {
-        currentIds.delete(subcategoryId);
+      if (targetSchoolCode === 'all') {
+        return {
+          ...current,
+          applies_to_all_programs: false,
+          target_school_code: 'all',
+        };
       }
+
+      const schoolPrograms = getNubProgramsForSchool(targetSchoolCode);
+      const allowedCodes = new Set(schoolPrograms.map((program) => program.code));
+      const selectedForSchool = (current.applicable_program_codes || []).filter((code) => allowedCodes.has(code));
+
       return {
         ...current,
-        subcategory_ids: Array.from(currentIds),
+        applicable_program_codes: selectedForSchool.length
+          ? selectedForSchool
+          : schoolPrograms.map((program) => program.code),
+        applies_to_all_programs: false,
+        target_school_code: targetSchoolCode,
+      };
+    });
+  }
+
+  function handleAllTargetSchoolProgramsChange(event) {
+    const checked = event.target.checked;
+    const schoolProgramCodes = targetSchoolPrograms.map((program) => program.code);
+    setListingForm((current) => ({
+      ...current,
+      applicable_program_codes: checked ? schoolProgramCodes : [],
+      applies_to_all_programs: false,
+    }));
+  }
+
+  function handleApplicableProgramToggle(programCode) {
+    setListingForm((current) => {
+      const selected = new Set(current.applicable_program_codes || []);
+      if (selected.has(programCode)) selected.delete(programCode);
+      else selected.add(programCode);
+      return {
+        ...current,
+        applicable_program_codes: Array.from(selected),
+        applies_to_all_programs: false,
       };
     });
   }
@@ -1489,11 +1536,14 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
     setMessage('');
 
     revokeAddonPreviews(listingAddons);
-    setListingForm(readListingDraft() || buildListingForm(profile));
+    const defaultForm = buildListingForm(profile);
+    const draft = readListingDraft(listingDraftOwnerId, defaultForm);
+    setListingForm(draft?.form || defaultForm);
     setCategorySearch('');
+    setCategoryPickerOpen(false);
     setListingImageFiles([]);
     setSavedListingImages([]);
-    setListingAddons([]);
+    setListingAddons(draft?.addons || []);
     setEditingItem(null);
     setShowAddListing(true);
   }
@@ -1504,6 +1554,8 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
     setShowAddListing(true);
     setEditingItem(item);
     setListingForm(buildListingFormFromItem(item));
+    setCategorySearch('');
+    setCategoryPickerOpen(false);
     setListingImageFiles([]);
     setSavedListingImages(item.images || []);
     revokeAddonPreviews(listingAddons);
@@ -1528,8 +1580,11 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
 
   useEffect(() => {
     if (!isEditPage || !editItemId || !items.length) {
+      if (!isEditPage) editListingRouteInitializedRef.current = '';
       return;
     }
+
+    if (editListingRouteInitializedRef.current === editItemId) return;
 
     const targetItem = items.find((item) => item.id === editItemId);
     if (!targetItem) {
@@ -1539,6 +1594,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
       return;
     }
 
+    editListingRouteInitializedRef.current = editItemId;
     openEditListing(targetItem);
     // This route effect intentionally runs only when its route/item inputs change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1546,13 +1602,17 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
 
   useEffect(() => {
     if (!isAddPage) {
+      addListingRouteInitializedRef.current = false;
       return;
     }
 
+    if (loading || addListingRouteInitializedRef.current) return;
+
+    addListingRouteInitializedRef.current = true;
     openAddListing();
-    // Opening the add route is controlled by the route flag, not form-state changes.
+    // Opening the add route waits for profile defaults and runs once per route entry.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAddPage]);
+  }, [isAddPage, loading]);
 
   useEffect(() => {
     if (isListingFormPage) {
@@ -1567,7 +1627,10 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
     setSavedListingImages([]);
     setListingAddons([]);
     setEditingItem(null);
-  }, [isListingFormPage, listingAddons]);
+    // Run only when entering or leaving the listing routes; form changes must not
+    // retrigger this cleanup and reset the editor.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isListingFormPage]);
 
   function closeAddListing() {
     revokeAddonPreviews(listingAddons);
@@ -1581,7 +1644,8 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
     setEditingItem(null);
     setListingForm(buildListingForm(profile));
     setCategorySearch('');
-    clearListingDraft();
+    setCategoryPickerOpen(false);
+    clearListingDraft(listingDraftOwnerId);
     if (isListingFormPage) {
       navigate('/user/rental-items');
     }
@@ -1753,7 +1817,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
         throw new Error(
           activeDamageHold
             ? 'You cannot list items while an admin-approved damage hold is active. Settle the damage claim first.'
-            : 'Complete your profile details and secure approved identity verification before creating a listing.'
+            : 'Complete your profile details and confirm that your account is linked to the official NUB student registry before creating a listing.'
         );
       }
 
@@ -1765,6 +1829,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
       const title = sanitizeText(listingForm.title);
       const description = sanitizeText(listingForm.description);
       const categoryId = sanitizeText(listingForm.category_id);
+      const subcategoryId = sanitizeText(listingForm.subcategory_id);
       const itemCondition = normalizeItemCondition(sanitizeText(listingForm.item_condition));
       const pickupBarangay = sanitizeText(listingForm.pickup_barangay);
       const pickupCity = sanitizeText(listingForm.pickup_city);
@@ -1786,6 +1851,32 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
       const selectedMainCategory = activeMainCategories.find((category) => category.id === categoryId);
       if (!selectedMainCategory) {
         throw new Error('Please select a valid main category.');
+      }
+      const selectedSubcategory = (activeSubcategoriesByParentId.get(categoryId) || [])
+        .find((subcategory) => subcategory.id === subcategoryId);
+      if (!selectedSubcategory) {
+        throw new Error('Select one valid subcategory under the chosen parent category.');
+      }
+
+      const appliesToAllPrograms = Boolean(listingForm.applies_to_all_programs);
+      const validProgramCodes = new Set(NUB_PROGRAMS.map((program) => program.code));
+      const applicableProgramCodes = Array.from(new Set((listingForm.applicable_program_codes || []).filter(Boolean)));
+      const targetSchoolCode = sanitizeText(listingForm.target_school_code) || 'all';
+      if (applicableProgramCodes.some((programCode) => !validProgramCodes.has(programCode))) {
+        throw new Error('One or more selected applicable programs are not official NU Baliwag undergraduate programs.');
+      }
+      if (targetSchoolCode !== 'all') {
+        const targetSchool = NUB_SCHOOLS.find((school) => school.code === targetSchoolCode);
+        const targetSchoolProgramCodes = new Set(getNubProgramsForSchool(targetSchoolCode).map((program) => program.code));
+        if (!targetSchool) {
+          throw new Error('Select a valid NU Baliwag target school.');
+        }
+        if (applicableProgramCodes.some((programCode) => !targetSchoolProgramCodes.has(programCode))) {
+          throw new Error(`Every selected course must belong to ${targetSchool.code}.`);
+        }
+      }
+      if (!appliesToAllPrograms && !applicableProgramCodes.length) {
+        throw new Error('Select at least one applicable NU Baliwag program or choose all programs.');
       }
 
       if (!itemCondition) {
@@ -1817,12 +1908,6 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
         listingForm.pickup_latitude,
         listingForm.pickup_longitude
       );
-      validateBaliwagLocation({
-        city: listingForm.pickup_city,
-        province: listingForm.pickup_province,
-        region: listingForm.pickup_region,
-      });
-
       if (maxRentalDays !== null && maxRentalDays < minRentalDays) {
         throw new Error('Maximum rental days must be greater than or equal to minimum rental days.');
       }
@@ -1830,13 +1915,6 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
       if (isForSale && !saleInclusions) {
         throw new Error('Sale inclusions are required when the item is available for purchase.');
       }
-      const selectedSubcategoryIds = Array.from(new Set((listingForm.subcategory_ids || []).filter(Boolean)));
-      const allowedSubcategoryIds = new Set((activeSubcategoriesByParentId.get(categoryId) || []).map((subcategory) => subcategory.id));
-
-      if (selectedSubcategoryIds.some((subcategoryId) => !allowedSubcategoryIds.has(subcategoryId))) {
-        throw new Error('Selected subcategories must belong to the selected main category.');
-      }
-
       const preparedAddons = listingAddons.reduce((accumulator, addon, index) => {
         const addonName = sanitizeText(addon.addon_name);
         const addonDescription = sanitizeText(addon.description);
@@ -1873,6 +1951,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
       }, []);
 
       const insertPayload = {
+        applies_to_all_programs: appliesToAllPrograms,
         category_id: categoryId,
         description,
         estimated_value: estimatedValue,
@@ -1899,6 +1978,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
         sale_price: salePrice,
         security_deposit: securityDeposit,
         status: 'draft',
+        subcategory_id: subcategoryId,
         title,
       };
 
@@ -1929,14 +2009,25 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
         throw new Error(`Product saved, but existing subcategories could not be refreshed: ${deleteSubcategoriesError.message}`);
       }
 
-      if (selectedSubcategoryIds.length) {
-        const subcategoryRows = selectedSubcategoryIds.map((subcategoryId) => ({
-          item_id: currentItemId,
-          subcategory_id: subcategoryId,
-        }));
-        const { error: insertSubcategoriesError } = await supabase.from('item_subcategories').insert(subcategoryRows);
-        if (insertSubcategoriesError) {
-          throw new Error(`Product saved, but subcategories failed to save: ${insertSubcategoriesError.message}`);
+      const { error: insertSubcategoriesError } = await supabase.from('item_subcategories').insert([{
+        item_id: currentItemId,
+        subcategory_id: subcategoryId,
+      }]);
+      if (insertSubcategoriesError) {
+        throw new Error(`Product saved, but its subcategory failed to save: ${insertSubcategoriesError.message}`);
+      }
+
+      const { error: deleteProgramsError } = await supabase.from('item_programs').delete().eq('item_id', currentItemId);
+      if (deleteProgramsError) {
+        throw new Error(`Product saved, but its existing program scope could not be refreshed: ${deleteProgramsError.message}`);
+      }
+
+      if (!appliesToAllPrograms) {
+        const { error: insertProgramsError } = await supabase.from('item_programs').insert(
+          applicableProgramCodes.map((programCode) => ({ item_id: currentItemId, program_code: programCode }))
+        );
+        if (insertProgramsError) {
+          throw new Error(`Product saved, but its applicable programs failed to save: ${insertProgramsError.message}`);
         }
       }
 
@@ -2007,7 +2098,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
       }
 
       setMessage(followUpMessage);
-      clearListingDraft();
+      clearListingDraft(listingDraftOwnerId);
       closeAddListing();
       await loadListings(false);
     } catch (saveError) {
@@ -3666,6 +3757,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
 
       const { error: reviewInsertError } = await supabase.from('reviews').insert({
         booking_id: reviewBooking.id,
+        item_id: reviewBooking.item_id,
         rating,
         review_text: sanitizeText(reviewForm.review_text) || null,
         reviewee_id: revieweeId,
@@ -4988,66 +5080,9 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
           <div className="listing-form-section" style={{ gridColumn: '1 / -1' }}>
             <div className="listing-form-section-title">Product Info</div>
             <div className="listing-product-info-layout">
-              <div className="listing-product-info-left">
-                <FormField label="Product title" required>
-                  <Input name="title" onChange={handleFormChange} value={listingForm.title} />
-                </FormField>
-
-                <FormField label="Category / classification" required>
-                  <input
-                    aria-label="Search categories"
-                    onChange={(event) => setCategorySearch(event.target.value)}
-                    placeholder="Search categories"
-                    style={{
-                      border: `1px solid ${alpha(theme.colors.ink, 0.1)}`,
-                      borderRadius: 12,
-                      color: theme.colors.ink,
-                      font: 'inherit',
-                      marginBottom: 8,
-                      minHeight: 42,
-                      padding: '0 12px',
-                      width: '100%',
-                    }}
-                    type="search"
-                    value={categorySearch}
-                  />
-                  <select name="category_id" onChange={handleFormChange} style={selectStyle} value={listingForm.category_id}>
-                    <option value="">Select a main category</option>
-                    {activeMainCategories
-                      .filter((category) => category.name.toLowerCase().includes(categorySearch.trim().toLowerCase()))
-                      .map((category) => (
-                      <option key={category.id} value={category.id}>
-                        {category.name}
-                      </option>
-                    ))}
-                  </select>
-                </FormField>
-
-                <FormField
-                  hint={listingForm.category_id ? 'Choose one or more subcategories under the selected main category.' : 'Select a main category first.'}
-                  label="Subcategories (optional)"
-                >
-                  {availableSubcategories.length ? (
-                    <div className="listing-choice-box" style={{ border: `1px solid ${alpha(theme.colors.ink, 0.1)}`, borderRadius: 16, display: 'grid', gap: 8, maxHeight: 180, overflowY: 'auto', padding: 12 }}>
-                      {availableSubcategories.map((subcategory) => {
-                        const isChecked = (listingForm.subcategory_ids || []).includes(subcategory.id);
-                        return (
-                          <label key={subcategory.id} style={{ alignItems: 'center', color: theme.colors.ink, display: 'flex', gap: 8 }}>
-                            <input
-                              checked={isChecked}
-                              onChange={(event) => handleSubcategoryToggle(subcategory.id, event.target.checked)}
-                              type="checkbox"
-                            />
-                            <span>{subcategory.name}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="listing-choice-box" style={{ border: `1px solid ${alpha(theme.colors.ink, 0.1)}`, borderRadius: 16, color: theme.colors.slate, fontSize: 14, minHeight: 52, padding: '14px 16px' }}>
-                      {listingForm.category_id ? 'No active subcategories under this main category.' : 'No main category selected yet.'}
-                    </div>
-                  )}
+              <div className="listing-product-info-core">
+                <FormField hint="Name the actual item, template, component, model, or customizable prototype being listed." label="Actual item listing" required>
+                  <Input name="title" onChange={handleFormChange} required value={listingForm.title} />
                 </FormField>
 
                 <FormField hint="Choose one of the valid item conditions from your database enum." label="Item condition" required>
@@ -5062,11 +5097,176 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                 </FormField>
               </div>
 
-              <div className="listing-product-info-right">
-                <FormField label="Product details" required>
+              <div className="listing-product-info-details">
+                <FormField hint="Describe the item, its features, included parts, and anything borrowers should know." label="Product details" required>
                   <Textarea name="description" onChange={handleFormChange} value={listingForm.description} />
                 </FormField>
               </div>
+
+              <div className="listing-product-classification-grid">
+                <div className="listing-main-category-column">
+                  <FormField label="Main category" required>
+                    <div className="listing-category-picker" ref={categoryPickerRef}>
+                      <button
+                        aria-expanded={categoryPickerOpen}
+                        aria-haspopup="listbox"
+                        className="listing-category-trigger"
+                        onClick={() => setCategoryPickerOpen((current) => !current)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Escape') {
+                            setCategoryPickerOpen(false);
+                            setCategorySearch('');
+                          }
+                        }}
+                        type="button"
+                      >
+                        <span>{selectedListingMainCategory?.name || 'Select a main category'}</span>
+                        <span aria-hidden="true" className="listing-category-trigger-chevron">⌄</span>
+                      </button>
+
+                      {categoryPickerOpen ? (
+                        <div className="listing-category-menu">
+                          <input
+                            aria-label="Search main categories"
+                            autoFocus
+                            className="listing-category-search"
+                            onChange={(event) => setCategorySearch(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Escape') {
+                                setCategoryPickerOpen(false);
+                                setCategorySearch('');
+                              }
+                            }}
+                            placeholder="Search categories"
+                            type="search"
+                            value={categorySearch}
+                          />
+                          <div className="listing-category-options" id="listing-main-category-options" role="listbox">
+                            {activeMainCategories
+                              .filter((category) => category.name.toLowerCase().includes(categorySearch.trim().toLowerCase()))
+                              .map((category) => (
+                                <button
+                                  aria-selected={listingForm.category_id === category.id}
+                                  className={listingForm.category_id === category.id ? 'is-selected' : ''}
+                                  key={category.id}
+                                  onClick={() => handleMainCategorySelection(category.id)}
+                                  role="option"
+                                  type="button"
+                                >
+                                  <span>{category.name}</span>
+                                  {listingForm.category_id === category.id ? <span aria-hidden="true">✓</span> : null}
+                                </button>
+                              ))}
+                            {!activeMainCategories.some((category) => category.name.toLowerCase().includes(categorySearch.trim().toLowerCase())) ? (
+                              <p className="listing-category-empty">No main categories match your search.</p>
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  </FormField>
+
+                </div>
+
+                <FormField
+                  hint={listingForm.category_id ? 'Choose the single subcategory that best describes the actual listing.' : 'Select a parent category first.'}
+                  label="Subcategory"
+                  required
+                >
+                  <select disabled={!listingForm.category_id} name="subcategory_id" onChange={handleFormChange} required style={selectStyle} value={listingForm.subcategory_id}>
+                    <option value="">{listingForm.category_id ? 'Select a subcategory' : 'Select a parent category first'}</option>
+                    {availableSubcategories.map((subcategory) => (
+                      <option key={subcategory.id} value={subcategory.id}>{subcategory.name}</option>
+                    ))}
+                  </select>
+                </FormField>
+              </div>
+
+              {isAcademicProjectCategory(selectedListingMainCategory?.name) ? (
+                <StatusMessage tone="warning">
+                  Academic-project listings must be templates, components, references, models, or customizable prototypes. Ready-to-submit graded work is not allowed.
+                </StatusMessage>
+              ) : null}
+
+              <div className="listing-academic-targeting-grid">
+                <FormField
+                  hint="Choose the NU Baliwag school whose courses should see this listing. Course choices are linked automatically to the selected school."
+                  label="Target school"
+                  required
+                >
+                  <div className="listing-choice-box listing-school-choice-box">
+                    <label className="listing-target-choice">
+                      <input
+                        checked={listingForm.target_school_code === 'all'}
+                        name="target_school_code"
+                        onChange={handleTargetSchoolChange}
+                        type="radio"
+                        value="all"
+                      />
+                      <span><strong>All schools</strong><small>Show every official undergraduate course</small></span>
+                    </label>
+                    {NUB_SCHOOLS.map((school) => (
+                      <label className="listing-target-choice" key={school.code}>
+                        <input
+                          checked={listingForm.target_school_code === school.code}
+                          name="target_school_code"
+                          onChange={handleTargetSchoolChange}
+                          type="radio"
+                          value={school.code}
+                        />
+                        <span><strong>{school.code}</strong><small>{school.name}</small></span>
+                      </label>
+                    ))}
+                  </div>
+                </FormField>
+
+                <FormField
+                  hint={selectedTargetSchool
+                    ? `Only ${selectedTargetSchool.code} courses are shown because every course is linked to its official school.`
+                    : 'Choose all programs or select one or more official courses across NU Baliwag.'}
+                  label="Applicable courses"
+                  required
+                >
+                  <div className="listing-choice-box listing-program-choice-box">
+                    {listingForm.target_school_code === 'all' ? (
+                      <label className="listing-target-choice listing-target-choice-all">
+                        <input checked={listingForm.applies_to_all_programs} onChange={handleAllProgramsChange} type="checkbox" />
+                        <span><strong>Applicable to all NU Baliwag programs</strong><small>Students from every school and course can find this listing</small></span>
+                      </label>
+                    ) : (
+                      <label className="listing-target-choice listing-target-choice-all">
+                        <input
+                          checked={targetSchoolPrograms.every((program) => (listingForm.applicable_program_codes || []).includes(program.code))}
+                          onChange={handleAllTargetSchoolProgramsChange}
+                          type="checkbox"
+                        />
+                        <span><strong>Select all {selectedTargetSchool?.code} courses</strong><small>Target the entire {selectedTargetSchool?.name}</small></span>
+                      </label>
+                    )}
+                    {!listingForm.applies_to_all_programs ? targetSchoolPrograms.map((program) => (
+                      <label className="listing-target-choice" key={program.code}>
+                        <input
+                          checked={(listingForm.applicable_program_codes || []).includes(program.code)}
+                          onChange={() => handleApplicableProgramToggle(program.code)}
+                          type="checkbox"
+                        />
+                        <span><strong>{program.displayCode}</strong><small>{program.name}</small></span>
+                      </label>
+                    )) : null}
+                  </div>
+                </FormField>
+              </div>
+
+              {selectedListingSubcategory ? (
+                <div className="listing-classification-summary">
+                  <span>Classification</span>
+                  <strong>{selectedListingMainCategory?.name}</strong>
+                  <i aria-hidden="true">→</i>
+                  <strong>{selectedListingSubcategory.name}</strong>
+                  <i aria-hidden="true">→</i>
+                  <strong>{listingForm.title || 'Actual item listing'}</strong>
+                </div>
+              ) : null}
             </div>
           </div>
 
@@ -5339,7 +5539,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
 
           <div className="listing-form-section" style={{ gridColumn: '1 / -1' }}>
             <div className="listing-form-section-title">Pickup Location</div>
-            <div className="listing-form-section-grid listing-form-section-grid-3" style={{ marginBottom: 20 }}>
+            <div className="listing-form-section-grid" style={{ marginBottom: 20 }}>
               <FormField hint="Borrowers can claim the item at this time on their selected check-in date." label="Daily pickup time" required>
                 <Input name="pickup_time" onChange={handleFormChange} required type="time" value={listingForm.pickup_time} />
               </FormField>
@@ -5384,14 +5584,14 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
           <div className="listing-form-section" style={{ gridColumn: '1 / -1' }}>
             <div className="listing-form-section-title">Additional Details</div>
             <FormField label="Meetup notes">
-              <Textarea name="meetup_notes" onChange={handleFormChange} value={listingForm.meetup_notes} />
+              <Textarea className="listing-meetup-notes" name="meetup_notes" onChange={handleFormChange} style={{ minHeight: 96 }} value={listingForm.meetup_notes} />
             </FormField>
             <div style={{ gridColumn: '1 / -1', display: 'grid', gap: 14 }}>
             <div style={{ alignItems: 'center', display: 'flex', justifyContent: 'space-between', gap: 12 }}>
               <div style={{ display: 'grid', gap: 4 }}>
                 <strong style={{ color: theme.colors.ink, fontSize: 15 }}>Optional add-ons</strong>
                 <span style={{ color: theme.colors.slate, fontSize: 13, lineHeight: 1.55 }}>
-                  Add extra services or accessories such as equipment sets, delivery, cleaning, or consumables with their own rental pricing.
+                  Add optional reusable accessories or services such as equipment sets, delivery, or cleaning with their own rental pricing.
                 </span>
               </div>
               <Button onClick={addAddonRow} type="button" variant="secondary">

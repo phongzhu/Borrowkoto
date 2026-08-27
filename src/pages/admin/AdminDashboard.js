@@ -30,7 +30,6 @@ const EMPTY_ANALYTICS = {
     activeUsers: 0,
     bookings: 0,
     damageClaims: 0,
-    identityVerifications: 0,
     items: 0,
     profiles: 0,
     purchaseRequests: 0,
@@ -40,8 +39,8 @@ const EMPTY_ANALYTICS = {
   },
   damageClaims: [],
   errors: [],
-  identityVerifications: [],
   items: [],
+  profiles: [],
   purchaseRequests: [],
   reports: [],
   reviews: [],
@@ -156,18 +155,6 @@ function buildRecentActivity(analytics) {
       label: 'Damage Claim',
       status: claim.status,
       type: 'damage',
-    });
-  });
-
-  analytics.identityVerifications.forEach((verification) => {
-    activity.push({
-      amount: '-',
-      date: verification.reviewed_at || verification.submitted_at,
-      detail: verification.id_type || 'Identity document',
-      id: verification.user_id || verification.id,
-      label: 'ID Check',
-      status: verification.status,
-      type: 'trust',
     });
   });
 
@@ -334,10 +321,9 @@ export default function AdminDashboard() {
     async function fetchAnalytics() {
       setLoading(true);
 
-      const [profileRows, activeUsersCount, identityRows, itemRows, categoryRows, bookingRows, transactionRows, reportRows, damageRows, restrictionRows, reviewRows, purchaseRows] = await Promise.all([
-        runQuery('profiles', supabase.from('profiles').select('id, role, account_status, created_at').order('created_at', { ascending: false }).limit(500)),
+      const [profileRows, activeUsersCount, itemRows, categoryRows, bookingRows, transactionRows, reportRows, damageRows, restrictionRows, reviewRows, purchaseRows] = await Promise.all([
+        runQuery('profiles', supabase.from('profiles').select('id, role, account_status, nub_registry_managed, is_profile_complete, created_at').order('created_at', { ascending: false }).limit(500)),
         runCount('active profiles', supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('account_status', 'active')),
-        runQuery('identity_verifications', supabase.from('identity_verifications').select('id, user_id, id_type, status, submitted_at, reviewed_at').order('submitted_at', { ascending: false }).limit(300)),
         runQuery('items', supabase.from('items').select('id, category_id, owner_id, status, is_active, rental_price_per_day, security_deposit, created_at, updated_at').order('created_at', { ascending: false }).limit(500)),
         runQuery('categories', supabase.from('categories').select('id, name, parent_category_id, is_active').order('name', { ascending: true }).limit(300)),
         runQuery('bookings', supabase.from('bookings').select('id, item_id, borrower_id, owner_id, status, total_due, rental_fee_total, security_deposit, requested_start, requested_end, created_at').order('created_at', { ascending: false }).limit(500)),
@@ -368,7 +354,6 @@ export default function AdminDashboard() {
           activeUsers: activeUsersCount.count,
           bookings: bookingRows.data.length,
           damageClaims: damageRows.data.length,
-          identityVerifications: identityRows.data.length,
           items: itemRows.data.length,
           profiles: profileRows.data.length,
           purchaseRequests: purchaseRows.data.length,
@@ -377,9 +362,9 @@ export default function AdminDashboard() {
           transactions: transactionRows.data.length,
         },
         damageClaims: damageRows.data,
-        errors: [profileRows.error, activeUsersCount.error, identityRows.error, itemRows.error, categoryRows.error, bookingRows.error, transactionRows.error, reportRows.error, damageRows.error, restrictionRows.error, reviewRows.error, purchaseRows.error].filter(Boolean),
-        identityVerifications: identityRows.data,
+        errors: [profileRows.error, activeUsersCount.error, itemRows.error, categoryRows.error, bookingRows.error, transactionRows.error, reportRows.error, damageRows.error, restrictionRows.error, reviewRows.error, purchaseRows.error].filter(Boolean),
         items: itemRows.data,
+        profiles: profileRows.data,
         purchaseRequests: purchaseRows.data,
         reports: reportRows.data,
         reviews: reviewRows.data,
@@ -398,7 +383,6 @@ export default function AdminDashboard() {
     const last30Start = startOfLastNDays(30);
     const bookingStatuses = countByStatus(analytics.bookings);
     const itemStatuses = countByStatus(analytics.items);
-    const verificationStatuses = countByStatus(analytics.identityVerifications);
     const damageStatuses = countByStatus(analytics.damageClaims);
     const paidTransactions = analytics.transactions.filter((transaction) => ['paid', 'recorded', 'completed', 'success'].includes(normalizeStatus(transaction.status)));
     const pendingTransactions = analytics.transactions.filter((transaction) => ['pending', 'awaiting_payment'].includes(normalizeStatus(transaction.status)));
@@ -415,7 +399,13 @@ export default function AdminDashboard() {
     const pendingPaymentAmount = sumBy(pendingTransactions, (transaction) => transaction.amount);
     const damageExposure = sumBy(awaitingDamagePayment, (claim) => claim.amount_due || claim.admin_approved_amount || claim.claimed_amount);
     const averageRating = analytics.reviews.length ? sumBy(analytics.reviews, (review) => review.rating) / analytics.reviews.length : 0;
-    const verifiedUsers = verificationStatuses.verified || verificationStatuses.approved || 0;
+    const studentProfiles = analytics.profiles.filter((profile) => String(profile.role || '').toLowerCase() !== 'admin');
+    const registryMembers = studentProfiles.filter((profile) => profile.nub_registry_managed);
+    const incompleteProfiles = studentProfiles.filter((profile) => !profile.is_profile_complete);
+    const registryStatuses = {
+      'Registry linked': registryMembers.length,
+      'Legacy or unlinked': Math.max(studentProfiles.length - registryMembers.length, 0),
+    };
 
     return {
       activeRestrictions,
@@ -425,23 +415,25 @@ export default function AdminDashboard() {
       damageExposure,
       damageStatuses,
       itemStatuses,
+      incompleteProfiles,
       last30Bookings,
       last30Revenue,
       openReports,
       pendingBookings,
       pendingDamageClaims,
       pendingPaymentAmount,
+      studentProfiles,
       topCategories: buildTopCategories(analytics.items, analytics.categories),
       totalPotentialRentalValue,
       totalRevenue,
-      verificationRate: analytics.counts.profiles ? verifiedUsers / analytics.counts.profiles : 0,
-      verificationStatuses,
+      registryRate: studentProfiles.length ? registryMembers.length / studentProfiles.length : 0,
+      registryStatuses,
     };
   }, [analytics]);
 
   const recentActivity = useMemo(() => buildRecentActivity(analytics), [analytics]);
   const bookingBreakdown = useMemo(() => Object.entries(summary.bookingStatuses).map(([label, value]) => ({ label: formatLabel(label), value })), [summary.bookingStatuses]);
-  const verificationBreakdown = useMemo(() => Object.entries(summary.verificationStatuses).map(([label, value]) => ({ label: formatLabel(label), value })), [summary.verificationStatuses]);
+  const registryBreakdown = useMemo(() => Object.entries(summary.registryStatuses).map(([label, value]) => ({ label, value })), [summary.registryStatuses]);
   const damageBreakdown = useMemo(() => Object.entries(summary.damageStatuses).map(([label, value]) => ({ label: formatLabel(label), value })), [summary.damageStatuses]);
 
   return (
@@ -455,7 +447,7 @@ export default function AdminDashboard() {
         ) : null}
 
         <div className="admin-mini-grid">
-          <MiniKpiCard accent="blue" detail={`${percentFormatter.format(summary.verificationRate || 0)} Verification Rate`} icon={<UsersIcon size={14} />} label="Members" value={loading ? '...' : analytics.counts.profiles} />
+          <MiniKpiCard accent="blue" detail={`${percentFormatter.format(summary.registryRate || 0)} registry linked`} icon={<UsersIcon size={14} />} label="Students" value={loading ? '...' : summary.studentProfiles.length} />
           <MiniKpiCard accent="blue" detail={`${summary.pendingBookings.length} waiting`} icon={<CalendarIcon size={14} />} label="Bookings" subdetail={`${summary.pendingBookings.length} active`} value={loading ? '...' : analytics.counts.bookings} />
           <MiniKpiCard accent="blue" detail="Last 30 days" icon={<CheckIcon size={14} />} label="Payments" value={loading ? '...' : currencyFormatter.format(summary.last30Revenue)} />
           <MiniKpiCard accent="risk" detail={`${summary.activeRestrictions.length} Active Hold`} icon={<ShieldIcon size={14} />} label="Risk Queue" value={loading ? '...' : summary.pendingDamageClaims.length + summary.openReports.length} />
@@ -470,7 +462,7 @@ export default function AdminDashboard() {
 
           <CompactPanel className="dark" title="Admin Workload">
             <div className="admin-workload-compact">
-              <WorkloadTile label="ID Checks" value={summary.verificationStatuses.pending || 0} />
+              <WorkloadTile label="Profile Setup" value={summary.incompleteProfiles.length} />
               <WorkloadTile label="Reports" value={summary.openReports.length} />
               <WorkloadTile label="Damage Holds" value={summary.activeRestrictions.length} />
               <WorkloadTile label="Reviews" value={analytics.counts.reviews} />
@@ -490,11 +482,11 @@ export default function AdminDashboard() {
         </div>
 
         <div className="admin-dashboard-row mid-panels">
-          <CompactPanel action={<button className="admin-link-button" type="button">Detailed Audit</button>} className="wide" title="Verification & Categories">
+          <CompactPanel action={<button className="admin-link-button" type="button">Detailed Audit</button>} className="wide" title="Student Registry & Categories">
             <div className="admin-dual-breakdown">
               <div>
-                <span className="admin-small-heading">Identity Verification</span>
-                <BreakdownRows color="blue" compact items={verificationBreakdown} />
+                <span className="admin-small-heading">Registry-linked members</span>
+                <BreakdownRows color="blue" compact items={registryBreakdown} />
               </div>
               <div>
                 <span className="admin-small-heading">Top Categories</span>

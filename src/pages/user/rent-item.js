@@ -8,6 +8,7 @@ import { sanitizeText } from '../../ui/profileFormUtils';
 import { createTestCheckoutSession } from '../../services/transaction';
 import { alpha, theme } from '../../ui/theme';
 import { BOOKING_STATUS, RENTABLE_ITEM_STATUSES, TERMINAL_BOOKING_STATUSES } from '../../utils/bookingEnums';
+import { isMarketplaceOwnerActive } from '../../utils/marketplaceVisibility';
 import { useUISettings } from '../../context/UISettingsContext';
 import '../../App.css';
 import './rent-item-datepicker.css';
@@ -18,7 +19,7 @@ const currencyFormatter = new Intl.NumberFormat('en-PH', {
 });
 
 const itemSelectFields =
-  'id, owner_id, category_id, title, rental_price_per_day, security_deposit, min_rental_days, max_rental_days, quantity, pickup_street, pickup_region, pickup_barangay, pickup_city, pickup_province, pickup_country, pickup_time, return_time, meetup_notes, status, is_active';
+  'id, owner_id, category_id, title, rental_price_per_day, security_deposit, min_rental_days, max_rental_days, quantity, pickup_street, pickup_region, pickup_barangay, pickup_city, pickup_province, pickup_country, pickup_latitude, pickup_longitude, pickup_time, return_time, meetup_notes, status, is_active';
 const SLOT_INTERVAL_MINUTES = 30;
 const COMMISSION_RATE = 0.15;
 
@@ -74,6 +75,18 @@ function calculateRentalDays(startIso, endIso) {
 function matchesListingTime(date, timeValue, fallbackTime) {
   const [hours, minutes] = String(timeValue || fallbackTime).slice(0, 5).split(':').map(Number);
   return date.getHours() === hours && date.getMinutes() === minutes;
+}
+
+function normalizeListingTime(value, fallbackTime) {
+  const normalized = String(value || fallbackTime).trim().slice(0, 5);
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(normalized) ? normalized : fallbackTime;
+}
+
+function applyListingTime(date, timeValue, fallbackTime) {
+  const next = new Date(date);
+  const [hours, minutes] = normalizeListingTime(timeValue, fallbackTime).split(':').map(Number);
+  next.setHours(hours, minutes, 0, 0);
+  return next;
 }
 
 function isRentableStatus(status) {
@@ -227,7 +240,6 @@ export default function RentItem() {
   const { settings } = useUISettings();
   const [userId, setUserId] = useState('');
   const [currentUserProfile, setCurrentUserProfile] = useState(null);
-  const [headerBarangay, setHeaderBarangay] = useState('all');
   const [headerSearch, setHeaderSearch] = useState('');
   const [item, setItem] = useState(null);
   const [itemImages, setItemImages] = useState([]);
@@ -297,7 +309,7 @@ export default function RentItem() {
         userHasActiveDamageHold(user.id),
         supabase
           .from('profiles')
-          .select('id, first_name, last_name, username, profile_photo_url')
+          .select('id, first_name, last_name, username, profile_photo_url, is_profile_complete, nub_registry_managed')
           .eq('id', user.id)
           .maybeSingle(),
         supabase
@@ -342,8 +354,25 @@ export default function RentItem() {
         setMessageTone('warning');
       }
 
+      if (profileResult.error) {
+        setMessage(`Unable to load your profile: ${profileResult.error.message}`);
+        setMessageTone('warning');
+      }
+
       const addonRows = addonsResult.data || [];
       const nextItem = itemResult.data;
+      const ownerProfileResult = await supabase
+        .from('profiles')
+        .select('id, account_status')
+        .eq('id', nextItem.owner_id)
+        .maybeSingle();
+      if (!mounted) return;
+      if (ownerProfileResult.error || !isMarketplaceOwnerActive(ownerProfileResult.data)) {
+        setMessage('This listing is currently unavailable.');
+        setMessageTone('warning');
+        setLoading(false);
+        return;
+      }
       setCurrentUserProfile(profileResult.data || null);
       setAvailableVouchers(vouchersResult.data || []);
       setActiveDamageHold(Boolean(damageHoldResult));
@@ -422,23 +451,33 @@ export default function RentItem() {
       const queryCheckOut = query.get('check_out');
       const queryStartDate = parseLocalDateTimeValue(queryCheckIn);
       const queryEndDate = parseLocalDateTimeValue(queryCheckOut);
-      const hasUsableQueryRange = queryStartDate && queryEndDate && queryEndDate > queryStartDate;
+      const listingPickupTime = normalizeListingTime(nextItem.pickup_time, '09:00');
+      const listingReturnTime = normalizeListingTime(nextItem.return_time, '18:00');
+      const normalizedQueryStartDate = queryStartDate ? applyListingTime(queryStartDate, listingPickupTime, '09:00') : null;
+      const normalizedQueryEndDate = queryEndDate ? applyListingTime(queryEndDate, listingReturnTime, '18:00') : null;
+      const hasUsableQueryRange = normalizedQueryStartDate && normalizedQueryEndDate && normalizedQueryEndDate > normalizedQueryStartDate;
       const storedStartDate = storedRentalItemId === itemId ? parseLocalDateTimeValue(storedCheckIn) : null;
       const storedEndDate = storedRentalItemId === itemId ? parseLocalDateTimeValue(storedCheckOut) : null;
+      const normalizedStoredStartDate = storedStartDate ? applyListingTime(storedStartDate, listingPickupTime, '09:00') : null;
+      const normalizedStoredEndDate = storedEndDate ? applyListingTime(storedEndDate, listingReturnTime, '18:00') : null;
       const hasUsableStoredRange =
-        storedStartDate &&
-        storedEndDate &&
-        storedEndDate > storedStartDate &&
-        storedStartDate >= addMinutes(new Date(), -SLOT_INTERVAL_MINUTES);
+        normalizedStoredStartDate &&
+        normalizedStoredEndDate &&
+        normalizedStoredEndDate > normalizedStoredStartDate &&
+        normalizedStoredStartDate >= addMinutes(new Date(), -SLOT_INTERVAL_MINUTES);
 
       setForm((current) => ({
         ...current,
         requested_start: hasUsableQueryRange
-          ? formatDateTimeLocalValue(queryStartDate)
-          : current.requested_start || (hasUsableStoredRange ? formatDateTimeLocalValue(storedStartDate) : ''),
+          ? formatDateTimeLocalValue(normalizedQueryStartDate)
+          : hasUsableStoredRange
+            ? formatDateTimeLocalValue(normalizedStoredStartDate)
+            : '',
         requested_end: hasUsableQueryRange
-          ? formatDateTimeLocalValue(queryEndDate)
-          : current.requested_end || (hasUsableStoredRange ? formatDateTimeLocalValue(storedEndDate) : ''),
+          ? formatDateTimeLocalValue(normalizedQueryEndDate)
+          : hasUsableStoredRange
+            ? formatDateTimeLocalValue(normalizedStoredEndDate)
+            : '',
       }));
       setLoading(false);
     }
@@ -633,6 +672,12 @@ export default function RentItem() {
       issues.push('Sign in first.');
     }
 
+    if (!currentUserProfile?.nub_registry_managed) {
+      issues.push('Your account must be linked to the official NUB student registry before renting.');
+    } else if (!currentUserProfile?.is_profile_complete) {
+      issues.push('Complete your contact information and address before renting.');
+    }
+
     if (activeDamageHold) {
       issues.push('Your account has an active admin-approved damage hold. Settle the damage claim before renting another item.');
     }
@@ -682,7 +727,7 @@ export default function RentItem() {
     }
 
     return issues;
-  }, [activeDamageHold, item, primaryRequestedQuantity, userId]);
+  }, [activeDamageHold, currentUserProfile, item, primaryRequestedQuantity, userId]);
 
   const canSubmit = !loading && !saving && item && rentIssues.length === 0;
   const requestedStartDate = useMemo(() => parseLocalDateTimeValue(form.requested_start), [form.requested_start]);
@@ -696,7 +741,25 @@ export default function RentItem() {
   }, [availabilityBlocks, requestedEndDate, requestedStartDate]);
 
   const hasValidSchedule = Boolean(requestedStartDate && requestedEndDate && rentalDays >= 1);
-  const canSubmitRequest = canSubmit && hasValidSchedule && !selectedRangeBlocked;
+  const rentalConstraintIssue = useMemo(() => {
+    if (!item || rentalDays < 1) {
+      return '';
+    }
+
+    const minDays = Number(item.min_rental_days || 1);
+    const maxDays = item.max_rental_days === null || item.max_rental_days === undefined ? null : Number(item.max_rental_days);
+
+    if (rentalDays < minDays) {
+      return `This listing requires at least ${minDays} rental day(s).`;
+    }
+
+    if (maxDays !== null && Number.isInteger(maxDays) && rentalDays > maxDays) {
+      return `This listing allows up to ${maxDays} rental day(s).`;
+    }
+
+    return '';
+  }, [item, rentalDays]);
+  const canSubmitRequest = canSubmit && hasValidSchedule && !selectedRangeBlocked && !rentalConstraintIssue;
 
   const bundleIssues = useMemo(() => {
     return selectedBundleItems.reduce((issues, bundleItem) => {
@@ -1312,6 +1375,8 @@ export default function RentItem() {
   }
 
   const pickupLocation = useMemo(() => buildItemLocation(item), [item]);
+  const pickupTime = normalizeListingTime(item?.pickup_time, '09:00');
+  const returnTime = normalizeListingTime(item?.return_time, '18:00');
   const activeBundleModalItem = useMemo(
     () => ownerOtherItems.find((entry) => entry.id === bundleQuantityModal.itemId) || null,
     [bundleQuantityModal.itemId, ownerOtherItems]
@@ -1329,7 +1394,6 @@ export default function RentItem() {
     const searchText = sanitizeText(headerSearch);
 
     if (searchText) query.set('q', searchText);
-    if (headerBarangay !== 'all') query.set('barangay', headerBarangay);
 
     navigate(`/items${query.toString() ? `?${query.toString()}` : ''}`);
   }
@@ -1356,12 +1420,7 @@ export default function RentItem() {
         <section className="landing-toolbar landing-toolbar-top">
           <div className="landing-search-row">
             <div className="landing-controls inline">
-              <select aria-label="Filter by Baliuag barangay" onChange={(event) => setHeaderBarangay(event.target.value)} value={headerBarangay}>
-                <option value="all">All barangays</option>
-                {['Bagong Nayon', 'Barangca', 'Calantipay', 'Catulinan', 'Concepcion', 'Hinukay', 'Makinabang', 'Matangtubig', 'Pagala', 'Paitan', 'Piel', 'Pinagbarilan', 'Poblacion', 'Sabang', 'San Jose', 'San Roque', 'Santa Barbara', 'Santo Cristo', 'Santo Niño', 'Subic', 'Sulivan', 'Tangós', 'Tarcan', 'Tiaong', 'Tibag', 'Tilapayong', 'Virgen delas Flores'].map((barangay) => (
-                  <option key={barangay} value={barangay}>{barangay}</option>
-                ))}
-              </select>
+              <button onClick={() => navigate('/?filters=open')} type="button">Schools &amp; courses</button>
             </div>
             <form className="landing-search" onSubmit={submitHeaderSearch}>
               <svg aria-hidden="true" fill="none" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.4-3.4" /></svg>
@@ -1463,6 +1522,9 @@ export default function RentItem() {
                       />
                     </div>
                   </div>
+                  <p className="rent-summary-schedule-note">
+                    Listing schedule: check-in at <strong>{pickupTime}</strong> · check-out by <strong>{returnTime}</strong>.
+                  </p>
 
                   {/* Pricing Breakdown */}
                   <div className="rent-checkout-total-list">
@@ -1919,6 +1981,8 @@ export default function RentItem() {
                 </StatusMessage>
               ) : null}
 
+              {rentalConstraintIssue ? <StatusMessage tone="warning">{rentalConstraintIssue}</StatusMessage> : null}
+
               {bundleIssues.length ? <StatusMessage tone="warning">{bundleIssues[0]}</StatusMessage> : null}
 
               {availabilityBlocks.length ? (
@@ -1980,6 +2044,10 @@ export default function RentItem() {
                 <span style={{ color: theme.colors.slate, fontSize: 14, lineHeight: 1.6 }}>
                   {pickupLocation || 'No pickup location details are set yet.'}
                 </span>
+                <div className="rent-pickup-schedule" aria-label="Listing pickup schedule">
+                  <span><strong>Daily pickup</strong>{pickupTime}</span>
+                  <span><strong>Return deadline</strong>{returnTime}</span>
+                </div>
               </div>
 
               <div
@@ -2002,7 +2070,7 @@ export default function RentItem() {
                   </span>
                 </div>
                 <FormField hint="Add notes for dates, handling, or meetup preferences.">
-                  <Textarea name="borrower_message" onChange={handleFormChange} placeholder="Hi, I need this for a weekend event and can pick up at your preferred time." value={form.borrower_message} />
+                  <Textarea className="rent-message-input" name="borrower_message" onChange={handleFormChange} placeholder="Hi, I need this for a weekend event and can pick up at your preferred time." value={form.borrower_message} />
                 </FormField>
               </div>
 

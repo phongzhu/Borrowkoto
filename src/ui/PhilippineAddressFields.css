@@ -1,0 +1,37 @@
+.address-map-search-row {
+  align-items: end;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.address-map-search-action {
+  align-items: end;
+  display: flex;
+}
+
+.address-map-search-action button {
+  white-space: nowrap;
+}
+
+@media (max-width: 980px) {
+  .address-map-search-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .address-map-search-action:last-child {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 640px) {
+  .address-map-search-row {
+    grid-template-columns: 1fr;
+  }
+
+  .address-map-search-action,
+  .address-map-search-action button {
+    width: 100%;
+  }
+}

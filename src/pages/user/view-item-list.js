@@ -3,13 +3,16 @@ import { useNavigate, useParams } from 'react-router-dom';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { supabase } from '../../api/supabaseClient';
+import { getNubProgram } from '../../data/nubAcademicData';
 import { createTestCheckoutSession } from '../../services/transaction';
 import { BookmarkIcon, CalendarIcon, MessageIcon, ShieldIcon, StarIcon } from '../../ui/icons';
 import { Button, Modal, StarRating, StatusMessage, Textarea } from '../../ui/primitives';
 import { buildMapEmbedUrl } from '../../ui/profileFormUtils';
 import { alpha } from '../../ui/theme';
 import { RENTABLE_ITEM_STATUSES } from '../../utils/bookingEnums';
+import { filterListingsByActiveOwners, isMarketplaceOwnerActive } from '../../utils/marketplaceVisibility';
 import { useUISettings } from '../../context/UISettingsContext';
+import { useAuth } from '../../context/AuthContext';
 import UserShell from './UserShell';
 import './rent-item-datepicker.css';
 import './view-item-list.css';
@@ -20,10 +23,9 @@ const currencyFormatter = new Intl.NumberFormat('en-PH', {
 });
 
 const itemSelectFields =
-  'id, owner_id, category_id, title, description, item_condition, rental_price_per_day, security_deposit, estimated_value, is_for_sale, sale_price, sale_inclusions, min_rental_days, max_rental_days, quantity, pickup_street, pickup_region, pickup_barangay, pickup_city, pickup_province, pickup_country, pickup_latitude, pickup_longitude, pickup_time, return_time, meetup_notes, status, is_active, created_at, updated_at';
+  'id, owner_id, category_id, subcategory_id, applies_to_all_programs, title, description, item_condition, rental_price_per_day, security_deposit, estimated_value, is_for_sale, sale_price, sale_inclusions, min_rental_days, max_rental_days, quantity, pickup_street, pickup_region, pickup_barangay, pickup_city, pickup_province, pickup_country, pickup_latitude, pickup_longitude, pickup_time, return_time, meetup_notes, status, is_active, created_at, updated_at';
 const BLOCKING_BOOKING_STATUSES = new Set(['pending', 'accepted', 'for_pickup', 'active', 'return_pending', 'overdue', 'disputed']);
 const TAGS_META_PREFIX = '[TAGS]::';
-const BALIUAG_BARANGAYS = ['Adias', 'Bagong Nayon', 'Balon', 'Banag', 'Barihan', 'Calantipay', 'Catulinan', 'Concepcion', 'Hinukay', 'Makinabang', 'Matangtubig', 'Pagala', 'Paitan', 'Piel', 'Pinagbarilan', 'Poblacion', 'Sabang', 'San Jose', 'San Roque', 'Santa Barbara', 'Santo Cristo', 'Santo Nino', 'Subic', 'Sulivan', 'Tangos', 'Tarcan', 'Tiaong', 'Tibag', 'Tilapayong', 'Virgen delas Flores'];
 
 function buildPersonName(profile) {
   return [profile?.first_name, profile?.middle_name, profile?.last_name, profile?.suffix].filter(Boolean).join(' ');
@@ -426,17 +428,20 @@ function BorrowKoToItemLoader() {
 export default function ViewItemList({ publicMode = false }) {
   const navigate = useNavigate();
   const { itemId } = useParams();
+  const { loading: authLoading, user: authUser } = useAuth();
   const { settings } = useUISettings();
+  const authUserId = authUser?.id || null;
   const [item, setItem] = useState(null);
   const [itemAddons, setItemAddons] = useState([]);
   const [ownerOtherItems, setOwnerOtherItems] = useState([]);
   const [sameCategoryItems, setSameCategoryItems] = useState([]);
-  const [ownerReviews, setOwnerReviews] = useState([]);
+  const [productReviews, setProductReviews] = useState([]);
   const [bookedRanges, setBookedRanges] = useState([]);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [imageQuickView, setImageQuickView] = useState({ active: false, xPercent: 50, yPercent: 50 });
   const [imageViewerOpen, setImageViewerOpen] = useState(false);
   const [viewerZoom, setViewerZoom] = useState({ active: false, xPercent: 50, yPercent: 50 });
+  const [pickupMapOpen, setPickupMapOpen] = useState(false);
   const [currentUserId, setCurrentUserId] = useState(null);
   const [currentUserProfile, setCurrentUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -457,7 +462,6 @@ export default function ViewItemList({ publicMode = false }) {
   const [saveRentFeedback, setSaveRentFeedback] = useState('');
   const [saveRentFeedbackTone, setSaveRentFeedbackTone] = useState('info');
   const [headerSearch, setHeaderSearch] = useState('');
-  const [headerBarangay, setHeaderBarangay] = useState('all');
   const [mobileInfoTab, setMobileInfoTab] = useState('details');
   const [buyRequestForm, setBuyRequestForm] = useState({
     buyer_message: '',
@@ -483,6 +487,10 @@ export default function ViewItemList({ publicMode = false }) {
   }, [activeImageIndex, imageViewerOpen]);
 
   useEffect(() => {
+    setPickupMapOpen(false);
+  }, [itemId]);
+
+  useEffect(() => {
     if (!imageViewerOpen) return undefined;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -498,6 +506,8 @@ export default function ViewItemList({ publicMode = false }) {
     };
   }, [imageViewerOpen, viewerImageCount]);
   useEffect(() => {
+    if (authLoading) return undefined;
+
     let mounted = true;
 
     async function loadItem() {
@@ -505,20 +515,17 @@ export default function ViewItemList({ publicMode = false }) {
       setError('');
       setChatFeedback('');
 
-      const [{ data: authData }, itemResult] = await Promise.all([
-        supabase.auth.getUser(),
-        supabase
-          .from('items')
-          .select(itemSelectFields)
-          .eq('id', itemId)
-          .maybeSingle(),
-      ]);
+      const itemResult = await supabase
+        .from('items')
+        .select(itemSelectFields)
+        .eq('id', itemId)
+        .maybeSingle();
 
       if (!mounted) {
         return;
       }
 
-      setCurrentUserId(authData?.user?.id || null);
+      setCurrentUserId(authUserId);
 
       if (itemResult.error) {
         setError(`Unable to load this item: ${itemResult.error.message}`);
@@ -534,18 +541,17 @@ export default function ViewItemList({ publicMode = false }) {
         return;
       }
 
-      const currentUserId = authData?.user?.id || null;
-      if (currentUserId) {
+      if (authUserId) {
         const { data: viewerProfile } = await supabase
           .from('profiles')
           .select('id, first_name, last_name, username, profile_photo_url')
-          .eq('id', currentUserId)
+          .eq('id', authUserId)
           .maybeSingle();
         if (mounted) setCurrentUserProfile(viewerProfile || null);
       } else {
         setCurrentUserProfile(null);
       }
-      if (currentUserId) {
+      if (authUserId) {
         const { error: recordViewError } = await supabase.rpc('record_item_view', {
           p_item_id: itemRow.id,
         });
@@ -555,13 +561,17 @@ export default function ViewItemList({ publicMode = false }) {
         }
       }
 
-      const [categoryResult, ownerResult, imagesResult, addonsResult, reviewsResult, ownerOtherItemsResult, sameCategoryItemsResult, bookingsResult, savedRentItemResult] =
+      const [categoryResult, subcategoryResult, itemProgramsResult, ownerResult, imagesResult, addonsResult, reviewsResult, ownerOtherItemsResult, sameCategoryItemsResult, bookingsResult, savedRentItemResult] =
         await Promise.all([
         supabase.from('categories').select('id, name').eq('id', itemRow.category_id).maybeSingle(),
+        itemRow.subcategory_id
+          ? supabase.from('categories').select('id, name, parent_category_id').eq('id', itemRow.subcategory_id).maybeSingle()
+          : Promise.resolve({ data: null, error: null }),
+        supabase.from('item_programs').select('program_code').eq('item_id', itemRow.id),
         supabase
           .from('profiles')
           .select(
-            'id, first_name, middle_name, last_name, suffix, username, phone_number, profile_photo_url, street, region, barangay, city, province, country, average_rating, total_reviews, is_verified, verification_status, created_at'
+            'id, first_name, middle_name, last_name, suffix, username, phone_number, profile_photo_url, street, region, barangay, city, province, country, average_rating, total_reviews, is_verified, verification_status, nub_registry_managed, account_status, created_at'
           )
           .eq('id', itemRow.owner_id)
           .maybeSingle(),
@@ -578,8 +588,11 @@ export default function ViewItemList({ publicMode = false }) {
           .order('sort_order', { ascending: true }),
         supabase
           .from('reviews')
-          .select('id, booking_id, reviewer_id, reviewer_role, rating, review_text, created_at')
+          .select('id, booking_id, item_id, reviewer_id, reviewer_role, rating, review_text, created_at')
+          .eq('item_id', itemRow.id)
           .eq('reviewee_id', itemRow.owner_id)
+          .eq('reviewer_role', 'borrower')
+          .neq('reviewer_id', itemRow.owner_id)
           .order('created_at', { ascending: false })
           .limit(20),
         supabase
@@ -604,11 +617,11 @@ export default function ViewItemList({ publicMode = false }) {
           .select('id, requested_start, requested_end, approved_start, approved_end, status')
           .eq('item_id', itemRow.id)
           .in('status', Array.from(BLOCKING_BOOKING_STATUSES)),
-        currentUserId
+        authUserId
           ? supabase
               .from('saved_rent_items')
               .select('id, desired_quantity, note, created_at, updated_at')
-              .eq('user_id', currentUserId)
+              .eq('user_id', authUserId)
               .eq('item_id', itemRow.id)
               .maybeSingle()
           : Promise.resolve({ data: null, error: null }),
@@ -618,12 +631,20 @@ export default function ViewItemList({ publicMode = false }) {
         return;
       }
 
+      if (ownerResult.error || !isMarketplaceOwnerActive(ownerResult.data)) {
+        setItem(null);
+        setError('This listing is currently unavailable.');
+        setLoading(false);
+        return;
+      }
+
       const reviewerIds = Array.from(new Set((reviewsResult.data || []).map((review) => review.reviewer_id).filter(Boolean)));
       const reviewerProfilesResult = reviewerIds.length
         ? await supabase
             .from('profiles')
-            .select('id, first_name, middle_name, last_name, suffix, username, profile_photo_url')
+            .select('id, first_name, middle_name, last_name, suffix, username, profile_photo_url, account_status')
             .in('id', reviewerIds)
+            .eq('account_status', 'active')
         : { data: [], error: null };
 
       if (!mounted) {
@@ -634,6 +655,12 @@ export default function ViewItemList({ publicMode = false }) {
 
       if (categoryResult.error) {
         nextErrors.push(`category: ${categoryResult.error.message}`);
+      }
+      if (subcategoryResult.error) {
+        nextErrors.push(`subcategory: ${subcategoryResult.error.message}`);
+      }
+      if (itemProgramsResult.error) {
+        nextErrors.push(`item programs: ${itemProgramsResult.error.message}`);
       }
 
       if (ownerResult.error) {
@@ -688,7 +715,7 @@ export default function ViewItemList({ publicMode = false }) {
           ? supabase
               .from('profiles')
               .select(
-                'id, first_name, middle_name, last_name, suffix, username, phone_number, profile_photo_url, street, region, barangay, city, province, country, average_rating, total_reviews, is_verified, verification_status, created_at'
+                'id, first_name, middle_name, last_name, suffix, username, phone_number, profile_photo_url, street, region, barangay, city, province, country, average_rating, total_reviews, is_verified, verification_status, nub_registry_managed, account_status, created_at'
               )
               .in('id', relatedOwnerIds)
           : Promise.resolve({ data: [], error: null }),
@@ -722,6 +749,8 @@ export default function ViewItemList({ publicMode = false }) {
       const promotedRelatedItemIds = new Set((relatedPromotionsResult.data || []).map((row) => row.item_id));
 
       const relatedOwnerMap = new Map((relatedOwnersResult.data || []).map((profile) => [profile.id, profile]));
+      const visibleOwnerOtherItems = filterListingsByActiveOwners(rawOwnerOtherItems, relatedOwnersResult.data || []);
+      const visibleSameCategoryItems = filterListingsByActiveOwners(rawSameCategoryItems, relatedOwnersResult.data || []);
       const relatedImagesByItemId = new Map();
 
       (relatedImagesResult.data || []).forEach((image) => {
@@ -734,6 +763,8 @@ export default function ViewItemList({ publicMode = false }) {
       const nextItem = {
         ...itemRow,
         category: categoryResult.data || null,
+        programCodes: (itemProgramsResult.data || []).map((row) => row.program_code),
+        subcategory: subcategoryResult.data || null,
         meetup_notes: parsedMeetupMeta.notes,
         search_tags: parsedMeetupMeta.tags,
         owner: ownerResult.data || null,
@@ -741,10 +772,12 @@ export default function ViewItemList({ publicMode = false }) {
         primaryImage: images[0] || null,
       };
 
-      const nextReviews = (reviewsResult.data || []).map((review) => ({
-        ...review,
-        reviewer: reviewerMap.get(review.reviewer_id) || null,
-      }));
+      const nextReviews = (reviewsResult.data || [])
+        .filter((review) => reviewerMap.has(review.reviewer_id) && review.reviewer_id !== itemRow.owner_id)
+        .map((review) => ({
+          ...review,
+          reviewer: reviewerMap.get(review.reviewer_id),
+        }));
       const nextBookedRanges = (bookingsResult.data || [])
         .map((booking) => buildBookedRange(booking))
         .filter(Boolean)
@@ -767,9 +800,9 @@ export default function ViewItemList({ publicMode = false }) {
 
       setItem(nextItem);
       setItemAddons(addonsResult.data || []);
-      setOwnerOtherItems(rawOwnerOtherItems.map(mapRelatedItem));
-      setSameCategoryItems(rawSameCategoryItems.map(mapRelatedItem));
-      setOwnerReviews(nextReviews);
+      setOwnerOtherItems(visibleOwnerOtherItems.map(mapRelatedItem));
+      setSameCategoryItems(visibleSameCategoryItems.map(mapRelatedItem));
+      setProductReviews(nextReviews);
       setBookedRanges(nextBookedRanges);
       setSavedRentItem(savedRentItemResult.data || null);
       setDesiredQuantity(clampDesiredQuantity(savedRentItemResult.data?.desired_quantity || 1, Number(itemRow.quantity) || 1));
@@ -784,7 +817,7 @@ export default function ViewItemList({ publicMode = false }) {
     return () => {
       mounted = false;
     };
-  }, [itemId]);
+  }, [authLoading, authUserId, itemId]);
 
   const ownerName = useMemo(() => buildPersonName(item?.owner) || 'Community member', [item]);
   const brandName = settings.system_name?.trim() || "Borrow Ko 'To";
@@ -815,14 +848,21 @@ export default function ViewItemList({ publicMode = false }) {
   const canProceedToRent = rentEligibility.allowed && hasSelectedSchedule;
   const minRentalDays = useMemo(() => Math.max(1, Number(item?.min_rental_days) || 1), [item?.min_rental_days]);
   const maxRentalDays = useMemo(() => {
-    const rawMax = Number(item?.max_rental_days);
-    if (Number.isFinite(rawMax) && rawMax >= minRentalDays) {
+    if (item?.max_rental_days === null || item?.max_rental_days === undefined || item?.max_rental_days === '') {
+      return null;
+    }
+
+    const rawMax = Number(item.max_rental_days);
+    if (Number.isInteger(rawMax) && rawMax >= minRentalDays) {
       return rawMax;
     }
-    return minRentalDays;
+
+    return null;
   }, [item?.max_rental_days, minRentalDays]);
   const maximumEndValue = useMemo(() => {
-    return selectedStartDate ? formatDateTimeLocalValue(applyListingTime(addDays(selectedStartDate, maxRentalDays), returnTime, '18:00')) : '';
+    return selectedStartDate && maxRentalDays !== null
+      ? formatDateTimeLocalValue(applyListingTime(addDays(selectedStartDate, maxRentalDays), returnTime, '18:00'))
+      : '';
   }, [maxRentalDays, returnTime, selectedStartDate]);
   const blockedDateIntervals = useMemo(
     () => bookedRanges.map((range) => ({ end: range.end, start: range.start })),
@@ -851,9 +891,9 @@ export default function ViewItemList({ publicMode = false }) {
     }
 
     const minimumEnd = applyListingTime(addDays(selectedStartDate, minRentalDays), returnTime, '18:00');
-    const maximumEnd = applyListingTime(addDays(selectedStartDate, maxRentalDays), returnTime, '18:00');
+    const maximumEnd = maxRentalDays === null ? null : applyListingTime(addDays(selectedStartDate, maxRentalDays), returnTime, '18:00');
 
-    if (currentEnd < minimumEnd || currentEnd > maximumEnd || hasOverlap(selectedStartDate, currentEnd, bookedRanges)) {
+    if (currentEnd < minimumEnd || (maximumEnd && currentEnd > maximumEnd) || hasOverlap(selectedStartDate, currentEnd, bookedRanges)) {
       setSelectedEnd(formatDateTimeLocalValue(minimumEnd));
     }
   }, [bookedRanges, maxRentalDays, minRentalDays, returnTime, selectedEnd, selectedStartDate]);
@@ -887,10 +927,10 @@ export default function ViewItemList({ publicMode = false }) {
     }
 
     const nextMinimumEnd = applyListingTime(addDays(effectiveStart, minRentalDays), returnTime, '18:00');
-    const nextMaximumEnd = applyListingTime(addDays(effectiveStart, maxRentalDays), returnTime, '18:00');
+    const nextMaximumEnd = maxRentalDays === null ? null : applyListingTime(addDays(effectiveStart, maxRentalDays), returnTime, '18:00');
     const currentEnd = parseLocalDateTimeValue(selectedEnd);
 
-    if (!currentEnd || currentEnd <= effectiveStart || currentEnd < nextMinimumEnd || currentEnd > nextMaximumEnd || hasOverlap(effectiveStart, currentEnd, bookedRanges)) {
+    if (!currentEnd || currentEnd <= effectiveStart || currentEnd < nextMinimumEnd || (nextMaximumEnd && currentEnd > nextMaximumEnd) || hasOverlap(effectiveStart, currentEnd, bookedRanges)) {
       setSelectedEnd(formatDateTimeLocalValue(nextMinimumEnd));
     }
   }
@@ -905,9 +945,9 @@ export default function ViewItemList({ publicMode = false }) {
     }
 
     const minimumEnd = applyListingTime(addDays(selectedStartDate, minRentalDays), returnTime, '18:00');
-    const maximumEnd = applyListingTime(addDays(selectedStartDate, maxRentalDays), returnTime, '18:00');
+    const maximumEnd = maxRentalDays === null ? null : applyListingTime(addDays(selectedStartDate, maxRentalDays), returnTime, '18:00');
 
-    if (effectiveEnd < minimumEnd || effectiveEnd > maximumEnd) {
+    if (effectiveEnd < minimumEnd || (maximumEnd && effectiveEnd > maximumEnd)) {
       return;
     }
 
@@ -1302,17 +1342,24 @@ export default function ViewItemList({ publicMode = false }) {
   const bookingTotal = rentalSubtotal + securityDeposit;
   const memberYear = item?.owner?.created_at ? new Date(item.owner.created_at).getFullYear() : null;
   const backTarget = publicMode ? '/' : '/user/dashboard';
-  const ownerAverageRating = Number(item?.owner?.average_rating || 0);
-  const ownerReviewCount = Number(item?.owner?.total_reviews || ownerReviews.length || 0);
+  const productReviewCount = productReviews.length;
+  const productAverageRating = productReviewCount
+    ? productReviews.reduce((total, review) => total + Number(review.rating || 0), 0) / productReviewCount
+    : 0;
+  const applicableProgramsLabel = item?.applies_to_all_programs
+    ? 'All NU Baliwag programs'
+    : (item?.programCodes || [])
+        .map((code) => getNubProgram(code)?.displayCode || code)
+        .join(', ') || 'Not specified';
   const descriptionText = String(item?.description || '').trim();
   const descriptionParagraphs = descriptionText
     ? descriptionText.split(/\n+/).map((part) => part.trim()).filter(Boolean)
     : ['No product description available.'];
-  const mobileReviewPreview = ownerReviews.slice(0, 2);
+  const mobileReviewPreview = productReviews.slice(0, 2);
   const productHighlights = [
     `Security deposit: ${currencyFormatter.format(securityDeposit)}`,
     `Minimum rental duration: ${minRentalDays} day${minRentalDays === 1 ? '' : 's'}`,
-    `Maximum rental duration: ${maxRentalDays} day${maxRentalDays === 1 ? '' : 's'}`,
+    `Maximum rental duration: ${maxRentalDays === null ? 'No limit' : `${maxRentalDays} day${maxRentalDays === 1 ? '' : 's'}`}`,
     `Pickup area: ${item?.pickup_city || item?.pickup_province || 'Not specified'}`,
   ];
 
@@ -1320,11 +1367,10 @@ export default function ViewItemList({ publicMode = false }) {
     event.preventDefault();
     const normalized = headerSearch.trim();
     if (!normalized) {
-      navigate(headerBarangay === 'all' ? '/items' : `/items?barangay=${encodeURIComponent(headerBarangay)}`);
+      navigate('/items');
       return;
     }
     const params = new URLSearchParams({ q: normalized });
-    if (headerBarangay !== 'all') params.set('barangay', headerBarangay);
     navigate(`/items?${params.toString()}`);
   }
 
@@ -1335,7 +1381,7 @@ export default function ViewItemList({ publicMode = false }) {
         <Button onClick={() => navigate(backTarget)} variant="ghost">Return</Button>
         {!loading && item ? (
           <div className="item-detail-breadcrumb">
-            Home <span>/</span> {item.category?.name || 'General'} <span>/</span> <strong>{item.title}</strong>
+            Home <span>/</span> {item.category?.name || 'General'} {item.subcategory?.name ? <><span>/</span> {item.subcategory.name}</> : null} <span>/</span> <strong>{item.title}</strong>
           </div>
         ) : null}
       </div>
@@ -1394,7 +1440,7 @@ export default function ViewItemList({ publicMode = false }) {
                     ['Condition', item.item_condition ? formatListingStatusLabel(item.item_condition) : 'Not set'],
                     ['Security Deposit', currencyFormatter.format(securityDeposit)],
                     ['Min Rental', minRentalDays + ' Day' + (minRentalDays === 1 ? '' : 's')],
-                    ['Max Rental', maxRentalDays + ' Day' + (maxRentalDays === 1 ? '' : 's')],
+                    ['Max Rental', maxRentalDays === null ? 'No limit' : maxRentalDays + ' Day' + (maxRentalDays === 1 ? '' : 's')],
                     ['Purchase', item.is_for_sale ? `For sale at ${currencyFormatter.format(Number(item.sale_price) || 0)}` : 'Not for sale'],
                   ].map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}
                 </div>
@@ -1404,15 +1450,22 @@ export default function ViewItemList({ publicMode = false }) {
                     <h2>Product Details</h2>
                     <div className="item-detail-design-rating-line">
                       <span className="item-detail-rating-star"><StarIcon size={15} /></span>
-                      <span>{ownerAverageRating > 0 ? ownerAverageRating.toFixed(1) : '0.0'} ({ownerReviewCount} reviews)</span>
+                      <span>{productAverageRating > 0 ? productAverageRating.toFixed(1) : '0.0'} ({productReviewCount} {productReviewCount === 1 ? 'review' : 'reviews'})</span>
                     </div>
                   </div>
                   <div className="item-detail-product-meta-grid item-detail-product-meta-grid-desktop">
-                    <article>
+                    <article aria-hidden="true" className="item-detail-product-category">
                       <DetailIcon size={18} type="category" />
                       <div>
                         <span>Category</span>
-                        <strong>{item.category?.name || 'General'}</strong>
+                        <strong>{item.category?.name || 'General'}{item.subcategory?.name ? ` → ${item.subcategory.name}` : ''}</strong>
+                      </div>
+                    </article>
+                    <article>
+                      <DetailIcon size={18} type="category" />
+                      <div>
+                        <span>Applicable programs</span>
+                        <strong>{applicableProgramsLabel}</strong>
                       </div>
                     </article>
                     <article>
@@ -1463,11 +1516,18 @@ export default function ViewItemList({ publicMode = false }) {
                     {mobileInfoTab === 'details' ? (
                       <>
                         <div className="item-detail-product-meta-grid item-detail-product-meta-grid-mobile">
-                          <article>
+                          <article aria-hidden="true" className="item-detail-product-category">
                             <DetailIcon size={18} type="category" />
                             <div>
                               <span>Category</span>
-                              <strong>{item.category?.name || 'General'}</strong>
+                              <strong>{item.category?.name || 'General'}{item.subcategory?.name ? ` → ${item.subcategory.name}` : ''}</strong>
+                            </div>
+                          </article>
+                          <article>
+                            <DetailIcon size={18} type="category" />
+                            <div>
+                              <span>Applicable programs</span>
+                              <strong>{applicableProgramsLabel}</strong>
                             </div>
                           </article>
                           <article>
@@ -1509,7 +1569,7 @@ export default function ViewItemList({ publicMode = false }) {
                         </div>
                         {item.meetup_notes ? (
                           <div>
-                            <span>Pickup notes</span>
+                            <span>Lender&apos;s message</span>
                             <strong>{item.meetup_notes}</strong>
                           </div>
                         ) : null}
@@ -1529,7 +1589,7 @@ export default function ViewItemList({ publicMode = false }) {
                           </div>
                           <div className="item-detail-owner-meta">
                             <span>
-                              <ShieldIcon size={14} /> {item.owner?.is_verified ? 'Identity Verified' : 'Identity pending'}
+                              <ShieldIcon size={14} /> {item.owner?.nub_registry_managed ? 'NUB Registry Verified' : 'Registry unavailable'}
                             </span>
                             <span>
                               <CalendarIcon size={14} /> {memberYear ? 'Member since ' + memberYear : 'Member since unavailable'}
@@ -1582,17 +1642,34 @@ export default function ViewItemList({ publicMode = false }) {
                 ) : null}
 
                 <section className="item-detail-section item-detail-pickup-section">
-                  <h2>Pickup Location</h2>
+                  <div className="item-detail-section-head item-detail-pickup-head">
+                    <h2>Pickup Location</h2>
+                    <button
+                      aria-controls={`pickup-map-${item.id}`}
+                      aria-expanded={pickupMapOpen}
+                      className="item-detail-map-toggle"
+                      onClick={() => setPickupMapOpen((current) => !current)}
+                      type="button"
+                    >
+                      {pickupMapOpen ? 'Hide map' : 'View map'}
+                      <svg aria-hidden="true" viewBox="0 0 20 20"><path d="m5 7.5 5 5 5-5" /></svg>
+                    </button>
+                  </div>
                   <div className="item-detail-location-card"><DetailIcon type="pin" /><div><strong>{item.pickup_city || item.pickup_province || 'Pickup location not set'}</strong><span>{pickupLocation ? 'Exact address revealed after booking' : 'Owner has not saved a pickup address yet'}</span></div></div>
-                  {pickupMapUrl ? <iframe className="item-detail-map" src={pickupMapUrl} title="Pickup location map" /> : <div className="item-detail-map item-detail-map-empty">Map preview appears when pickup coordinates are saved.</div>}
-                  {item.meetup_notes ? <p className="item-detail-notes">{item.meetup_notes}</p> : null}
+                  {pickupMapOpen ? (pickupMapUrl ? <iframe className="item-detail-map" id={`pickup-map-${item.id}`} src={pickupMapUrl} title="Pickup location map" /> : <div className="item-detail-map item-detail-map-empty" id={`pickup-map-${item.id}`}>Map preview appears when pickup coordinates are saved.</div>) : null}
+                  {item.meetup_notes ? (
+                    <article className="item-detail-notes">
+                      <span>Lender&apos;s message</span>
+                      <p>{item.meetup_notes}</p>
+                    </article>
+                  ) : null}
                 </section>
               </div>
 
               <aside className="item-detail-sidebar">
                 <section className="item-detail-owner-card item-detail-owner-card-shell">
                   <div className="item-detail-owner-head"><div className="item-detail-avatar">{item.owner?.profile_photo_url ? <img alt={ownerName} src={item.owner.profile_photo_url} /> : <span>{ownerInitials}</span>}</div><div><strong>{ownerName}</strong><StarRating rating={item.owner?.average_rating} reviewCount={item.owner?.total_reviews} size={11} textStyle={{ fontSize: 11 }} /></div></div>
-                  <div className="item-detail-owner-meta"><span><ShieldIcon size={14} /> {item.owner?.is_verified ? 'Identity Verified' : 'Identity pending'}</span><span><CalendarIcon size={14} /> {memberYear ? 'Member since ' + memberYear : 'Member since unavailable'}</span></div>
+                  <div className="item-detail-owner-meta"><span><ShieldIcon size={14} /> {item.owner?.nub_registry_managed ? 'NUB Registry Verified' : 'Registry unavailable'}</span><span><CalendarIcon size={14} /> {memberYear ? 'Member since ' + memberYear : 'Member since unavailable'}</span></div>
                   {chatFeedback ? <StatusMessage tone={chatFeedbackTone}>{chatFeedback}</StatusMessage> : null}
                   {!rentEligibility.allowed ? <StatusMessage tone="info">{rentEligibility.reasons[0]}</StatusMessage> : null}
                   <button disabled={!canChat || chatBusy} onClick={handleOpenChat} type="button"><MessageIcon size={15} /> {chatBusy ? 'Opening...' : 'Message Owner'}</button>
@@ -1762,8 +1839,8 @@ export default function ViewItemList({ publicMode = false }) {
             <section className="item-detail-wide-section item-detail-wide-reviews-section">
               <div className="item-detail-section-head"><h2>Reviews</h2><button onClick={() => setReviewsOpen(true)} type="button">View All</button></div>
               <div className="item-detail-review-grid">
-                {ownerReviews.length
-                  ? ownerReviews.slice(0, 2).map((review) => (
+                {productReviews.length
+                  ? productReviews.slice(0, 2).map((review) => (
                       <article key={review.id}>
                         <div className="item-detail-review-avatar">
                           {review.reviewer?.profile_photo_url ? <img alt={buildPersonName(review.reviewer) || 'Reviewer'} src={review.reviewer.profile_photo_url} /> : null}
@@ -1783,7 +1860,7 @@ export default function ViewItemList({ publicMode = false }) {
                       <div className="item-detail-review-avatar" />
                       <div>
                         <strong>No reviews yet</strong>
-                        <p>This owner has not received written reviews yet.</p>
+                        <p>This product has not received a written review yet.</p>
                       </div>
                     </article>
                   )}
@@ -1821,10 +1898,10 @@ export default function ViewItemList({ publicMode = false }) {
         ) : null}
         </main>
 
-        <Modal contentClassName="item-detail-compact-modal" onClose={() => setReviewsOpen(false)} open={reviewsOpen} title="Owner reviews">
+        <Modal contentClassName="item-detail-compact-modal" onClose={() => setReviewsOpen(false)} open={reviewsOpen} title="Product reviews">
           <div className="item-detail-modal-list">
-            {ownerReviews.length
-              ? ownerReviews.map((review) => (
+            {productReviews.length
+              ? productReviews.map((review) => (
                   <article key={review.id}>
                     <div className="item-detail-review-avatar">
                       {review.reviewer?.profile_photo_url ? <img alt={buildPersonName(review.reviewer) || 'Reviewer'} src={review.reviewer.profile_photo_url} /> : null}
@@ -1839,7 +1916,7 @@ export default function ViewItemList({ publicMode = false }) {
                     </div>
                   </article>
                 ))
-              : <StatusMessage tone="info">This owner has not received written reviews yet.</StatusMessage>}
+              : <StatusMessage tone="info">This product has not received a written review yet.</StatusMessage>}
           </div>
         </Modal>
 
@@ -1853,7 +1930,7 @@ export default function ViewItemList({ publicMode = false }) {
           <div className="item-detail-owner-profile">
             <div className="item-detail-owner-head"><div className="item-detail-avatar">{item?.owner?.profile_photo_url ? <img alt={ownerName} src={item.owner.profile_photo_url} /> : <span>{ownerInitials}</span>}</div><div><strong>{ownerName}</strong><StarRating rating={item?.owner?.average_rating} reviewCount={item?.owner?.total_reviews} /></div></div>
             <div className="item-detail-profile-grid">
-              <div><span>Verification</span><strong>{item?.owner?.is_verified ? 'Identity verified' : 'Identity pending'}</strong></div>
+              <div><span>Student status</span><strong>{item?.owner?.nub_registry_managed ? 'NUB registry verified' : 'Registry unavailable'}</strong></div>
               <div><span>Member since</span><strong>{memberYear || 'Unavailable'}</strong></div>
               <div><span>Username</span><strong>{item?.owner?.username ? `@${item.owner.username}` : 'No username saved'}</strong></div>
               <div><span>Phone</span><strong>{item?.owner?.phone_number || 'No saved phone number'}</strong></div>
@@ -1935,7 +2012,7 @@ export default function ViewItemList({ publicMode = false }) {
                 maxLength={500}
                 onChange={(event) => setBuyRequestForm((current) => ({ ...current, buyer_message: event.target.value }))}
                 placeholder="Share pickup instructions, availability, or questions for the seller..."
-                rows={4}
+                rows={3}
                 value={buyRequestForm.buyer_message}
               />
             </label>
@@ -1975,10 +2052,7 @@ export default function ViewItemList({ publicMode = false }) {
             </button>
 
             <div className="item-detail-public-barangay">
-              <select aria-label="Filter by Baliuag barangay" id="detail-barangay-filter" onChange={(event) => setHeaderBarangay(event.target.value)} value={headerBarangay}>
-                <option value="all">All barangays</option>
-                {BALIUAG_BARANGAYS.map((barangay) => <option key={barangay} value={barangay}>{barangay}</option>)}
-              </select>
+              <button onClick={() => navigate('/?filters=open')} type="button">Schools &amp; courses</button>
             </div>
 
             <form className="item-detail-public-search" onSubmit={handlePublicSearchSubmit}>

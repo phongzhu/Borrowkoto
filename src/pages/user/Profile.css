@@ -120,6 +120,15 @@
   grid-template-columns: minmax(0, 1fr) auto;
 }
 
+/* Keep the address controls in one row while the flat profile map stacks below. */
+.profile-details-panel .address-map-section-flat > .form-grid > div:first-child {
+  grid-template-columns: 1fr !important;
+}
+
+.profile-details-panel .address-map-section-flat .address-map-search-row {
+  grid-template-columns: minmax(0, 1fr) auto auto !important;
+}
+
 .profile-details-panel .address-map-section-flat > .form-grid > div:first-child > .form-grid {
   grid-template-columns: minmax(0, 1fr) auto !important;
 }
@@ -195,88 +204,6 @@
   font-size: 13px;
 }
 
-.didit-inline-session {
-  align-items: center;
-  background: #f7f9fc;
-  border: 1px solid #dbe3f0;
-  border-radius: 12px;
-  display: grid;
-  gap: 28px;
-  grid-template-columns: minmax(250px, 0.7fr) minmax(280px, 1.3fr);
-  padding: 24px;
-}
-
-.didit-qr-card {
-  align-items: center;
-  background: var(--ui-background-color, #fff);
-  border: 1px solid #dbe3f0;
-  border-radius: 10px;
-  display: grid;
-  gap: 10px;
-  justify-items: center;
-  padding: 20px;
-  text-align: center;
-}
-
-.didit-qr-card svg {
-  height: auto;
-  max-width: 220px;
-  width: 100%;
-}
-
-.didit-qr-card strong,
-.didit-session-copy strong {
-  color: var(--ui-primary-text-color, #14233b);
-  font-size: 17px;
-}
-
-.didit-qr-card span,
-.didit-session-copy span {
-  color: #60718a;
-  font-size: 13px;
-  line-height: 1.65;
-}
-
-.didit-session-copy {
-  align-items: start;
-  display: grid;
-  gap: 14px;
-}
-
-.didit-action-row {
-  display: grid;
-  gap: 12px;
-  grid-template-columns: minmax(0, 1fr) auto;
-  width: 100%;
-}
-
-.profile-details-panel .didit-action-row .didit-primary-action {
-  background: var(--ui-primary-color, #1f3f73) !important;
-  border-color: var(--ui-primary-color, #1f3f73) !important;
-  color: var(--ui-background-color, #fff) !important;
-  -webkit-text-fill-color: var(--ui-background-color, #fff) !important;
-  justify-content: center;
-  min-height: 48px;
-  width: 100%;
-}
-
-.profile-details-panel .didit-action-row .didit-primary-action:link,
-.profile-details-panel .didit-action-row .didit-primary-action:visited,
-.profile-details-panel .didit-action-row .didit-primary-action:hover,
-.profile-details-panel .didit-action-row .didit-primary-action:active {
-  color: var(--ui-background-color, #fff) !important;
-  -webkit-text-fill-color: var(--ui-background-color, #fff) !important;
-}
-
-.profile-details-panel .didit-action-row .didit-secondary-action {
-  background: var(--ui-background-color, #fff) !important;
-  border-color: #dbe3f0 !important;
-  color: var(--ui-primary-text-color, #14233b) !important;
-  justify-content: center;
-  min-height: 48px;
-  min-width: 170px;
-}
-
 .profile-three-column-grid {
   display: grid;
   gap: 14px;
@@ -346,19 +273,10 @@
     grid-template-columns: 1fr !important;
   }
 
-  .didit-inline-session {
-    grid-template-columns: 1fr;
-    padding: 16px;
+  .profile-details-panel .address-map-section-flat .address-map-search-row {
+    grid-template-columns: 1fr !important;
   }
 
-  .didit-action-row {
-    grid-template-columns: 1fr;
-  }
-
-  .profile-details-panel .didit-action-row .didit-secondary-action {
-    min-width: 0;
-    width: 100%;
-  }
 }
 
 @media (min-width: 721px) and (max-width: 1100px) {

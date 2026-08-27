@@ -13,6 +13,7 @@ export const CATEGORY_ICON_OPTIONS = [
   { key: 'music', label: 'Music' },
   { key: 'office', label: 'Office' },
   { key: 'sports', label: 'Sports' },
+  { key: 'travel', label: 'Travel' },
   { key: 'tools', label: 'Tools' },
   { key: 'box', label: 'General' },
 ];
@@ -30,6 +31,7 @@ const paths = {
   music: <><path d="M9 18V5l10-2v13M9 8l10-2"/><circle cx="6" cy="18" r="3"/><circle cx="16" cy="16" r="3"/></>,
   office: <><path d="M7 3h10v18H7zM4 7h3v14H4zM17 7h3v14h-3zM10 7h4M10 11h4M10 15h4"/></>,
   sports: <><circle cx="12" cy="12" r="9"/><path d="m8 4 3 4-2 4-5 1M16 4l-3 4 2 4 5 1M9 12l3 3 3-3M12 15v6"/></>,
+  travel: <><rect x="5" y="7" width="14" height="13" rx="2"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M9 11v5M15 11v5M8 20v1M16 20v1"/></>,
   tools: <><path d="M14 6a4 4 0 0 0-5-4l2.5 2.5-3 3L6 5a4 4 0 0 0 4 5L19 19a2 2 0 0 0 3-3l-8-8Z"/></>,
   box: <><path d="m4 7 8-4 8 4-8 4-8-4ZM4 7v10l8 4 8-4V7M12 11v10"/></>,
 };

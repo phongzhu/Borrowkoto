@@ -20,6 +20,18 @@
 }
 
 .searchable-select-trigger .placeholder { color: #8b96a9; }
+.searchable-select.open .searchable-select-trigger,
+.searchable-select-trigger:focus-visible {
+  border-color: color-mix(in srgb, var(--market-primary, #185a72) 62%, #c7d1e0);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--market-primary, #185a72) 12%, transparent);
+  outline: 0;
+}
+.searchable-select-trigger > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .searchable-select-trigger svg { fill: none; height: 18px; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; width: 18px; }
 .searchable-select.disabled { opacity: 0.62; }
 
@@ -73,6 +85,12 @@
   min-height: 40px;
   padding: 8px 10px;
   text-align: left;
+}
+
+.searchable-select-options button > span {
+  line-height: 1.35;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .searchable-select-options button:hover,

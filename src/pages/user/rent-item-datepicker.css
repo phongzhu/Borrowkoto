@@ -8,8 +8,9 @@
 }
 
 .rent-checkout-public-main {
-  padding: clamp(20px, 2.2vw, 36px);
-  width: 100%;
+  margin-inline: clamp(8px, 1.2vw, 20px);
+  padding: clamp(20px, 2.2vw, 36px) clamp(28px, 2.8vw, 48px);
+  width: auto;
 }
 
 .rent-checkout-public-main .rent-order-shell {
@@ -70,6 +71,17 @@
   font-size: 13px !important;
   min-height: 40px !important;
   padding: 0 10px !important;
+}
+
+.rent-summary-schedule-note {
+  color: var(--ui-text-secondary, #63768f);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: -8px 0 0;
+}
+
+.rent-summary-schedule-note strong {
+  color: var(--ui-text-color, #18212e);
 }
 
 .rent-mobile-stepper,
@@ -165,6 +177,12 @@
   border-bottom: 0 !important;
 }
 
+.rent-message-input {
+  background: var(--ui-background-color, #fff) !important;
+  border-color: var(--ui-border-color, #d8dee8) !important;
+  color: var(--ui-text-color, #18212e) !important;
+}
+
 .rent-owner-item-row,
 .rent-order-addon-row {
   background: var(--ui-background-color, #fff) !important;
@@ -234,6 +252,27 @@
   color: #5f6f84;
   font-size: 14px;
   line-height: 1.45;
+}
+
+.rent-pickup-schedule {
+  border-top: 1px solid color-mix(in srgb, var(--ui-text-color, #18212e) 9%, transparent);
+  color: var(--ui-text-secondary, #63768f);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 13px;
+  gap: 8px 24px;
+  padding-top: 10px;
+}
+
+.rent-pickup-schedule span {
+  align-items: center;
+  display: inline-flex;
+  gap: 6px;
+}
+
+.rent-pickup-schedule strong {
+  color: var(--ui-text-color, #18212e);
+  font-size: 12px;
 }
 
 .rent-order-section span[style*="text-transform: uppercase"],
@@ -454,6 +493,7 @@
 
 @media (max-width: 768px) {
   .rent-checkout-public-main {
+    margin-inline: 0;
     padding: 16px;
   }
 

@@ -10,7 +10,7 @@ function AuthLoadingScreen() {
 }
 
 export default function ProtectedRoute({ adminOnly = false }) {
-  const { loading, role, user } = useAuth();
+  const { loading, role, studentAccess, user } = useAuth();
   const location = useLocation();
 
   if (loading) return <AuthLoadingScreen />;
@@ -19,8 +19,22 @@ export default function ProtectedRoute({ adminOnly = false }) {
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
-  if (adminOnly && role !== 'admin') {
+  if (role === 'admin') {
+    return <Outlet />;
+  }
+
+  if (adminOnly) {
     return <Navigate to="/user/dashboard" replace />;
+  }
+
+  if (!studentAccess) {
+    return (
+      <Navigate
+        to="/login"
+        replace
+        state={{ authError: 'This account is not linked to an active NU Baliwag student registry record.', from: location }}
+      />
+    );
   }
 
   return <Outlet />;

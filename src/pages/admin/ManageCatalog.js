@@ -410,10 +410,14 @@ export default function ManageCatalog() {
     }
 
     const normalizedName = normalizeCategoryName(trimmedName);
-    const duplicateCategory = categories.find((category) => normalizeCategoryName(category.name || '') === normalizedName);
+    const selectedParentId = categoryForm.parent_category_id || null;
+    const duplicateCategory = categories.find(
+      (category) => normalizeCategoryName(category.name || '') === normalizedName
+        && (category.parent_category_id || null) === selectedParentId
+    );
 
     if (duplicateCategory) {
-      setMessage('Category name already exists.');
+      setMessage('Category name already exists under the selected parent.');
       setMessageTone('warning');
       return;
     }
@@ -508,12 +512,15 @@ export default function ManageCatalog() {
     }
 
     const normalizedName = normalizeCategoryName(trimmedName);
+    const selectedParentId = editingCategoryForm.parent_category_id || null;
     const duplicateCategory = categories.find(
-      (category) => category.id !== editingCategory.id && normalizeCategoryName(category.name || '') === normalizedName
+      (category) => category.id !== editingCategory.id
+        && normalizeCategoryName(category.name || '') === normalizedName
+        && (category.parent_category_id || null) === selectedParentId
     );
 
     if (duplicateCategory) {
-      setMessage('Category name already exists.');
+      setMessage('Category name already exists under the selected parent.');
       setMessageTone('warning');
       return;
     }
