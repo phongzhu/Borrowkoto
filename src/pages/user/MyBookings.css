@@ -2836,6 +2836,393 @@
   }
 }
 
+/* Compact add-on editor shared by add and edit listing pages. */
+.listing-addon-list {
+  display: grid;
+  gap: 12px;
+}
+
+.listing-addon-card {
+  background: color-mix(in srgb, var(--ui-background-color, #fff) 96%, var(--ui-primary-color, #1f3f73) 4%);
+  border: 1px solid var(--ui-border-color, #dbe3f0);
+  border-radius: 12px;
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+}
+
+.listing-addon-card-head {
+  align-items: center;
+  border-bottom: 1px solid color-mix(in srgb, var(--ui-border-color, #dbe3f0) 70%, transparent);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding-bottom: 10px;
+}
+
+.listing-addon-card-head > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.listing-addon-card-head strong {
+  color: var(--ui-text-color, #10233f);
+  font-size: 15px;
+}
+
+.listing-addon-card-head span {
+  color: var(--ui-text-secondary, #63768f);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.listing-addon-fields {
+  align-items: start;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(220px, 1.7fr) minmax(110px, .7fr) minmax(130px, .75fr) minmax(160px, .9fr);
+}
+
+.listing-addon-details-grid {
+  align-items: stretch;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1.45fr) minmax(280px, .75fr);
+}
+
+.listing-addon-description {
+  min-height: 96px !important;
+  resize: vertical;
+}
+
+.listing-addon-media-panel {
+  background: var(--ui-background-color, #fff);
+  border: 1px solid var(--ui-border-color, #dbe3f0);
+  border-radius: 9px;
+  display: grid;
+  gap: 9px;
+  padding: 10px;
+}
+
+.listing-addon-media-panel input[type='file'] {
+  font-size: 12px;
+  max-width: 100%;
+}
+
+.listing-addon-media-row {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  min-width: 0;
+}
+
+.listing-addon-image-preview,
+.listing-addon-image-placeholder {
+  align-items: center;
+  background: color-mix(in srgb, var(--ui-text-color, #10233f) 4%, var(--ui-background-color, #fff));
+  border: 1px solid var(--ui-border-color, #dbe3f0);
+  border-radius: 8px;
+  color: var(--ui-text-secondary, #63768f);
+  display: flex;
+  flex: 0 0 76px;
+  font-size: 11px;
+  height: 76px;
+  justify-content: center;
+  overflow: hidden;
+  width: 76px;
+}
+
+.listing-addon-image-preview img {
+  display: block;
+  height: 100%;
+  object-fit: contain;
+  padding: 4px;
+  width: 100%;
+}
+
+.listing-addon-media-actions {
+  align-items: flex-start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.listing-addon-media-actions button {
+  min-height: 32px !important;
+  padding: 0 10px !important;
+}
+
+.listing-addon-required-toggle {
+  align-items: center;
+  background: var(--ui-background-color, #fff);
+  border: 1px solid var(--ui-border-color, #dbe3f0);
+  border-radius: 9px;
+  color: var(--ui-text-color, #10233f);
+  display: inline-flex;
+  gap: 10px;
+  justify-self: start;
+  padding: 9px 12px;
+}
+
+.listing-addon-required-toggle > span {
+  display: grid;
+  gap: 1px;
+}
+
+.listing-addon-required-toggle strong {
+  font-size: 13px;
+}
+
+.listing-addon-required-toggle small {
+  color: var(--ui-text-secondary, #63768f);
+  font-size: 11px;
+}
+
+@media (max-width: 1080px) {
+  .listing-addon-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .listing-addon-details-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 620px) {
+  .listing-addon-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .listing-addon-card {
+    padding: 12px;
+  }
+
+  .listing-addon-required-toggle {
+    align-items: flex-start;
+    justify-self: stretch;
+  }
+}
+
+.listing-addon-table-wrap {
+  background: var(--ui-background-color, #fff);
+  border: 1px solid var(--ui-border-color, #dbe3f0);
+  border-radius: 10px;
+  overflow-x: auto;
+}
+
+.listing-addon-table {
+  border-collapse: collapse;
+  min-width: 820px;
+  width: 100%;
+}
+
+.listing-addon-table th,
+.listing-addon-table td {
+  background: var(--ui-background-color, #fff);
+  border-bottom: 1px solid color-mix(in srgb, var(--ui-border-color, #dbe3f0) 72%, transparent);
+  color: var(--ui-text-color, #10233f);
+  padding: 11px 12px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.listing-addon-table th {
+  color: var(--ui-text-secondary, #63768f);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+
+.listing-addon-table td {
+  font-size: 13px;
+}
+
+.listing-addon-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.listing-addon-table-product {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 52px minmax(160px, 1fr);
+  min-width: 250px;
+}
+
+.listing-addon-table-image {
+  align-items: center;
+  background: var(--ui-background-color, #fff);
+  border: 1px solid var(--ui-border-color, #dbe3f0);
+  border-radius: 8px;
+  color: var(--ui-text-secondary, #63768f);
+  display: flex;
+  font-size: 9px;
+  height: 52px;
+  justify-content: center;
+  overflow: hidden;
+  width: 52px;
+}
+
+.listing-addon-table-image img {
+  display: block;
+  height: 100%;
+  object-fit: contain;
+  padding: 3px;
+  width: 100%;
+}
+
+.listing-addon-table-product > div:last-child {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.listing-addon-table-product strong {
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.listing-addon-table-product > div:last-child > span {
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  color: var(--ui-text-secondary, #63768f);
+  display: -webkit-box;
+  font-size: 11px;
+  line-height: 1.4;
+  overflow: hidden;
+}
+
+.listing-addon-table-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.listing-addon-table-actions button {
+  min-height: 34px !important;
+  padding: 0 11px !important;
+}
+
+.listing-addon-editor-modal {
+  background: var(--ui-background-color, #fff) !important;
+  border: 1px solid var(--ui-border-color, #dbe3f0) !important;
+  color: var(--ui-text-color, #10233f) !important;
+  width: min(760px, calc(100vw - 32px)) !important;
+}
+
+.listing-addon-editor-modal > h3,
+.listing-addon-editor-modal label,
+.listing-addon-editor-modal strong {
+  color: var(--ui-text-color, #10233f) !important;
+}
+
+.listing-addon-editor-form {
+  display: grid;
+  gap: 13px;
+}
+
+.listing-addon-editor-fields {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.listing-addon-editor-modal input:not([type='checkbox']):not([type='file']),
+.listing-addon-editor-modal select,
+.listing-addon-editor-modal textarea,
+.listing-addon-editor-media,
+.listing-addon-editor-modal .listing-addon-required-toggle {
+  background: var(--ui-background-color, #fff) !important;
+}
+
+.listing-addon-editor-modal input:not([type='checkbox']):not([type='file']),
+.listing-addon-editor-modal select,
+.listing-addon-editor-modal textarea {
+  border-color: var(--ui-border-color, #dbe3f0) !important;
+  color: var(--ui-text-color, #10233f) !important;
+}
+
+.listing-addon-editor-description {
+  min-height: 92px !important;
+  resize: vertical;
+}
+
+.listing-addon-editor-media {
+  border: 1px solid var(--ui-border-color, #dbe3f0);
+  border-radius: 9px;
+  display: grid;
+  gap: 9px;
+  padding: 10px;
+}
+
+.listing-addon-editor-media input[type='file'] {
+  font-size: 12px;
+  max-width: 100%;
+}
+
+@media (max-width: 680px) {
+  .listing-addon-editor-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .listing-addon-table {
+    min-width: 0;
+  }
+
+  .listing-addon-table thead {
+    display: none;
+  }
+
+  .listing-addon-table tbody {
+    display: grid;
+    gap: 10px;
+    padding: 10px;
+  }
+
+  .listing-addon-table tbody tr {
+    border: 1px solid var(--ui-border-color, #dbe3f0);
+    border-radius: 10px;
+    display: grid;
+    gap: 8px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 10px;
+  }
+
+  .listing-addon-table td {
+    border: 0;
+    padding: 0;
+  }
+
+  .listing-addon-table td:first-child,
+  .listing-addon-table td:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .listing-addon-table td:not(:first-child):not(:last-child)::before {
+    color: var(--ui-text-secondary, #63768f);
+    content: attr(data-label);
+    display: block;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: .07em;
+    margin-bottom: 2px;
+    text-transform: uppercase;
+  }
+
+  .listing-addon-table-actions {
+    justify-content: stretch;
+  }
+
+  .listing-addon-table-actions button {
+    flex: 1;
+  }
+}
+
 @media (min-width: 721px) {
   .booking-hub .booking-filter-tabs {
     background: transparent;

@@ -293,7 +293,7 @@ export default function RentItem() {
         supabase.from('items').select(itemSelectFields).eq('id', itemId).maybeSingle(),
         supabase
           .from('item_addons')
-          .select('id, item_id, addon_name, description, price, pricing_type, is_required, is_active, sort_order')
+          .select('id, item_id, addon_name, description, price, pricing_type, quantity, is_required, image_url, is_active, sort_order')
           .eq('item_id', itemId)
           .eq('is_active', true)
           .order('sort_order', { ascending: true }),
@@ -613,12 +613,15 @@ export default function RentItem() {
         const lineTotal = roundMoney(unitPrice * quantity * multiplier);
 
         return {
+          description: addon.description || '',
           id: addon.id,
+          imageUrl: addon.image_url || '',
           isRequired: Boolean(addon.is_required),
           lineTotal,
           name: addon.addon_name,
           pricingType,
           quantity,
+          stockQuantity: Math.max(1, Number(addon.quantity) || 1),
           unitPrice: roundMoney(unitPrice),
         };
       });
@@ -653,6 +656,7 @@ export default function RentItem() {
       return {
         id: bundleItem.id,
         imageUrl: bundleItem.primaryImage?.image_url || '',
+        isAddon: false,
         isMain: false,
         itemType: 'Add-on listing',
         maxQuantity: Math.max(1, Number(bundleItem.quantity) || 1),
@@ -662,8 +666,23 @@ export default function RentItem() {
       };
     });
 
-    return [mainRow, ...bundleRows];
-  }, [item, itemImages, primaryRequestedQuantity, rentalDays, selectedBundleItems]);
+    const addonRows = selectedAddonsSummary.map((addon) => ({
+      description: addon.description,
+      id: `addon-${addon.id}`,
+      imageUrl: addon.imageUrl,
+      isAddon: true,
+      isMain: false,
+      isRequired: addon.isRequired,
+      itemType: addon.isRequired ? 'Required add-on' : 'Add-on',
+      maxQuantity: addon.stockQuantity,
+      name: addon.name,
+      quantity: addon.quantity,
+      sourceId: addon.id,
+      total: addon.lineTotal,
+    }));
+
+    return [mainRow, ...bundleRows, ...addonRows];
+  }, [item, itemImages, primaryRequestedQuantity, rentalDays, selectedAddonsSummary, selectedBundleItems]);
 
   const rentIssues = useMemo(() => {
     const issues = [];
@@ -836,7 +855,8 @@ export default function RentItem() {
   }
 
   function setAddonQuantity(addonId, nextQuantity) {
-    const quantity = clampRequestedQuantity(nextQuantity, Number.MAX_SAFE_INTEGER);
+    const addon = addons.find((currentAddon) => currentAddon.id === addonId);
+    const quantity = clampRequestedQuantity(nextQuantity, Math.max(1, Number(addon?.quantity) || 1));
     setAddonSelection((current) => ({
       ...current,
       [addonId]: {
@@ -1127,6 +1147,12 @@ export default function RentItem() {
         .filter(({ addon, selection }) => selection.selected || addon.is_required)
         .map(({ addon, selection }) => {
           const quantity = parseWholeNumber(selection.quantity || 1, `${addon.addon_name} quantity`, 1);
+          const availableQuantity = Math.max(1, Number(addon.quantity) || 1);
+
+          if (quantity > availableQuantity) {
+            throw new Error(`${addon.addon_name} quantity cannot exceed ${availableQuantity}.`);
+          }
+
           const pricingType = String(addon.pricing_type || 'per_rental').toLowerCase();
           const unitPrice = roundMoney(addon.price || 0);
           let totalAmount = unitPrice * quantity;
@@ -1713,6 +1739,7 @@ export default function RentItem() {
                               <div className="rent-order-item-meta">
                                 <strong>{row.name}</strong>
                                 <span>{row.itemType}</span>
+                                {row.description ? <small>{row.description}</small> : null}
                               </div>
                             </div>
                           </td>
@@ -1724,7 +1751,9 @@ export default function RentItem() {
                               onChange={(event) =>
                                 row.isMain
                                   ? handlePrimaryQuantityChange(event.target.value)
-                                  : handleBundleItemQuantityChange(row.id, event.target.value)
+                                  : row.isAddon
+                                    ? setAddonQuantity(row.sourceId, event.target.value)
+                                    : handleBundleItemQuantityChange(row.id, event.target.value)
                               }
                               style={{ minHeight: 36, padding: '0 8px', textAlign: 'center', width: 76 }}
                               type="number"
@@ -1733,13 +1762,13 @@ export default function RentItem() {
                           </td>
                           <td data-label="Price">{currencyFormatter.format(row.total)}</td>
                           <td data-label="Action">
-                            {row.isMain ? (
+                            {row.isMain || row.isRequired ? (
                               <span style={{ color: theme.colors.muted, fontSize: 12 }}>Required</span>
                             ) : (
                               <button
                                 aria-label={`Remove ${row.name}`}
                                 className="rent-order-remove-btn"
-                                onClick={() => toggleBundleItem(row.id)}
+                                onClick={() => (row.isAddon ? toggleAddon(row.sourceId) : toggleBundleItem(row.id))}
                                 style={{
                                   background: 'transparent',
                                   border: `1px solid ${alpha(theme.colors.danger, 0.24)}`,
@@ -1768,7 +1797,7 @@ export default function RentItem() {
                 </div>
               </div>
 
-              {selectedAddonsSummary.length ? (
+              {addons.length ? (
                 <div
                   className="rent-order-section"
                   style={{
@@ -1777,55 +1806,101 @@ export default function RentItem() {
                     borderRadius: 12,
                     display: 'grid',
                     gap: 10,
-                    padding: 18,
+                    padding: 16,
                   }}
                 >
-                  <div style={{ borderBottom: `1px solid ${alpha(theme.colors.ink, 0.08)}`, paddingBottom: 8 }}>
-                    <strong style={{ color: theme.colors.ink, fontFamily: theme.fonts.display, fontSize: 19, letterSpacing: '-0.02em' }}>
-                      Selected Add-ons
-                    </strong>
+                  <div className="rent-owner-list-header" style={{ alignItems: 'center', display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'space-between' }}>
+                    <span style={{ color: theme.colors.ink, fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                      Available Add-ons
+                    </span>
+                    <Badge tone="neutral">{selectedAddonsSummary.length} selected</Badge>
                   </div>
-                  <div className="rent-order-addon-list">
-                    {selectedAddonsSummary.map((addon) => (
-                      <div className="rent-order-addon-row" key={addon.id}>
-                        <div>
-                          <strong>{addon.name}</strong>
-                          <span>
-                            {currencyFormatter.format(addon.unitPrice)} x {addon.quantity} ({addon.pricingType.replace('_', ' ')})
-                          </span>
+
+                  <div style={{ display: 'grid', gap: 8 }}>
+                    {addons.map((addon) => {
+                      const selection = addonSelection[addon.id] || { quantity: 1, selected: false };
+                      const selected = selection.selected || addon.is_required;
+                      const pricingLabel = String(addon.pricing_type || 'per_rental').replace('_', ' ');
+
+                      return (
+                        <div
+                          className="rent-owner-item-row rent-addon-item-row"
+                          key={addon.id}
+                          style={{
+                            alignItems: 'center',
+                            background: alpha(theme.colors.panel, 0.86),
+                            border: `1px solid ${alpha(theme.colors.ink, selected ? 0.2 : 0.08)}`,
+                            borderRadius: 8,
+                            display: 'grid',
+                            gap: 10,
+                            gridTemplateColumns: 'auto 48px minmax(0, 1fr) auto',
+                            padding: 10,
+                          }}
+                        >
+                          <button
+                            className="rent-owner-add-btn"
+                            disabled={addon.is_required}
+                            onClick={() => toggleAddon(addon.id)}
+                            style={{
+                              alignItems: 'center',
+                              background: selected ? alpha(theme.colors.teal, 0.14) : 'transparent',
+                              border: `1px solid ${selected ? alpha(theme.colors.teal, 0.42) : alpha(theme.colors.ink, 0.18)}`,
+                              borderRadius: 8,
+                              color: selected ? theme.colors.teal : theme.colors.ink,
+                              cursor: addon.is_required ? 'default' : 'pointer',
+                              display: 'inline-flex',
+                              fontSize: 12,
+                              fontWeight: 700,
+                              justifyContent: 'center',
+                              minHeight: 32,
+                              minWidth: 64,
+                              padding: '0 10px',
+                            }}
+                            type="button"
+                          >
+                            {addon.is_required ? 'Required' : selected ? 'Remove' : 'Add'}
+                          </button>
+
+                          <div
+                            className="rent-owner-item-thumb rent-addon-item-thumb"
+                            style={{
+                              background: addon.image_url
+                                ? `url(${addon.image_url}) center/contain no-repeat`
+                                : alpha(theme.colors.ink, 0.06),
+                              border: `1px solid ${alpha(theme.colors.ink, 0.08)}`,
+                              borderRadius: 6,
+                              height: 48,
+                              width: 48,
+                            }}
+                          />
+
+                          <div className="rent-owner-item-meta rent-addon-item-meta" style={{ display: 'grid', gap: 3, minWidth: 0 }}>
+                            <strong style={{ color: theme.colors.ink, fontSize: 14 }}>{addon.addon_name}</strong>
+                            {addon.description ? (
+                              <span className="rent-addon-description" style={{ color: theme.colors.slate, fontSize: 12 }}>
+                                {addon.description}
+                              </span>
+                            ) : null}
+                            <span style={{ color: theme.colors.slate, fontSize: 13 }}>
+                              {currencyFormatter.format(Number(addon.price) || 0)} / {pricingLabel}
+                            </span>
+                          </div>
+
+                          <div className="rent-owner-item-controls rent-addon-item-controls" style={{ alignItems: 'center', display: 'flex', gap: 8 }}>
+                            <Input
+                              disabled={!selected}
+                              max={Math.max(1, Number(addon.quantity) || 1)}
+                              min={1}
+                              onChange={(event) => setAddonQuantity(addon.id, event.target.value)}
+                              style={{ borderRadius: 12, minHeight: 38, padding: '0 10px', width: 84 }}
+                              type="number"
+                              value={selection.quantity}
+                            />
+                            <Badge tone="info">{Math.max(1, Number(addon.quantity) || 1)} available</Badge>
+                          </div>
                         </div>
-                        <div style={{ alignItems: 'center', display: 'flex', gap: 10 }}>
-                          <strong>{currencyFormatter.format(addon.lineTotal)}</strong>
-                          {addon.isRequired ? (
-                            <span style={{ color: theme.colors.muted, fontSize: 12 }}>Required</span>
-                          ) : (
-                            <button
-                              aria-label={`Remove ${addon.name}`}
-                              className="rent-order-remove-btn"
-                              onClick={() => toggleAddon(addon.id)}
-                              style={{
-                                background: 'transparent',
-                                border: `1px solid ${alpha(theme.colors.danger, 0.24)}`,
-                                borderRadius: 8,
-                                color: theme.colors.danger,
-                                cursor: 'pointer',
-                                minHeight: 30,
-                                minWidth: 30,
-                                padding: 0,
-                              }}
-                              type="button"
-                            >
-                              <svg fill="none" height="15" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.9" viewBox="0 0 24 24" width="15">
-                                <path d="M3 6h18" />
-                                <path d="M8 6V4h8v2" />
-                                <path d="M7 6l1 14h8l1-14" />
-                                <path d="M10 11v6M14 11v6" />
-                              </svg>
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               ) : null}
@@ -2083,67 +2158,6 @@ export default function RentItem() {
                   <Textarea className="rent-message-input" name="borrower_message" onChange={handleFormChange} placeholder="Hi, I need this for a weekend event and can pick up at your preferred time." value={form.borrower_message} />
                 </FormField>
               </div>
-
-              {addons.length ? (
-                <div
-                  className="rent-order-section"
-                  style={{
-                    background: alpha(theme.colors.panel, 0.92),
-                    border: `1px solid ${alpha(theme.colors.ink, 0.1)}`,
-                    borderRadius: 12,
-                    display: 'grid',
-                    gap: 12,
-                    padding: 18,
-                  }}
-                >
-                  <span style={{ color: theme.colors.ink, fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                    Add-ons
-                  </span>
-                  <div style={{ display: 'grid', gap: 8 }}>
-                    {addons.map((addon) => {
-                      const selection = addonSelection[addon.id] || { quantity: 1, selected: false };
-                      const pricingLabel = String(addon.pricing_type || 'per_rental').replace('_', ' ');
-
-                      return (
-                        <label
-                          className="rent-addon-option-row"
-                          key={addon.id}
-                          style={{
-                            alignItems: 'center',
-                            background: alpha(theme.colors.ink, 0.025),
-                            border: `1px solid ${alpha(theme.colors.ink, 0.08)}`,
-                            borderRadius: 8,
-                            display: 'grid',
-                            gap: 12,
-                            gridTemplateColumns: 'auto minmax(0, 1fr) 82px',
-                            padding: 10,
-                          }}
-                        >
-                          <input
-                            checked={selection.selected || addon.is_required}
-                            disabled={addon.is_required}
-                            onChange={() => toggleAddon(addon.id)}
-                            type="checkbox"
-                          />
-                          <div style={{ display: 'grid', gap: 4 }}>
-                            <strong style={{ color: theme.colors.ink, fontSize: 14 }}>{addon.addon_name}</strong>
-                            <span style={{ color: theme.colors.slate, fontSize: 13 }}>
-                              {currencyFormatter.format(Number(addon.price) || 0)} ({pricingLabel}) {addon.is_required ? '- required' : ''}
-                            </span>
-                          </div>
-                          <Input
-                            disabled={!(selection.selected || addon.is_required)}
-                            min={1}
-                            onChange={(event) => setAddonQuantity(addon.id, event.target.value)}
-                            type="number"
-                            value={selection.quantity}
-                          />
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-              ) : null}
 
               {message ? <StatusMessage tone={messageTone}>{message}</StatusMessage> : null}
               </div>

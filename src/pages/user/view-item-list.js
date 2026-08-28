@@ -582,7 +582,7 @@ export default function ViewItemList({ publicMode = false }) {
           .order('sort_order', { ascending: true }),
         supabase
           .from('item_addons')
-          .select('id, addon_name, description, price, pricing_type, is_required, image_url, is_active, sort_order')
+          .select('id, addon_name, description, price, pricing_type, quantity, is_required, image_url, is_active, sort_order')
           .eq('item_id', itemRow.id)
           .eq('is_active', true)
           .order('sort_order', { ascending: true }),
@@ -1635,7 +1635,24 @@ export default function ViewItemList({ publicMode = false }) {
                     <div className="item-detail-section-head"><h2>Available add-ons</h2><span>{itemAddons.length} available</span></div>
                     <div className="item-detail-addon-grid">
                       {itemAddons.slice(0, 3).map((addon) => (
-                        <article key={addon.id}>{addon.image_url ? <img alt={addon.addon_name} src={addon.image_url} /> : <div>Add-on</div>}<strong>{addon.addon_name}</strong><span>{currencyFormatter.format(Number(addon.price) || 0)} / {formatAddonPricingLabel(addon.pricing_type)}</span></article>
+                        <article className="item-detail-addon-card" key={addon.id}>
+                          <div className="item-detail-addon-media">
+                            {addon.image_url ? (
+                              <img alt={addon.addon_name} src={addon.image_url} />
+                            ) : (
+                              <span>Add-on</span>
+                            )}
+                          </div>
+                          <div className="item-detail-addon-content">
+                            <strong>{addon.addon_name}</strong>
+                            <p>{addon.description?.trim() || 'No description provided for this add-on.'}</p>
+                            <div className="item-detail-addon-meta">
+                              <span>{currencyFormatter.format(Number(addon.price) || 0)} / {formatAddonPricingLabel(addon.pricing_type)}</span>
+                              <small>{Math.max(1, Number(addon.quantity) || 1)} available</small>
+                              {addon.is_required ? <small>Required</small> : null}
+                            </div>
+                          </div>
+                        </article>
                       ))}
                     </div>
                   </section>

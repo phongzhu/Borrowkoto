@@ -328,6 +328,35 @@ test('classifies registry imports as new, changed, unchanged, or conflicting', (
   expect(conflict.newRecords).toHaveLength(0);
 });
 
+test('registry synchronization never overwrites account activation or authentication fields', () => {
+  const payload = registryImportHelpers.buildRegistrySyncPayload({
+    activated_at: null,
+    auth_user_id: 'replacement-auth-user',
+    email: 'student@students.nu-baliwag.edu.ph',
+    first_name: 'Updated',
+    last_name: 'Student',
+    password: 'NeverImportThis',
+    program_code: 'BSIT',
+    school_code: 'SET',
+    school_status: 'Enrolled',
+    section: 'ITE232',
+    status: 'active',
+    student_number: '2023-123456',
+    year_level: 4,
+  });
+
+  expect(payload).toMatchObject({
+    email: 'student@students.nu-baliwag.edu.ph',
+    first_name: 'Updated',
+    section: 'ITE232',
+  });
+  expect(payload).not.toHaveProperty('activated_at');
+  expect(payload).not.toHaveProperty('auth_user_id');
+  expect(payload).not.toHaveProperty('password');
+  expect(registryImportHelpers.isRegistryActivationRequired({ activated_at: '2026-08-27T08:30:00.000Z' })).toBe(false);
+  expect(registryImportHelpers.isRegistryActivationRequired({ activated_at: null })).toBe(true);
+});
+
 test('uses the current registry synchronization response version', () => {
   expect(registryImportHelpers.REGISTRY_SYNC_VERSION).toBe(2);
 });

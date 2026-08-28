@@ -30,6 +30,10 @@ function isValidStudentPassword(value) {
   return password.length >= 8 && /[A-Z]/.test(password) && /[a-z]/.test(password);
 }
 
+function isRegistryActivationRequired(registry) {
+  return !text(registry?.activated_at);
+}
+
 function isDevStudentOtpBypassEnabled(request, environment = process.env) {
   const host = text(request?.headers?.host).toLowerCase();
   const isLocalHost = /^(localhost|127[.]0[.]0[.]1|\[::1\])(?::\d+)?$/.test(host);
@@ -121,12 +125,12 @@ async function ensureRegistryAuthUser(supabase, registry) {
   if (linkChanged) {
     const { error: linkError } = await supabase
       .from('nub_student_registry')
-      .update({ activated_at: null, auth_user_id: user.id })
+      .update({ auth_user_id: user.id })
       .eq('id', registry.id);
     if (linkError) throw linkError;
   }
 
-  return { activationRequired: linkChanged || !registry.activated_at, user };
+  return { activationRequired: isRegistryActivationRequired(registry), user };
 }
 
 async function assertAdmin(supabase, request) {
@@ -214,6 +218,10 @@ const REGISTRY_SYNC_FIELDS = [
   'year_level',
 ];
 
+function buildRegistrySyncPayload(record) {
+  return Object.fromEntries(REGISTRY_SYNC_FIELDS.map((field) => [field, record?.[field] ?? null]));
+}
+
 function validateUniqueImportRecords(records) {
   const studentNumbers = new Map();
   const emails = new Map();
@@ -293,7 +301,7 @@ async function updateRegistryRecord(supabase, existing, incoming) {
   const rollbackAuthIdentity = await updateLinkedAuthIdentity(supabase, existing, incoming);
   const { error } = await supabase
     .from('nub_student_registry')
-    .update(incoming)
+    .update(buildRegistrySyncPayload(incoming))
     .eq('id', existing.id);
   if (error) {
     if (rollbackAuthIdentity) await rollbackAuthIdentity();
@@ -355,7 +363,7 @@ async function handleImport(supabase, request, response) {
     const batch = newRecords.slice(index, index + 500);
     const { data, error } = await supabase
       .from('nub_student_registry')
-      .insert(batch.map((entry) => entry.record))
+      .insert(batch.map((entry) => buildRegistrySyncPayload(entry.record)))
       .select('id');
     if (error) throw error;
     inserted += data?.length || batch.length;
@@ -538,9 +546,11 @@ module.exports = async function handler(request, response) {
 };
 
 module.exports._test = {
+  buildRegistrySyncPayload,
   classifyRegistryImport,
   DEV_STUDENT_OTP,
   isDevStudentOtpBypassEnabled,
+  isRegistryActivationRequired,
   isValidStudentPassword,
   normalizeImportRecord,
   readableErrorMessage,

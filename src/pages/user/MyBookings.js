@@ -145,6 +145,7 @@ function createEmptyAddon() {
     is_required: false,
     price: '',
     pricing_type: 'per_rental',
+    quantity: '1',
   };
 }
 
@@ -158,6 +159,7 @@ function buildAddonForm(addon) {
     is_required: Boolean(addon?.is_required),
     price: addon?.price === null || addon?.price === undefined ? '' : String(addon.price),
     pricing_type: addon?.pricing_type || 'per_rental',
+    quantity: String(addon?.quantity || 1),
   };
 }
 
@@ -666,6 +668,8 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
   const [listingImagePreviews, setListingImagePreviews] = useState([]);
   const [savedListingImages, setSavedListingImages] = useState([]);
   const [listingAddons, setListingAddons] = useState([]);
+  const [addonEditor, setAddonEditor] = useState(null);
+  const [addonEditorError, setAddonEditorError] = useState('');
   const [editingItem, setEditingItem] = useState(null);
   const [deleteTargetItem, setDeleteTargetItem] = useState(null);
   const [imageViewer, setImageViewer] = useState({ activeUrl: '', images: [], itemTitle: '' });
@@ -695,6 +699,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
   const [damageReportForm, setDamageReportForm] = useState(createDamageReportForm);
   const [savingDamageReport, setSavingDamageReport] = useState(false);
   const listingImagesInputRef = useRef(null);
+  const listingAddonsRef = useRef([]);
   const categoryPickerRef = useRef(null);
   const addListingRouteInitializedRef = useRef(false);
   const editListingRouteInitializedRef = useRef('');
@@ -1144,7 +1149,11 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
     };
   }, [listingImageFiles]);
 
-  useEffect(() => () => revokeAddonPreviews(listingAddons), [listingAddons]);
+  useEffect(() => {
+    listingAddonsRef.current = listingAddons;
+  }, [listingAddons]);
+
+  useEffect(() => () => revokeAddonPreviews(listingAddonsRef.current), []);
 
   useEffect(() => {
     if (!categoryPickerOpen) return undefined;
@@ -1575,7 +1584,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
 
     const { data: addonRows, error: addonError } = await supabase
       .from('item_addons')
-      .select('addon_name, description, image_url, is_required, price, pricing_type, sort_order')
+      .select('addon_name, description, image_url, is_required, price, pricing_type, quantity, sort_order')
       .eq('item_id', item.id)
       .order('sort_order', { ascending: true });
 
@@ -1638,6 +1647,8 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
     setListingImageFiles([]);
     setSavedListingImages([]);
     setListingAddons([]);
+    setAddonEditor(null);
+    setAddonEditorError('');
     setEditingItem(null);
     // Run only when entering or leaving the listing routes; form changes must not
     // retrigger this cleanup and reset the editor.
@@ -1645,6 +1656,9 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
   }, [isListingFormPage]);
 
   function closeAddListing() {
+    if (addonEditor) {
+      closeAddonEditor();
+    }
     revokeAddonPreviews(listingAddons);
     setShowAddListing(false);
     setSavingListing(false);
@@ -1652,6 +1666,8 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
     setListingImageFiles([]);
     setSavedListingImages([]);
     setListingAddons([]);
+    setAddonEditor(null);
+    setAddonEditorError('');
     setDeleteTargetItem(null);
     setEditingItem(null);
     setListingForm(buildListingForm(profile));
@@ -1664,7 +1680,126 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
   }
 
   function addAddonRow() {
-    setListingAddons((current) => [...current, createEmptyAddon()]);
+    setAddonEditor({ index: -1, value: createEmptyAddon() });
+    setAddonEditorError('');
+  }
+
+  function editAddonRow(index) {
+    const addon = listingAddons[index];
+
+    if (!addon) {
+      return;
+    }
+
+    setAddonEditor({ index, value: { ...addon } });
+    setAddonEditorError('');
+  }
+
+  function closeAddonEditor() {
+    const sourcePreview = addonEditor?.index >= 0 ? listingAddons[addonEditor.index]?.imagePreview : '';
+    const editorPreview = addonEditor?.value?.imagePreview;
+
+    if (editorPreview && editorPreview !== sourcePreview) {
+      revokeAddonPreview(editorPreview);
+    }
+
+    setAddonEditor(null);
+    setAddonEditorError('');
+  }
+
+  function handleAddonEditorChange(field, value) {
+    setAddonEditor((current) =>
+      current
+        ? {
+            ...current,
+            value: {
+              ...current.value,
+              [field]: field === 'is_required' ? Boolean(value) : value,
+            },
+          }
+        : current
+    );
+  }
+
+  function handleAddonEditorImageChange(file) {
+    setAddonEditor((current) => {
+      if (!current) {
+        return current;
+      }
+
+      const sourcePreview = current.index >= 0 ? listingAddons[current.index]?.imagePreview : '';
+      if (current.value.imagePreview && current.value.imagePreview !== sourcePreview) {
+        revokeAddonPreview(current.value.imagePreview);
+      }
+
+      if (!file) {
+        return {
+          ...current,
+          value: {
+            ...current.value,
+            imageFile: null,
+            imagePreview: '',
+            image_url: '',
+          },
+        };
+      }
+
+      return {
+        ...current,
+        value: {
+          ...current.value,
+          imageFile: file,
+          imagePreview: URL.createObjectURL(file),
+        },
+      };
+    });
+  }
+
+  function saveAddonEditor() {
+    if (!addonEditor) {
+      return;
+    }
+
+    const addon = addonEditor.value;
+    const addonName = sanitizeText(addon.addon_name);
+    const price = Number(addon.price);
+    const quantity = Number(addon.quantity);
+
+    if (!addonName) {
+      setAddonEditorError('Add-on name is required.');
+      return;
+    }
+
+    if (!Number.isFinite(price) || price < 0) {
+      setAddonEditorError('Add-on price must be 0 or greater.');
+      return;
+    }
+
+    if (!Number.isInteger(quantity) || quantity < 1) {
+      setAddonEditorError('Available quantity must be a whole number of at least 1.');
+      return;
+    }
+
+    const savedAddon = {
+      ...addon,
+      addon_name: addonName,
+      quantity: String(quantity),
+    };
+
+    setListingAddons((current) => {
+      if (addonEditor.index < 0) {
+        return [...current, savedAddon];
+      }
+
+      const previousPreview = current[addonEditor.index]?.imagePreview;
+      if (previousPreview && previousPreview !== savedAddon.imagePreview) {
+        revokeAddonPreview(previousPreview);
+      }
+
+      return current.map((currentAddon, index) => (index === addonEditor.index ? savedAddon : currentAddon));
+    });
+    setAddonEditor(null);
+    setAddonEditorError('');
   }
 
 
@@ -1674,46 +1809,6 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
       revokeAddonPreview(current[index]?.imagePreview);
       return next;
     });
-  }
-
-  function handleAddonChange(index, field, value) {
-    setListingAddons((current) =>
-      current.map((addon, currentIndex) =>
-        currentIndex === index
-          ? {
-              ...addon,
-              [field]: field === 'is_required' ? Boolean(value) : value,
-            }
-          : addon
-      )
-    );
-  }
-
-  function handleAddonImageChange(index, file) {
-    setListingAddons((current) =>
-      current.map((addon, currentIndex) => {
-        if (currentIndex !== index) {
-          return addon;
-        }
-
-        revokeAddonPreview(addon.imagePreview);
-
-        if (!file) {
-          return {
-            ...addon,
-            imageFile: null,
-            imagePreview: '',
-            image_url: '',
-          };
-        }
-
-        return {
-          ...addon,
-          imageFile: file,
-          imagePreview: URL.createObjectURL(file),
-        };
-      })
-    );
   }
 
   function handleListingImagesChange(event) {
@@ -1956,6 +2051,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
           is_required: Boolean(addon.is_required),
           price: parseCurrency(addon.price, `Add-on ${index + 1} price`),
           pricing_type: pricingType,
+          quantity: parseWholeNumber(addon.quantity, `Add-on ${index + 1} quantity`),
           sort_order: index,
         });
 
@@ -2072,6 +2168,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
             item_id: currentItemId,
             price: addon.price,
             pricing_type: addon.pricing_type,
+            quantity: addon.quantity,
             sort_order: addon.sort_order,
           });
         }
@@ -5572,129 +5669,52 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
             </div>
 
             {listingAddons.length ? (
-              <div style={{ display: 'grid', gap: 14 }}>
-                {listingAddons.map((addon, index) => (
-                  <div
-                    key={`addon-${index}`}
-                    style={{
-                      border: `1px solid ${alpha(theme.colors.ink, 0.08)}`,
-                      display: 'grid',
-                      gap: 14,
-                      padding: 16,
-                    }}
-                  >
-                    <div style={{ alignItems: 'center', display: 'flex', justifyContent: 'space-between', gap: 12 }}>
-                      <strong style={{ color: theme.colors.ink, fontSize: 15 }}>Add-on {index + 1}</strong>
-                      <Button onClick={() => removeAddonRow(index)} type="button" variant="ghost">
-                        Remove
-                      </Button>
-                    </div>
-
-                    <div className="form-grid" style={{ display: 'grid', gap: 14, gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
-                      <FormField label="Add-on name">
-                        <Input onChange={(event) => handleAddonChange(index, 'addon_name', event.target.value)} value={addon.addon_name} />
-                      </FormField>
-
-                      <FormField label="Pricing type">
-                        <select
-                          onChange={(event) => handleAddonChange(index, 'pricing_type', event.target.value)}
-                          style={selectStyle}
-                          value={addon.pricing_type}
-                        >
-                          {addonPricingOptions.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                      </FormField>
-                    </div>
-
-                    <div className="form-grid" style={{ display: 'grid', gap: 14, gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
-                      <FormField label="Add-on price">
-                        <Input min="0" onChange={(event) => handleAddonChange(index, 'price', event.target.value)} step="0.01" type="number" value={addon.price} />
-                      </FormField>
-
-                      <label
-                        style={{
-                          alignItems: 'center',
-                          color: theme.colors.ink,
-                          display: 'inline-flex',
-                          fontSize: 14,
-                          fontWeight: 600,
-                          gap: 10,
-                          marginTop: 34,
-                        }}
-                      >
-                        <input
-                          checked={addon.is_required}
-                          onChange={(event) => handleAddonChange(index, 'is_required', event.target.checked)}
-                          type="checkbox"
-                        />
-                        Required add-on
-                      </label>
-                    </div>
-
-                    <FormField label="Add-on description">
-                      <Textarea onChange={(event) => handleAddonChange(index, 'description', event.target.value)} value={addon.description} />
-                    </FormField>
-
-                    <div style={{ display: 'grid', gap: 10 }}>
-                      <FormField label="Add-on image">
-                        <input
-                          accept="image/*"
-                          onChange={(event) => handleAddonImageChange(index, event.target.files?.[0] || null)}
-                          type="file"
-                        />
-                      </FormField>
-
-                      {addon.imagePreview || addon.image_url ? (
-                        <div
-                          style={{
-                            alignItems: 'start',
-                            display: 'grid',
-                            gap: 10,
-                            gridTemplateColumns: '132px minmax(0, 1fr)',
-                          }}
-                        >
-                          <div
-                            style={{
-                              background: alpha(theme.colors.panel, 0.92),
-                              border: `1px solid ${alpha(theme.colors.ink, 0.08)}`,
-                              height: 132,
-                              overflow: 'hidden',
-                              width: 132,
-                            }}
-                          >
-                            <img
-                              alt={addon.addon_name || `Add-on ${index + 1}`}
-                              src={addon.imagePreview || addon.image_url}
-                              style={{
-                                display: 'block',
-                                height: '100%',
-                                objectFit: 'cover',
-                                width: '100%',
-                              }}
-                            />
-                          </div>
-
-                          <div style={{ display: 'grid', gap: 8 }}>
-                            <span style={{ color: theme.colors.slate, fontSize: 13, lineHeight: 1.55 }}>
-                              {addon.imagePreview ? 'Selected add-on image preview.' : 'Current saved add-on image.'}
-                            </span>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                              {addon.image_url && !addon.imagePreview ? <Badge tone="info">Saved image</Badge> : null}
-                              {addon.imagePreview ? <Badge tone="success">New image</Badge> : null}
-                              <Button onClick={() => handleAddonImageChange(index, null)} type="button" variant="ghost">
-                                Remove image
-                              </Button>
+              <div className="listing-addon-table-wrap">
+                <table className="listing-addon-table">
+                  <thead>
+                    <tr>
+                      <th>Add-on</th>
+                      <th>Price</th>
+                      <th>Quantity</th>
+                      <th>Pricing</th>
+                      <th>Status</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {listingAddons.map((addon, index) => (
+                      <tr key={`addon-${index}`}>
+                        <td data-label="Add-on">
+                          <div className="listing-addon-table-product">
+                            <div className="listing-addon-table-image">
+                              {addon.imagePreview || addon.image_url ? (
+                                <img alt={addon.addon_name || `Add-on ${index + 1}`} src={addon.imagePreview || addon.image_url} />
+                              ) : (
+                                <span>No image</span>
+                              )}
+                            </div>
+                            <div>
+                              <strong>{addon.addon_name || `Add-on ${index + 1}`}</strong>
+                              <span>{addon.description || 'No description provided.'}</span>
                             </div>
                           </div>
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                ))}
+                        </td>
+                        <td data-label="Price">{currencyFormatter.format(Number(addon.price) || 0)}</td>
+                        <td data-label="Quantity">{Math.max(1, Number(addon.quantity) || 1)}</td>
+                        <td data-label="Pricing">{addonPricingOptions.find((option) => option.value === addon.pricing_type)?.label || 'Per rental'}</td>
+                        <td data-label="Status">
+                          <Badge tone={addon.is_required ? 'info' : 'neutral'}>{addon.is_required ? 'Required' : 'Optional'}</Badge>
+                        </td>
+                        <td data-label="Action">
+                          <div className="listing-addon-table-actions">
+                            <Button onClick={() => editAddonRow(index)} type="button" variant="secondary">Edit</Button>
+                            <Button onClick={() => removeAddonRow(index)} type="button" variant="ghost">Remove</Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             ) : (
               <StatusMessage tone="info">No add-ons yet. Keep the listing simple or add optional extras with their own fees.</StatusMessage>
@@ -5702,6 +5722,109 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
           </div>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        actions={
+          <>
+            <Button onClick={closeAddonEditor} type="button" variant="ghost">Cancel</Button>
+            <Button form="listing-addon-editor-form" type="submit">
+              {addonEditor?.index >= 0 ? 'Save changes' : 'Add add-on'}
+            </Button>
+          </>
+        }
+        contentClassName="listing-addon-editor-modal"
+        contentStyle={{ background: 'var(--ui-background-color, #fff)' }}
+        onClose={closeAddonEditor}
+        open={Boolean(addonEditor)}
+        size="compact"
+        title={addonEditor?.index >= 0 ? 'Edit add-on' : 'Add add-on'}
+      >
+        {addonEditor ? (
+          <form
+            className="listing-addon-editor-form"
+            id="listing-addon-editor-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              saveAddonEditor();
+            }}
+          >
+            {addonEditorError ? <StatusMessage tone="warning">{addonEditorError}</StatusMessage> : null}
+
+            <div className="listing-addon-editor-fields">
+              <FormField label="Add-on name" required>
+                <Input onChange={(event) => handleAddonEditorChange('addon_name', event.target.value)} required value={addonEditor.value.addon_name} />
+              </FormField>
+
+              <FormField label="Price" required>
+                <Input min="0" onChange={(event) => handleAddonEditorChange('price', event.target.value)} required step="0.01" type="number" value={addonEditor.value.price} />
+              </FormField>
+
+              <FormField label="Available quantity" required>
+                <Input min="1" onChange={(event) => handleAddonEditorChange('quantity', event.target.value)} required step="1" type="number" value={addonEditor.value.quantity} />
+              </FormField>
+
+              <FormField label="Pricing type" required>
+                <select
+                  onChange={(event) => handleAddonEditorChange('pricing_type', event.target.value)}
+                  required
+                  style={selectStyle}
+                  value={addonEditor.value.pricing_type}
+                >
+                  {addonPricingOptions.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </FormField>
+            </div>
+
+            <FormField label="Description">
+              <Textarea className="listing-addon-editor-description" onChange={(event) => handleAddonEditorChange('description', event.target.value)} value={addonEditor.value.description} />
+            </FormField>
+
+            <div className="listing-addon-editor-media">
+              <FormField label="Image">
+                <input
+                  accept="image/*"
+                  onChange={(event) => handleAddonEditorImageChange(event.target.files?.[0] || null)}
+                  type="file"
+                />
+              </FormField>
+
+              <div className="listing-addon-media-row">
+                {addonEditor.value.imagePreview || addonEditor.value.image_url ? (
+                  <div className="listing-addon-image-preview">
+                    <img
+                      alt={addonEditor.value.addon_name || 'Add-on preview'}
+                      src={addonEditor.value.imagePreview || addonEditor.value.image_url}
+                    />
+                  </div>
+                ) : (
+                  <div className="listing-addon-image-placeholder">No image</div>
+                )}
+                <div className="listing-addon-media-actions">
+                  {addonEditor.value.image_url && !addonEditor.value.imagePreview ? <Badge tone="info">Saved image</Badge> : null}
+                  {addonEditor.value.imagePreview ? <Badge tone="success">New image</Badge> : null}
+                  {addonEditor.value.imagePreview || addonEditor.value.image_url ? (
+                    <Button onClick={() => handleAddonEditorImageChange(null)} type="button" variant="ghost">Remove image</Button>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+
+            <label className="listing-addon-required-toggle">
+              <input
+                checked={addonEditor.value.is_required}
+                onChange={(event) => handleAddonEditorChange('is_required', event.target.checked)}
+                type="checkbox"
+              />
+              <span>
+                <strong>Required add-on</strong>
+                <small>Automatically include this add-on in every booking.</small>
+              </span>
+            </label>
+          </form>
+        ) : null}
       </Modal>
 
       <Modal

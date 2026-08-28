@@ -1,1 +1,4 @@
 student_number,email,first_name,middle_name,last_name,suffix,phone_number,date_of_birth,street,barangay,city,province,region,country,school_code,program_code,section,year_level,school_status
+2026-100014,reyesdjc@students.nu-baliwag.edu.ph,Daniel Joseph,Cruz,Reyes,,09170000014,2007-01-22,18 Mabini Street,San Jose,Baliwag,Bulacan,Region III,Philippines,SET,BSIT,ITE261,1,Enrolled
+2025-100015,santospal@students.nu-baliwag.edu.ph,Patricia Anne,Lim,Santos,,09170000015,2006-05-14,42 Rizal Street,Poblacion,Baliwag,Bulacan,Region III,Philippines,SBA,BSA,ACC251,2,Enrolled
+2024-100016,floresmag@students.nu-baliwag.edu.ph,Miguel Antonio,Garcia,Flores,,09170000016,2005-09-03,76 Bonifacio Street,Longos,Pulilan,Bulacan,Region III,Philippines,STHM,BSHM,HMT241,3,Enrolled

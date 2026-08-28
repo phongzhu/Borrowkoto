@@ -408,7 +408,7 @@ export default function ManageUsers() {
           <form className="admin-registry-import-card" onSubmit={handleRegistryImport}>
             <div className="admin-registry-import-heading">
               <strong>Import completed registry</strong>
-              <span>Excel (.xlsx) or CSV · Up to 5,000 students</span>
+              <span>Excel (.xlsx) or CSV · Up to 5,000 students. Existing activations and passwords are preserved.</span>
             </div>
             <label className={`admin-registry-file-picker${registryFile ? ' has-file' : ''}`}>
               <input

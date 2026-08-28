@@ -125,7 +125,7 @@
 
 .rent-modal-primary {
   background: var(--ui-primary-color, #173b8f) !important;
-  color: var(--ui-primary-text-color, #fff) !important;
+  color: var(--ui-background-color, #fff) !important;
   min-height: 44px !important;
   padding-inline: 22px !important;
 }
@@ -365,6 +365,28 @@
 .rent-order-item-meta span {
   color: #64748b;
   font-size: 12px;
+}
+
+.rent-order-item-meta small {
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  color: #64748b;
+  display: -webkit-box;
+  font-size: 11px;
+  line-height: 1.35;
+  overflow: hidden;
+}
+
+.rent-addon-description {
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  display: -webkit-box;
+  line-height: 1.4;
+  overflow: hidden;
+}
+
+.rent-addon-item-thumb {
+  background-color: rgba(24, 33, 46, 0.04) !important;
 }
 
 .rent-order-addon-list {
@@ -785,6 +807,14 @@
 
   .rent-owner-item-meta > span {
     display: none;
+  }
+
+  .rent-addon-item-meta > span {
+    display: -webkit-box;
+  }
+
+  .rent-addon-item-meta > span:last-child {
+    display: block;
   }
 
   .rent-owner-item-inline-meta,
