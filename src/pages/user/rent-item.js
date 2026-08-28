@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import 'react-datepicker/dist/react-datepicker.css';
 import { supabase } from '../../api/supabaseClient';
+import { userHasUnsettledDues } from '../../services/accountDuesService';
 import { userHasActiveDamageHold } from '../../services/damageClaimsService';
 import { Badge, Button, FormField, Input, Modal, Panel, StatusMessage, Textarea } from '../../ui/primitives';
 import { sanitizeText } from '../../ui/profileFormUtils';
@@ -262,6 +263,7 @@ export default function RentItem() {
   const [message, setMessage] = useState('');
   const [messageTone, setMessageTone] = useState('info');
   const [activeDamageHold, setActiveDamageHold] = useState(false);
+  const [activeDuesHold, setActiveDuesHold] = useState(false);
   const [mobileNoteModal, setMobileNoteModal] = useState({ content: '', open: false, title: '' });
   const [bundleQuantityModal, setBundleQuantityModal] = useState({ itemId: '', open: false, quantity: 1 });
 
@@ -287,7 +289,7 @@ export default function RentItem() {
 
       setUserId(user.id);
 
-      const [itemResult, addonsResult, blocksResult, imagesResult, damageHoldResult, profileResult, vouchersResult] = await Promise.all([
+      const [itemResult, addonsResult, blocksResult, imagesResult, damageHoldResult, duesHoldResult, profileResult, vouchersResult] = await Promise.all([
         supabase.from('items').select(itemSelectFields).eq('id', itemId).maybeSingle(),
         supabase
           .from('item_addons')
@@ -307,6 +309,7 @@ export default function RentItem() {
           .eq('item_id', itemId)
           .order('sort_order', { ascending: true }),
         userHasActiveDamageHold(user.id),
+        userHasUnsettledDues(user.id),
         supabase
           .from('profiles')
           .select('id, first_name, last_name, username, profile_photo_url, is_profile_complete, nub_registry_managed')
@@ -376,6 +379,7 @@ export default function RentItem() {
       setCurrentUserProfile(profileResult.data || null);
       setAvailableVouchers(vouchersResult.data || []);
       setActiveDamageHold(Boolean(damageHoldResult));
+      setActiveDuesHold(Boolean(duesHoldResult));
       const nextImages = (imagesResult.data || [])
         .slice()
         .sort((left, right) => Number(right.is_primary) - Number(left.is_primary) || Number(left.sort_order) - Number(right.sort_order));
@@ -678,7 +682,9 @@ export default function RentItem() {
       issues.push('Complete your contact information and address before renting.');
     }
 
-    if (activeDamageHold) {
+    if (activeDuesHold) {
+      issues.push('Your account is temporarily frozen. Settle all late fees and approved damage charges before renting another item.');
+    } else if (activeDamageHold) {
       issues.push('Your account has an active admin-approved damage hold. Settle the damage claim before renting another item.');
     }
 
@@ -727,7 +733,7 @@ export default function RentItem() {
     }
 
     return issues;
-  }, [activeDamageHold, currentUserProfile, item, primaryRequestedQuantity, userId]);
+  }, [activeDamageHold, activeDuesHold, currentUserProfile, item, primaryRequestedQuantity, userId]);
 
   const canSubmit = !loading && !saving && item && rentIssues.length === 0;
   const requestedStartDate = useMemo(() => parseLocalDateTimeValue(form.requested_start), [form.requested_start]);
@@ -989,6 +995,10 @@ export default function RentItem() {
     try {
       if (rentIssues.length) {
         throw new Error(rentIssues[0]);
+      }
+
+      if (await userHasUnsettledDues(userId)) {
+        throw new Error('Your account is temporarily frozen. Settle all late fees and approved damage charges before renting another item.');
       }
 
       if (await userHasActiveDamageHold(userId)) {

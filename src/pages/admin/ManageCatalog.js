@@ -119,7 +119,7 @@ async function uploadCategoryIcon(file) {
 }
 
 export default function ManageCatalog() {
-  const [activeCatalogTab, setActiveCatalogTab] = useState('categories');
+  const [activeCatalogTab, setActiveCatalogTab] = useState('items');
   const [categories, setCategories] = useState([]);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -127,6 +127,7 @@ export default function ManageCatalog() {
   const [message, setMessage] = useState('');
   const [messageTone, setMessageTone] = useState('success');
   const [categoryTypeFilter, setCategoryTypeFilter] = useState('all');
+  const [categoryStatusFilter, setCategoryStatusFilter] = useState('active');
   const [categoryForm, setCategoryForm] = useState({
     description: '',
     icon_key: 'box',
@@ -137,7 +138,7 @@ export default function ManageCatalog() {
   const [categoryIconPreview, setCategoryIconPreview] = useState('');
   const [showAddCategory, setShowAddCategory] = useState(false);
   const [itemSearch, setItemSearch] = useState('');
-  const [itemStatusFilter, setItemStatusFilter] = useState('all');
+  const [itemStatusFilter, setItemStatusFilter] = useState('active');
   const [savingCategory, setSavingCategory] = useState(false);
   const [editingCategory, setEditingCategory] = useState(null);
   const [editingCategoryForm, setEditingCategoryForm] = useState({
@@ -286,16 +287,20 @@ export default function ManageCatalog() {
   const totalItems = items.length;
   const activeItems = useMemo(() => items.filter((item) => item.is_active).length, [items]);
   const filteredCategories = useMemo(() => {
+    const statusFilteredCategories = categoryStatusFilter === 'all'
+      ? categories
+      : categories.filter((category) => categoryStatusFilter === 'active' ? category.is_active : !category.is_active);
+
     if (categoryTypeFilter === 'main') {
-      return categories.filter((category) => !category.parent_category_id);
+      return statusFilteredCategories.filter((category) => !category.parent_category_id);
     }
 
     if (categoryTypeFilter === 'sub') {
-      return categories.filter((category) => Boolean(category.parent_category_id));
+      return statusFilteredCategories.filter((category) => Boolean(category.parent_category_id));
     }
 
-    return categories;
-  }, [categories, categoryTypeFilter]);
+    return statusFilteredCategories;
+  }, [categories, categoryStatusFilter, categoryTypeFilter]);
   const editingSubcategories = useMemo(() => {
     if (!editingCategory) {
       return [];
@@ -315,13 +320,21 @@ export default function ManageCatalog() {
     [categories]
   );
 
-  const itemStatusOptions = useMemo(() => ['all', ...Array.from(new Set(items.map((item) => item.status).filter(Boolean))).sort()], [items]);
+  const itemStatusOptions = [
+    { label: 'Active listings', value: 'active' },
+    { label: 'Inactive listings', value: 'inactive' },
+    { label: 'All listings', value: 'all' },
+  ];
 
   const filteredItems = useMemo(() => {
     const normalizedSearch = itemSearch.trim().toLowerCase();
 
     return items.filter((item) => {
-      if (itemStatusFilter !== 'all' && item.status !== itemStatusFilter) {
+      if (itemStatusFilter === 'active' && !item.is_active) {
+        return false;
+      }
+
+      if (itemStatusFilter === 'inactive' && item.is_active) {
         return false;
       }
 
@@ -666,6 +679,30 @@ export default function ManageCatalog() {
                   <option value="sub">Subcategories</option>
                 </select>
               </label>
+              <label style={{ display: 'grid', gap: 8, minWidth: 220 }}>
+                <span style={{ color: theme.colors.ink, fontSize: 14, fontWeight: 600 }}>Category status</span>
+                <select
+                  name="category_status_filter"
+                  onChange={(event) => setCategoryStatusFilter(event.target.value)}
+                  style={{
+                    background: alpha(theme.colors.panel, 0.92),
+                    border: `1px solid ${alpha(theme.colors.ink, 0.1)}`,
+                    borderRadius: 18,
+                    color: theme.colors.ink,
+                    fontFamily: theme.fonts.body,
+                    fontSize: 15,
+                    minHeight: 52,
+                    outline: 'none',
+                    padding: '0 16px',
+                    width: '100%',
+                  }}
+                  value={categoryStatusFilter}
+                >
+                  <option value="active">Active categories</option>
+                  <option value="inactive">Inactive categories</option>
+                  <option value="all">All categories</option>
+                </select>
+              </label>
               <Badge style={{ alignSelf: 'flex-end', marginBottom: 2 }} tone="info">
                 {loading ? 'Loading categories' : `${filteredCategories.length} shown`}
               </Badge>
@@ -677,7 +714,7 @@ export default function ManageCatalog() {
 
           {message ? <StatusMessage tone={messageTone}>{message}</StatusMessage> : null}
           {loading ? <StatusMessage tone="info">Loading categories.</StatusMessage> : null}
-          {!loading && !filteredCategories.length ? <StatusMessage tone="info">No categories match the current category type filter.</StatusMessage> : null}
+          {!loading && !filteredCategories.length ? <StatusMessage tone="info">No categories match the current type and status filters.</StatusMessage> : null}
 
           {!loading && filteredCategories.length ? (
             <div
@@ -762,7 +799,7 @@ export default function ManageCatalog() {
               <Input name="item_search" onChange={(event) => setItemSearch(event.target.value)} value={itemSearch} />
             </FormField>
 
-            <FormField label="Status">
+            <FormField label="Listing status">
               <select
                 name="item_status"
                 onChange={(event) => setItemStatusFilter(event.target.value)}
@@ -780,9 +817,9 @@ export default function ManageCatalog() {
                 }}
                 value={itemStatusFilter}
               >
-                {itemStatusOptions.map((status) => (
-                  <option key={status} value={status}>
-                    {status === 'all' ? 'All statuses' : status}
+                {itemStatusOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
                   </option>
                 ))}
               </select>
@@ -794,7 +831,7 @@ export default function ManageCatalog() {
           </div>
 
           {loading ? <StatusMessage tone="info">Loading item catalog.</StatusMessage> : null}
-          {!loading && !filteredItems.length ? <StatusMessage tone="info">No items found for the current search and status filter.</StatusMessage> : null}
+          {!loading && !filteredItems.length ? <StatusMessage tone="info">No items found for the current search and listing status filter.</StatusMessage> : null}
 
           {!loading && filteredItems.length ? (
             <div

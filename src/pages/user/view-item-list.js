@@ -1765,7 +1765,7 @@ export default function ViewItemList({ publicMode = false }) {
                   </div>
                   <p className="item-detail-schedule-window">Pickup at <strong>{pickupTime}</strong> · Return by <strong>{returnTime}</strong>. Returns after the deadline incur the daily late fee.</p>
                   <div className="item-detail-booked-calendar">
-                    <div className="item-detail-booked-calendar-head">
+                  <div className="item-detail-booked-calendar-head">
                       <strong>Booked dates</strong>
                       {!hasSelectedSchedule ? (
                         <span className="item-detail-rent-warning item-detail-booked-warning" role="note" tabIndex={0}>
@@ -1774,6 +1774,9 @@ export default function ViewItemList({ publicMode = false }) {
                         </span>
                       ) : null}
                     </div>
+                    <span className="item-detail-booked-calendar-legend">
+                      <i aria-hidden="true" /> Red dates are already booked.
+                    </span>
                     <DatePicker
                       calendarClassName="rent-datepicker-calendar"
                       dayClassName={bookedDayClassName}

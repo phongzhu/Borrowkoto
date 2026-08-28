@@ -370,15 +370,22 @@ function isSameEntityId(leftValue, rightValue) {
 }
 
 const APPROVAL_STATUS_CANDIDATES = [BOOKING_STATUS.ACCEPTED];
+const LATE_FEE_PAYABLE_STATUSES = new Set([
+  BOOKING_STATUS.ACCEPTED,
+  BOOKING_STATUS.FOR_PICKUP,
+  BOOKING_STATUS.ACTIVE,
+  BOOKING_STATUS.OVERDUE,
+]);
 const BORROWER_CANCELLABLE_STATUS_CANDIDATES = [BOOKING_STATUS.PENDING, BOOKING_STATUS.ACCEPTED, BOOKING_STATUS.FOR_PICKUP, BOOKING_STATUS.ACTIVE];
 const RETURN_STATUS_CANDIDATES = ['done', 'completed', 'returned', 'closed'];
-const OWNER_RETURNABLE_STATUSES = [BOOKING_STATUS.ACCEPTED, BOOKING_STATUS.FOR_PICKUP, BOOKING_STATUS.ACTIVE, BOOKING_STATUS.OVERDUE];
+const OWNER_RETURNABLE_STATUSES = [BOOKING_STATUS.ACCEPTED, BOOKING_STATUS.FOR_PICKUP, BOOKING_STATUS.ACTIVE, BOOKING_STATUS.OVERDUE, BOOKING_STATUS.RETURN_PENDING];
 const LATE_FEE_OWNER_SHARE = 0.7;
 const LATE_FEE_ADMIN_SHARE = 0.3;
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const DAMAGE_REPORT_WINDOW_MS = 24 * 60 * 60 * 1000;
 const PAYMONGO_PAYMENT_METHOD = 'paymongo';
 const DEFAULT_PAYMENT_STATUS = 'recorded';
+const SETTLED_LATE_FEE_PAYMENT_STATUSES = new Set(['recorded', 'paid', 'completed', 'settled']);
 const PAYMENT_TYPE_CANDIDATES = Object.freeze({
   depositReturn: ['deposit_return', 'security_deposit_return', 'deposit_refund', 'refund', 'payment'],
   platformFee: ['platform_fee', 'commission_fee', 'service_fee', 'payment'],
@@ -458,7 +465,12 @@ function createDamageReportForm() {
 function calculateLateFee(booking, asOfDate = new Date()) {
   const scheduleEnd = booking?.approved_end || booking?.requested_end;
   const endDate = scheduleEnd ? new Date(scheduleEnd) : null;
-  const returnedAt = asOfDate instanceof Date ? asOfDate : new Date(asOfDate);
+  const returnSubmittedAt = String(booking?.status || '').toLowerCase() === BOOKING_STATUS.RETURN_PENDING && booking?.updated_at
+    ? new Date(booking.updated_at)
+    : null;
+  const returnedAt = returnSubmittedAt && !Number.isNaN(returnSubmittedAt.getTime())
+    ? returnSubmittedAt
+    : (asOfDate instanceof Date ? asOfDate : new Date(asOfDate));
   const feePerDay = Math.max(0, Number(booking?.rental_price_per_day) || 0);
 
   if (!endDate || Number.isNaN(endDate.getTime()) || Number.isNaN(returnedAt.getTime()) || returnedAt <= endDate) {
@@ -666,7 +678,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
   const [bookingDetailId, setBookingDetailId] = useState('');
   const [activeBookingFilter, setActiveBookingFilter] = useState(() => {
     const queryTab = new URLSearchParams(window.location.search).get('tab');
-    return queryTab === 'schedule' ? 'approval' : 'approval';
+    return queryTab === 'dues' ? 'borrowed' : 'approval';
   });
   const [manageBookingView, setManageBookingView] = useState('bookings');
   const [showReviewModal, setShowReviewModal] = useState(false);
@@ -2149,6 +2161,12 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
   );
   const bookingDetail = useMemo(() => bookings.find((booking) => booking.id === bookingDetailId) || null, [bookings, bookingDetailId]);
   const bookingDetailLateFee = useMemo(() => calculateLateFee(bookingDetail), [bookingDetail]);
+  const bookingDetailDepositApplied = toMoneyAmount(
+    Math.min(Number(bookingDetail?.security_deposit || 0), bookingDetailLateFee.total)
+  );
+  const bookingDetailPayMongoDue = toMoneyAmount(
+    Math.max(0, bookingDetailLateFee.total - bookingDetailDepositApplied)
+  );
   const reviewRating = Number(reviewForm.rating) || 0;
   const showManageBooking = viewMode === 'all' || viewMode === 'manage-booking';
   const showRentalItems = viewMode === 'all' || viewMode === 'rental-items';
@@ -2247,7 +2265,9 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
 
   useEffect(() => {
     const queryTab = new URLSearchParams(location.search).get('tab');
-    if (queryTab === 'schedule') {
+    if (queryTab === 'dues') {
+      setActiveBookingFilter('borrowed');
+    } else if (queryTab === 'schedule') {
       setActiveBookingFilter('approval');
     }
   }, [location.search]);
@@ -2508,7 +2528,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
         // Find the late fee transactions for this booking
         let { data: lateFeeTxns, error: fetchError } = await supabase
           .from('payment_transactions')
-          .select('id, transaction_type, amount, status')
+          .select('id, transaction_type, amount, status, payment_method')
           .eq('booking_id', bookingId)
           .in('transaction_type', ['late_fee_owner_share', 'late_fee_admin_share']);
 
@@ -2569,7 +2589,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
 
           const { data: recreatedLateFeeTxns, error: refetchError } = await supabase
             .from('payment_transactions')
-            .select('id, transaction_type, amount, status')
+            .select('id, transaction_type, amount, status, payment_method')
             .eq('booking_id', bookingId)
             .in('transaction_type', ['late_fee_owner_share', 'late_fee_admin_share']);
 
@@ -2596,27 +2616,17 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
           throw new Error(updateError.message);
         }
 
-        let returnedBooking = null;
-        let bookingUpdateError = null;
-        for (const status of RETURN_STATUS_CANDIDATES) {
-          const { data: updatedBookings, error: statusUpdateError } = await supabase
-            .from('bookings')
-            .update({ status, updated_at: new Date().toISOString() })
-            .eq('id', bookingId)
-            .eq('borrower_id', userId)
-            .select('id, status')
-            .limit(1);
-          if (statusUpdateError) {
-            bookingUpdateError = statusUpdateError;
-            continue;
-          }
-          if ((updatedBookings || []).length) {
-            returnedBooking = updatedBookings[0];
-            break;
-          }
-        }
-        if (!returnedBooking) {
-          throw new Error(bookingUpdateError?.message || 'Late fee was recorded, but the booking could not be marked as returned.');
+        const { data: updatedBookings, error: bookingUpdateError } = await supabase
+          .from('bookings')
+          .update({ status: BOOKING_STATUS.RETURN_PENDING, updated_at: new Date().toISOString() })
+          .eq('id', bookingId)
+          .eq('borrower_id', userId)
+          .select('id, status')
+          .limit(1);
+
+        const returnPendingBooking = (updatedBookings || [])[0];
+        if (bookingUpdateError || !returnPendingBooking) {
+          throw new Error(bookingUpdateError?.message || 'Late fee was recorded, but the return could not be submitted for owner confirmation.');
         }
 
         // Reload bookings to reflect updated state
@@ -2624,10 +2634,18 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
 
         if (!ignore) {
           const totalAmount = lateFeeTxns.reduce((sum, txn) => sum + Number(txn.amount), 0);
-          setBookings((current) => current.map((booking) => booking.id === bookingId ? { ...booking, status: returnedBooking.status, updated_at: new Date().toISOString() } : booking));
+          const depositApplied = lateFeeTxns
+            .filter((transaction) => transaction.payment_method === 'security_deposit')
+            .reduce((sum, transaction) => sum + Number(transaction.amount), 0);
+          const payMongoAmount = Math.max(0, totalAmount - depositApplied);
+          setBookings((current) => current.map((booking) => booking.id === bookingId ? { ...booking, status: returnPendingBooking.status, updated_at: new Date().toISOString() } : booking));
           setBookingDetailId(bookingId);
           setActiveBookingFilter('borrowed');
-          setMessage(`Late fee payment of ${currencyFormatter.format(totalAmount)} completed. The item is now marked as returned.`);
+          setMessage(
+            `${currencyFormatter.format(depositApplied)} was applied from the security deposit and `
+            + `${currencyFormatter.format(payMongoAmount)} was paid through PayMongo. `
+            + `The return is now awaiting the owner's confirmation.`
+          );
           setMessageTone('success');
           setBookingActionBusyId('');
           window.history.replaceState({}, '', window.location.pathname);
@@ -3205,90 +3223,45 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
     try {
       const returnedAt = new Date();
       const lateFee = calculateLateFee(booking, returnedAt);
-      const adminPayeeId = await resolveAdminPayeeId();
-      const nextStatus = await updateBookingStatusWithFallback(booking, RETURN_STATUS_CANDIDATES);
-      let lateFeeRecorded = true;
       let depositReturnRecordError = '';
       let depositReturnSkippedReason = '';
       let depositReturnedAmount = 0;
       const securityDepositAmount = toMoneyAmount(Number(booking.security_deposit || 0));
-      const lateFeeCoveredByDeposit = toMoneyAmount(Math.min(securityDepositAmount, Number(lateFee.total || 0)));
-      const lateFeeRemainingToPay = toMoneyAmount(Math.max(0, Number(lateFee.total || 0) - lateFeeCoveredByDeposit));
-
-      function splitLateFeeShares(amount) {
-        const normalizedAmount = toMoneyAmount(amount);
-        if (normalizedAmount <= 0) {
-          return { admin: 0, owner: 0 };
-        }
-        const owner = toMoneyAmount(normalizedAmount * LATE_FEE_OWNER_SHARE);
-        const admin = toMoneyAmount(Math.max(0, normalizedAmount - owner));
-        return { admin, owner };
-      }
+      let settledLateFeeTotal = Number(lateFee.total || 0);
 
       if (lateFee.total > 0) {
-        const coveredShares = splitLateFeeShares(lateFeeCoveredByDeposit);
-        const remainingShares = splitLateFeeShares(lateFeeRemainingToPay);
-        const lateFeeTransactions = [
-          {
-            amount: coveredShares.owner,
-            booking_id: booking.id,
-            notes: `Late fee covered by security deposit: ${lateFee.daysLate} day(s) overdue at ${currencyFormatter.format(lateFee.feePerDay)} per day. Owner share 70%.`,
-            payee_id: booking.owner_id,
-            payer_id: booking.borrower_id,
-            payment_method: PAYMONGO_PAYMENT_METHOD,
-            reference_number: `paymongo:late_fee:owner:deposit:${booking.id}`,
-            status: DEFAULT_PAYMENT_STATUS,
-            transaction_at: returnedAt.toISOString(),
-            transaction_type: 'late_fee_owner_share',
-          },
-          {
-            amount: coveredShares.admin,
-            booking_id: booking.id,
-            notes: `Late fee covered by security deposit: ${lateFee.daysLate} day(s) overdue at ${currencyFormatter.format(lateFee.feePerDay)} per day. Admin share 30%.`,
-            payee_id: adminPayeeId,
-            payer_id: booking.borrower_id,
-            payment_method: PAYMONGO_PAYMENT_METHOD,
-            reference_number: `paymongo:late_fee:admin:deposit:${booking.id}`,
-            status: DEFAULT_PAYMENT_STATUS,
-            transaction_at: returnedAt.toISOString(),
-            transaction_type: 'late_fee_admin_share',
-          },
-          {
-            amount: remainingShares.owner,
-            booking_id: booking.id,
-            notes: `Remaining late fee due after deposit deduction: ${lateFee.daysLate} day(s) overdue at ${currencyFormatter.format(lateFee.feePerDay)} per day. Owner share 70%.`,
-            payee_id: booking.owner_id,
-            payer_id: booking.borrower_id,
-            payment_method: PAYMONGO_PAYMENT_METHOD,
-            reference_number: `paymongo:late_fee:owner:${booking.id}`,
-            status: 'pending',
-            transaction_at: returnedAt.toISOString(),
-            transaction_type: 'late_fee_owner_share',
-          },
-          {
-            amount: remainingShares.admin,
-            booking_id: booking.id,
-            notes: `Remaining late fee due after deposit deduction: ${lateFee.daysLate} day(s) overdue at ${currencyFormatter.format(lateFee.feePerDay)} per day. Admin share 30%.`,
-            payee_id: adminPayeeId,
-            payer_id: booking.borrower_id,
-            payment_method: PAYMONGO_PAYMENT_METHOD,
-            reference_number: `paymongo:late_fee:admin:${booking.id}`,
-            status: 'pending',
-            transaction_at: returnedAt.toISOString(),
-            transaction_type: 'late_fee_admin_share',
-          },
-        ].filter((transaction) => Number(transaction.amount) > 0);
+        const { data: lateFeeTransactions, error: lateFeeTransactionError } = await supabase
+          .from('payment_transactions')
+          .select('id, amount, status, transaction_type')
+          .eq('booking_id', booking.id)
+          .in('transaction_type', ['late_fee_owner_share', 'late_fee_admin_share']);
 
-        const { error: lateFeeInsertError } = await supabase.from('payment_transactions').insert(lateFeeTransactions);
-        lateFeeRecorded = !lateFeeInsertError;
+        if (lateFeeTransactionError) {
+          throw new Error(`Unable to verify late-fee payment: ${lateFeeTransactionError.message}`);
+        }
+
+        const payableTransactions = (lateFeeTransactions || []).filter((transaction) => Number(transaction.amount || 0) > 0);
+        const hasUnsettledPayment = payableTransactions.some(
+          (transaction) => !SETTLED_LATE_FEE_PAYMENT_STATUSES.has(String(transaction.status || '').toLowerCase())
+        );
+
+        if (!payableTransactions.length || hasUnsettledPayment) {
+          throw new Error('The borrower must pay the late fee through PayMongo before you can confirm the item return.');
+        }
+
+        settledLateFeeTotal = toMoneyAmount(
+          payableTransactions.reduce((total, transaction) => total + Number(transaction.amount || 0), 0)
+        );
       }
 
+      const lateFeeCoveredByDeposit = toMoneyAmount(Math.min(securityDepositAmount, settledLateFeeTotal));
+      const nextStatus = await updateBookingStatusWithFallback(booking, RETURN_STATUS_CANDIDATES);
       const refundableDepositAmount = toMoneyAmount(Math.max(0, securityDepositAmount - lateFeeCoveredByDeposit));
 
       if (booking?.damageClaim?.id) {
         depositReturnSkippedReason = 'deposit is held because this booking has a damage claim';
-      } else if (refundableDepositAmount <= 0 && Number(booking.security_deposit || 0) > 0) {
-        depositReturnSkippedReason = 'no deposit to return after deductions';
+      } else if (refundableDepositAmount <= 0 && securityDepositAmount > 0) {
+        depositReturnSkippedReason = 'the security deposit was fully applied to the late fee';
       } else if (refundableDepositAmount > 0) {
         try {
           await insertPaymentTransactionWithTypeFallback(
@@ -3298,7 +3271,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
               notes: `Security deposit return for ${booking.item?.title || 'rental item'} after return confirmation.`,
               payee_id: booking.borrower_id,
               payer_id: booking.owner_id,
-              payment_method: PAYMONGO_PAYMENT_METHOD,
+              payment_method: 'security_deposit',
               reference_number: `paymongo:deposit:return:${booking.id}`,
               status: DEFAULT_PAYMENT_STATUS,
               transaction_at: returnedAt.toISOString(),
@@ -3324,9 +3297,8 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
       );
 
       if (lateFee.total > 0) {
-        const lateFeeMessage = lateFeeRecorded
-          ? `Booking marked as done/returned. Late fee: ${currencyFormatter.format(lateFee.total)} (${lateFee.daysLate} day(s)). Deducted from deposit: ${currencyFormatter.format(lateFeeCoveredByDeposit)}.${lateFeeRemainingToPay > 0 ? ` Remaining to pay: ${currencyFormatter.format(lateFeeRemainingToPay)}.` : ' No additional late-fee payment is needed.'}`
-          : `Booking marked as done/returned. Late fee is ${currencyFormatter.format(lateFee.total)}, but it could not be recorded in payment transactions.`;
+        const payMongoBalance = toMoneyAmount(Math.max(0, settledLateFeeTotal - lateFeeCoveredByDeposit));
+        const lateFeeMessage = `Return confirmed. ${currencyFormatter.format(lateFeeCoveredByDeposit)} was applied from the security deposit${payMongoBalance > 0 ? ` and ${currencyFormatter.format(payMongoBalance)} was verified through PayMongo` : ''}. The booking is completed.`;
         const depositMessage =
           depositReturnedAmount > 0
             ? ` Security deposit returned: ${currencyFormatter.format(depositReturnedAmount)}.`
@@ -3338,7 +3310,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
           setMessageTone('warning');
         } else {
           setMessage(`${lateFeeMessage}${depositMessage}`);
-          setMessageTone(lateFeeRecorded ? 'success' : 'warning');
+          setMessageTone('success');
         }
       } else {
         const depositMessage =
@@ -3561,7 +3533,6 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
 
     try {
       const lateFee = calculateLateFee(booking);
-      const adminPayeeId = await resolveAdminPayeeId();
 
       if (lateFee.total <= 0) {
         setMessage('No late fee to pay for this booking.');
@@ -3570,66 +3541,47 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
         return;
       }
 
-      const { data: existingLateFeeTxns, error: existingLateFeeTxnsError } = await supabase
-        .from('payment_transactions')
-        .select('id, transaction_type, amount, status')
-        .eq('booking_id', booking.id)
-        .in('transaction_type', ['late_fee_owner_share', 'late_fee_admin_share']);
+      const { data: settlement, error: settlementError } = await supabase.rpc('prepare_late_fee_settlement', {
+        p_booking_id: booking.id,
+      });
 
-      if (existingLateFeeTxnsError) {
-        throw new Error(existingLateFeeTxnsError.message);
+      if (settlementError) {
+        throw new Error(settlementError.message);
       }
 
-      if (!existingLateFeeTxns || existingLateFeeTxns.length === 0) {
-        const lateFeeTransactions = [
-          {
-            amount: lateFee.ownerShare,
-            booking_id: booking.id,
-            notes: `Late fee: ${lateFee.daysLate} day(s) overdue at ${currencyFormatter.format(lateFee.feePerDay)} per day. Owner share 70%.`,
-            payee_id: booking.owner_id,
-            payer_id: booking.borrower_id,
-            payment_method: PAYMONGO_PAYMENT_METHOD,
-            reference_number: `paymongo:late_fee:owner:${booking.id}`,
-            status: 'pending',
-            transaction_at: new Date().toISOString(),
-            transaction_type: 'late_fee_owner_share',
-          },
-          {
-            amount: lateFee.adminShare,
-            booking_id: booking.id,
-            notes: `Late fee: ${lateFee.daysLate} day(s) overdue at ${currencyFormatter.format(lateFee.feePerDay)} per day. Admin share 30%.`,
-            payee_id: adminPayeeId,
-            payer_id: booking.borrower_id,
-            payment_method: PAYMONGO_PAYMENT_METHOD,
-            reference_number: `paymongo:late_fee:admin:${booking.id}`,
-            status: 'pending',
-            transaction_at: new Date().toISOString(),
-            transaction_type: 'late_fee_admin_share',
-          },
-        ].filter((transaction) => Number(transaction.amount) > 0);
+      const payMongoDue = Number(settlement?.paymongo_due || 0);
+      const depositApplied = Number(settlement?.deposit_applied || 0);
+      const refundableDeposit = Number(settlement?.refundable_deposit || 0);
 
-        if (lateFeeTransactions.length) {
-          const { error: lateFeeInsertError } = await supabase.from('payment_transactions').insert(lateFeeTransactions);
-          if (lateFeeInsertError) {
-            throw new Error(lateFeeInsertError.message);
-          }
-        }
+      if (payMongoDue <= 0) {
+        await loadListings(false);
+        setBookings((current) => current.map((currentBooking) => currentBooking.id === booking.id
+          ? { ...currentBooking, status: BOOKING_STATUS.RETURN_PENDING, updated_at: new Date().toISOString() }
+          : currentBooking));
+        setMessage(
+          `The ${currencyFormatter.format(depositApplied)} late fee was covered by your security deposit. `
+          + `${currencyFormatter.format(refundableDeposit)} remains refundable after the owner confirms the return.`
+        );
+        setMessageTone('success');
+        setBookingActionBusyId('');
+        return;
       }
 
       const successUrl = `${window.location.origin}/user/manage-booking?payment_status=success&booking_id=${booking.id}&late_fee_paid=true`;
       const cancelUrl = `${window.location.origin}/user/manage-booking?payment_status=cancelled&booking_id=${booking.id}`;
 
       const checkoutSession = await createTestCheckoutSession({
-        amount: lateFee.total,
+        amount: payMongoDue,
         cancelUrl,
         currency: 'PHP',
-        description: `Late fee payment for "${booking.item?.title || 'rental'}" - ${lateFee.daysLate} day(s) overdue`,
+        description: `Remaining late fee for "${booking.item?.title || 'rental'}" after security deposit`,
         metadata: {
           booking_id: booking.id,
-          late_fee_total: lateFee.total,
-          owner_share: lateFee.ownerShare,
-          admin_share: lateFee.adminShare,
-          days_late: lateFee.daysLate,
+          deposit_applied: depositApplied,
+          late_fee_total: Number(settlement?.late_fee_total || lateFee.total),
+          paymongo_due: payMongoDue,
+          refundable_deposit: refundableDeposit,
+          days_late: Number(settlement?.days_late || lateFee.daysLate),
           source: 'late_fee_payment',
         },
         successUrl,
@@ -4148,6 +4100,8 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                         const isReturned = isReturnedBookingStatus(booking.status);
                         const canCancel = isBorrowerCancellableStatus(booking.status);
                         const lateFee = calculateLateFee(booking);
+                        const depositAppliedToLateFee = toMoneyAmount(Math.min(Number(booking.security_deposit || 0), lateFee.total));
+                        const remainingLateFee = toMoneyAmount(Math.max(0, lateFee.total - depositAppliedToLateFee));
 
                         return (
                           <tr className="booking-row" key={booking.id} style={{ background: index % 2 === 0 ? alpha(theme.colors.panel, 0.56) : 'transparent' }}>
@@ -4199,9 +4153,11 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                             <td style={bodyCellStyle}>
                               <div style={{ display: 'grid', gap: 4 }}>
                                 <span style={{ color: theme.colors.ink }}>{currencyFormatter.format(Number(booking.total_due) || 0)}</span>
-                                {lateFee.total > 0 && APPROVAL_STATUS_CANDIDATES.includes(String(booking.status || '').toLowerCase()) ? (
-                                  <span style={{ color: theme.colors.danger, fontSize: 12, fontWeight: 700 }}>
-                                    + {currencyFormatter.format(lateFee.total)} late fee ({lateFee.daysLate} day{lateFee.daysLate === 1 ? '' : 's'})
+                                {lateFee.total > 0 && LATE_FEE_PAYABLE_STATUSES.has(String(booking.status || '').toLowerCase()) ? (
+                                  <span style={{ color: theme.colors.danger, display: 'grid', fontSize: 12, fontWeight: 700, gap: 2 }}>
+                                    <span>{currencyFormatter.format(lateFee.total)} late fee ({lateFee.daysLate} day{lateFee.daysLate === 1 ? '' : 's'})</span>
+                                    <span>− {currencyFormatter.format(depositAppliedToLateFee)} security deposit</span>
+                                    <span>{currencyFormatter.format(remainingLateFee)} remaining</span>
                                   </span>
                                 ) : null}
                               </div>
@@ -4218,7 +4174,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                                     Review item
                                   </Button>
                                 )
-                              ) : lateFee.total > 0 && APPROVAL_STATUS_CANDIDATES.includes(String(booking.status || '').toLowerCase()) ? (
+                              ) : lateFee.total > 0 && LATE_FEE_PAYABLE_STATUSES.has(String(booking.status || '').toLowerCase()) ? (
                                 <Button
                                   className="booking-action-button"
                                   disabled={bookingActionBusyId === booking.id}
@@ -4226,7 +4182,11 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                                   type="button"
                                   variant="secondary"
                                 >
-                                  {bookingActionBusyId === booking.id ? 'Processing...' : `Pay ${currencyFormatter.format(lateFee.total)} late fee`}
+                                  {bookingActionBusyId === booking.id
+                                    ? 'Processing...'
+                                    : remainingLateFee > 0
+                                      ? `Pay ${currencyFormatter.format(remainingLateFee)} remaining`
+                                      : 'Apply deposit and submit return'}
                                 </Button>
                               ) : canCancel ? (
                                 <Button
@@ -4272,8 +4232,12 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                     </thead>
                     <tbody>
                       {ownerBookings.map((booking) => {
-                        const canMarkDone = OWNER_RETURNABLE_STATUSES.includes(String(booking.status || '').toLowerCase());
+                        const normalizedBookingStatus = String(booking.status || '').toLowerCase();
                         const lateFee = calculateLateFee(booking);
+                        const depositAppliedToLateFee = toMoneyAmount(Math.min(Number(booking.security_deposit || 0), lateFee.total));
+                        const remainingLateFee = toMoneyAmount(Math.max(0, lateFee.total - depositAppliedToLateFee));
+                        const awaitingBorrowerLateFeePayment = lateFee.total > 0 && normalizedBookingStatus !== BOOKING_STATUS.RETURN_PENDING;
+                        const canMarkDone = OWNER_RETURNABLE_STATUSES.includes(normalizedBookingStatus) && !awaitingBorrowerLateFeePayment;
 
                         return (
                           <tr className="booking-row" key={booking.id}>
@@ -4305,6 +4269,12 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                                   <span style={{ color: theme.colors.slate, fontSize: 12 }}>
                                     {lateFee.daysLate} day{lateFee.daysLate === 1 ? '' : 's'} late
                                   </span>
+                                  <span style={{ color: theme.colors.slate, fontSize: 12 }}>
+                                    Deposit: −{currencyFormatter.format(depositAppliedToLateFee)}
+                                  </span>
+                                  <span style={{ color: theme.colors.slate, fontSize: 12 }}>
+                                    PayMongo balance: {currencyFormatter.format(remainingLateFee)}
+                                  </span>
                                 </div>
                               ) : (
                                 <span style={{ color: theme.colors.slate }}>None</span>
@@ -4324,6 +4294,8 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                                 >
                                   {bookingActionBusyId === booking.id ? 'Saving...' : 'Complete return'}
                                 </Button>
+                              ) : awaitingBorrowerLateFeePayment ? (
+                                <Badge tone="warning">Awaiting borrower payment</Badge>
                               ) : isReturnedBookingStatus(booking.status) ? (
                                 <Badge tone="success">Completed</Badge>
                               ) : (
@@ -5766,7 +5738,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
             {bookingDetail &&
             bookingDetail.borrower_id === userId &&
             bookingDetailLateFee.total > 0 &&
-            APPROVAL_STATUS_CANDIDATES.includes(String(bookingDetail.status || '').toLowerCase()) ? (
+            LATE_FEE_PAYABLE_STATUSES.has(String(bookingDetail.status || '').toLowerCase()) ? (
               <Button
                 className="booking-action-button late-fee-pay-button"
                 disabled={bookingActionBusyId === bookingDetail.id}
@@ -5776,7 +5748,9 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
               >
                 {bookingActionBusyId === bookingDetail.id
                   ? 'Opening secure checkout...'
-                  : `Pay ${currencyFormatter.format(bookingDetailLateFee.total)}`}
+                  : bookingDetailPayMongoDue > 0
+                    ? `Pay ${currencyFormatter.format(bookingDetailPayMongoDue)}`
+                    : 'Apply deposit and submit return'}
               </Button>
             ) : null}
             {bookingDetail &&
@@ -5941,7 +5915,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                   <strong>{currencyFormatter.format(Number(bookingDetail.security_deposit) || 0)}</strong>
                 </div>
               </div>
-              {bookingDetailLateFee.total > 0 && APPROVAL_STATUS_CANDIDATES.includes(String(bookingDetail.status || '').toLowerCase()) ? (
+              {bookingDetailLateFee.total > 0 && LATE_FEE_PAYABLE_STATUSES.has(String(bookingDetail.status || '').toLowerCase()) ? (
                 <div className="late-fee-payment-panel">
                   <div className="late-fee-payment-head">
                     <div>
@@ -5953,24 +5927,26 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                     </span>
                   </div>
                   <div className="late-fee-payment-total">
-                    <span>Amount to pay</span>
-                    <strong>{currencyFormatter.format(bookingDetailLateFee.total)}</strong>
+                    <span>Remaining amount to pay</span>
+                    <strong>{currencyFormatter.format(bookingDetailPayMongoDue)}</strong>
                   </div>
                   <div className="late-fee-breakdown">
                     <div>
-                      <span>Rental owner</span>
-                      <strong>{currencyFormatter.format(bookingDetailLateFee.ownerShare)}</strong>
-                      <small>70% share</small>
+                      <span>Accrued late fee</span>
+                      <strong>{currencyFormatter.format(bookingDetailLateFee.total)}</strong>
+                      <small>Based on days overdue</small>
                     </div>
                     <div>
-                      <span>Platform fee</span>
-                      <strong>{currencyFormatter.format(bookingDetailLateFee.adminShare)}</strong>
-                      <small>30% share</small>
+                      <span>Security deposit applied</span>
+                      <strong>−{currencyFormatter.format(bookingDetailDepositApplied)}</strong>
+                      <small>Applied before PayMongo</small>
                     </div>
                   </div>
                   {bookingDetail.borrower_id === userId ? (
                     <div className="late-fee-payment-note">
-                      You’ll be redirected to PayMongo’s secure checkout. The booking updates automatically after payment.
+                      {bookingDetailPayMongoDue > 0
+                        ? 'Only the remaining balance is collected through PayMongo. Any unused deposit is returned after the owner confirms the item return.'
+                        : 'Your deposit covers the fee. Submit the return now; any unused deposit is returned after owner confirmation.'}
                     </div>
                   ) : null}
                 </div>

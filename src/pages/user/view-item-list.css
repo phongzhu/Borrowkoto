@@ -1102,6 +1102,21 @@
   font-size: 12px;
 }
 
+.item-detail-booked-calendar .item-detail-booked-calendar-legend {
+  align-items: center;
+  display: flex;
+  gap: 7px;
+}
+
+.item-detail-booked-calendar-legend i {
+  background: rgba(200, 60, 70, 0.16);
+  border: 1px solid rgba(182, 70, 77, 0.32);
+  border-radius: 4px;
+  display: inline-block;
+  height: 12px;
+  width: 12px;
+}
+
 .item-detail-booking-addons {
   border: 1px solid #dfe6ee;
   border-radius: 10px;
