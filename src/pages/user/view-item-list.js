@@ -4,9 +4,8 @@ import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { supabase } from '../../api/supabaseClient';
 import { getNubProgram } from '../../data/nubAcademicData';
-import { createTestCheckoutSession } from '../../services/transaction';
 import { BookmarkIcon, CalendarIcon, MessageIcon, ShieldIcon, StarIcon } from '../../ui/icons';
-import { Button, Modal, StarRating, StatusMessage, Textarea } from '../../ui/primitives';
+import { Button, Modal, StarRating, StatusMessage } from '../../ui/primitives';
 import { buildMapEmbedUrl } from '../../ui/profileFormUtils';
 import { alpha } from '../../ui/theme';
 import { RENTABLE_ITEM_STATUSES } from '../../utils/bookingEnums';
@@ -453,9 +452,6 @@ export default function ViewItemList({ publicMode = false }) {
   const [ownerProfileOpen, setOwnerProfileOpen] = useState(false);
   const [selectedStart, setSelectedStart] = useState('');
   const [selectedEnd, setSelectedEnd] = useState('');
-  const [buyModalOpen, setBuyModalOpen] = useState(false);
-  const [buyRequestSaving, setBuyRequestSaving] = useState(false);
-  const [buyRequestFeedback, setBuyRequestFeedback] = useState('');
   const [savedRentItem, setSavedRentItem] = useState(null);
   const [desiredQuantity, setDesiredQuantity] = useState(1);
   const [saveRentLoading, setSaveRentLoading] = useState(false);
@@ -463,11 +459,6 @@ export default function ViewItemList({ publicMode = false }) {
   const [saveRentFeedbackTone, setSaveRentFeedbackTone] = useState('info');
   const [headerSearch, setHeaderSearch] = useState('');
   const [mobileInfoTab, setMobileInfoTab] = useState('details');
-  const [buyRequestForm, setBuyRequestForm] = useState({
-    buyer_message: '',
-    buyer_preferred_pickup_at: '',
-    quantity: '1',
-  });
   const heroImageRef = useRef(null);
   const viewerImageCount = item?.images?.length || 0;
 
@@ -837,7 +828,7 @@ export default function ViewItemList({ publicMode = false }) {
     if (item.owner_id === currentUserId) return false;
     if (!item.is_active) return false;
     if (!item.is_for_sale) return false;
-    return Number.isFinite(Number(item.sale_price)) && Number(item.sale_price) >= 0;
+    return Number(item.quantity) > 0 && Number.isFinite(Number(item.sale_price)) && Number(item.sale_price) > 0;
   }, [currentUserId, item]);
   const minimumStartValue = useMemo(() => formatDateTimeLocalValue(new Date()), []);
   const now = useMemo(() => new Date(), []);
@@ -1000,7 +991,7 @@ export default function ViewItemList({ publicMode = false }) {
     navigate(`/user/rent-item/${item.id}?${rentQuery.toString()}`);
   }
 
-  function handleOpenBuyModal() {
+  function handleOpenBuyItem() {
     if (!item) return;
     if (!currentUserId) {
       navigate('/login');
@@ -1011,119 +1002,7 @@ export default function ViewItemList({ publicMode = false }) {
       setChatFeedbackTone('warning');
       return;
     }
-    setBuyRequestFeedback('');
-    setBuyRequestForm({ buyer_message: '', buyer_preferred_pickup_at: '', quantity: '1' });
-    setBuyModalOpen(true);
-  }
-
-  async function handleSubmitBuyRequest(event) {
-    event.preventDefault();
-    if (!item || !currentUserId) return;
-
-    const preferredPickupText = String(buyRequestForm.buyer_preferred_pickup_at || '').trim();
-    const requestedQuantity = Number(buyRequestForm.quantity || 1);
-    const availableQuantity = Number(item.quantity || 0);
-    const salePrice = Number(item.sale_price || 0);
-
-    if (!Number.isInteger(requestedQuantity) || requestedQuantity < 1) {
-      setBuyRequestFeedback('Quantity must be at least 1.');
-      return;
-    }
-
-    if (requestedQuantity > availableQuantity) {
-      setBuyRequestFeedback('Requested quantity cannot exceed available quantity.');
-      return;
-    }
-
-    if (!preferredPickupText) {
-      setBuyRequestFeedback('Preferred pickup date and time is required.');
-      return;
-    }
-
-    const preferredPickup = new Date(preferredPickupText);
-    if (Number.isNaN(preferredPickup.getTime())) {
-      setBuyRequestFeedback('Preferred pickup date and time is invalid.');
-      return;
-    }
-
-    setBuyRequestSaving(true);
-    setBuyRequestFeedback('');
-    try {
-      const { data: existingRequest, error: existingRequestError } = await supabase
-        .from('item_purchase_requests')
-        .select('id, status')
-        .eq('item_id', item.id)
-        .eq('buyer_id', currentUserId)
-        .in('status', ['pending', 'approved', 'awaiting_payment', 'paid', 'ready_for_pickup'])
-        .limit(1)
-        .maybeSingle();
-
-      if (existingRequestError) {
-        throw new Error(existingRequestError.message);
-      }
-
-      if (existingRequest?.id) {
-        throw new Error('You already have an active purchase request for this item.');
-      }
-
-      const totalAmount = salePrice * requestedQuantity;
-      const { data: createdRequest, error: createRequestError } = await supabase
-        .from('item_purchase_requests')
-        .insert({
-          buyer_id: currentUserId,
-          buyer_message: String(buyRequestForm.buyer_message || '').trim() || null,
-          buyer_preferred_pickup_at: preferredPickup.toISOString(),
-          buyer_requested_quantity: requestedQuantity,
-          agreed_pickup_at: preferredPickup.toISOString(),
-          item_id: item.id,
-          sale_inclusions_snapshot: item.sale_inclusions || null,
-          sale_price_snapshot: salePrice,
-          seller_approved_quantity: requestedQuantity,
-          sale_total_amount_snapshot: totalAmount,
-          seller_id: item.owner_id,
-          status: 'awaiting_payment',
-        })
-        .select('id')
-        .single();
-
-      if (createRequestError) {
-        throw new Error(createRequestError.message);
-      }
-
-      const successUrl = `${window.location.origin}/user/manage-booking?payment_status=success&purchase_paid=true&purchase_request_id=${encodeURIComponent(
-        createdRequest.id
-      )}`;
-      const cancelUrl = `${window.location.href}`;
-      const checkoutSession = await createTestCheckoutSession({
-        amount: totalAmount,
-        cancelUrl,
-        currency: 'PHP',
-        description: `Purchase payment for ${item.title || 'sale item'}`,
-        lineItems: [
-          {
-            amount: salePrice,
-            name: `${item.title || 'Sale item'} purchase`,
-            quantity: requestedQuantity,
-          },
-        ],
-        metadata: {
-          item_id: item.id,
-          purchase_request_id: createdRequest.id,
-          source: 'purchase_request_payment',
-        },
-        successUrl,
-      });
-
-      if (!checkoutSession?.attributes?.checkout_url) {
-        throw new Error('Failed to get checkout URL from PayMongo.');
-      }
-
-      window.location.href = checkoutSession.attributes.checkout_url;
-    } catch (buyError) {
-      setBuyRequestFeedback(`Unable to submit purchase request: ${buyError.message}`);
-    } finally {
-      setBuyRequestSaving(false);
-    }
+    navigate(`/user/buy-item/${item.id}`);
   }
 
   async function handleOpenChat() {
@@ -1842,7 +1721,7 @@ export default function ViewItemList({ publicMode = false }) {
                     <button
                       className="item-detail-rent-btn item-detail-buy-btn"
                       disabled={!canBuyItem}
-                      onClick={handleOpenBuyModal}
+                      onClick={handleOpenBuyItem}
                       style={{ background: primaryThemeColor, color: primaryThemeTextColor }}
                       type="button"
                     >
@@ -1959,103 +1838,6 @@ export default function ViewItemList({ publicMode = false }) {
           </div>
         </Modal>
 
-        <Modal
-          actions={
-            <>
-              <Button className="buy-request-cancel" onClick={() => setBuyModalOpen(false)} variant="ghost">
-                Not now
-              </Button>
-              <Button className="buy-request-confirm" disabled={buyRequestSaving} form="buy-request-form" type="submit">
-                {buyRequestSaving ? 'Sending request...' : 'Send purchase request'}
-              </Button>
-            </>
-          }
-          contentClassName="buy-request-modal"
-          contentStyle={{ maxWidth: 760, width: 'min(760px, 100%)' }}
-          onClose={() => setBuyModalOpen(false)}
-          open={buyModalOpen}
-          size="compact"
-          title="Request to purchase"
-        >
-          <form className="buy-request-form" id="buy-request-form" onSubmit={handleSubmitBuyRequest}>
-            <div className="buy-request-product">
-              <div className="buy-request-product-image">
-                {activeImage?.image_url ? <img alt={item?.title || 'Item for sale'} src={activeImage.image_url} /> : <span>{item?.title?.charAt(0) || 'I'}</span>}
-              </div>
-              <div>
-                <small>Community marketplace</small>
-                <h4>{item?.title || 'Item for sale'}</h4>
-                <strong>{currencyFormatter.format(Number(item?.sale_price || 0))}</strong>
-                <div className="buy-request-product-meta">
-                  <span>{Number(item?.quantity || 0)} in stock</span>
-                  <span>{formatListingStatusLabel(item?.item_condition || 'new')}</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="buy-request-notice">
-              <strong>No payment is collected yet.</strong>
-              <span>The seller reviews your quantity and pickup schedule before approving the sale.</span>
-            </div>
-
-            <div className="buy-request-fields">
-            <label>
-              <span>Quantity<span aria-hidden="true" className="required-asterisk">*</span></span>
-              <input
-                className="buy-request-input"
-                max={Number(item?.quantity || 1)}
-                min="1"
-                onChange={(event) => setBuyRequestForm((current) => ({ ...current, quantity: event.target.value }))}
-                required
-                step="1"
-                type="number"
-                value={buyRequestForm.quantity}
-              />
-              <small>
-                Maximum available: {Number(item?.quantity || 0)}
-              </small>
-            </label>
-            <label>
-              <span>Preferred pickup<span aria-hidden="true" className="required-asterisk">*</span></span>
-              <input
-                className="buy-request-input"
-                min={formatDateTimeLocalValue(new Date())}
-                onChange={(event) => setBuyRequestForm((current) => ({ ...current, buyer_preferred_pickup_at: event.target.value }))}
-                required
-                type="datetime-local"
-                value={buyRequestForm.buyer_preferred_pickup_at}
-              />
-            </label>
-            <label className="buy-request-message">
-              <span>Message to seller <small>{buyRequestForm.buyer_message.length}/500</small></span>
-              <Textarea
-                maxLength={500}
-                onChange={(event) => setBuyRequestForm((current) => ({ ...current, buyer_message: event.target.value }))}
-                placeholder="Share pickup instructions, availability, or questions for the seller..."
-                rows={3}
-                value={buyRequestForm.buyer_message}
-              />
-            </label>
-            </div>
-
-            <div className="buy-request-summary">
-            {item?.sale_inclusions ? (
-              <div>
-                <span>Sale inclusions</span>
-                <p>{item.sale_inclusions}</p>
-              </div>
-            ) : null}
-            <div className="buy-request-total">
-              <span>Total purchase amount</span>
-              <div>
-                <small>{Number(buyRequestForm.quantity || 1)} × {currencyFormatter.format(Number(item?.sale_price || 0))}</small>
-                <strong>{currencyFormatter.format((Number(item?.sale_price || 0) * Number(buyRequestForm.quantity || 1)) || 0)}</strong>
-              </div>
-            </div>
-            </div>
-            {buyRequestFeedback ? <StatusMessage tone="warning">{buyRequestFeedback}</StatusMessage> : null}
-          </form>
-        </Modal>
     </div>
   );
 

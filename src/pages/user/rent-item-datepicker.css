@@ -25,6 +25,18 @@
   padding: 0 !important;
 }
 
+.rent-checkout-market-page :where(
+  .rent-order-panel input[type='number'],
+  .rent-order-panel input[type='date'],
+  .rent-order-panel input[type='datetime-local'],
+  .rent-order-panel select,
+  .rent-order-panel textarea
+) {
+  background: var(--ui-background-color, #fff) !important;
+  border-color: color-mix(in srgb, var(--ui-text-color, #18212e) 14%, transparent) !important;
+  color: var(--ui-text-color, #18212e) !important;
+}
+
 .rent-checkout-layout {
   align-items: start;
   display: grid;

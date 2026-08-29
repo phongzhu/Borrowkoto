@@ -789,12 +789,12 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
           .order('created_at', { ascending: false }),
         supabase
           .from('item_purchase_requests')
-          .select('id, item_id, buyer_id, seller_id, buyer_requested_quantity, seller_approved_quantity, sale_price_snapshot, sale_total_amount_snapshot, sale_inclusions_snapshot, buyer_preferred_pickup_at, agreed_pickup_at, pickup_location_text, pickup_notes, buyer_message, seller_notes, status, requested_at, reviewed_at, paid_at, completed_at, created_at, updated_at')
+          .select('id, item_id, buyer_id, seller_id, buyer_requested_quantity, seller_approved_quantity, sale_price_snapshot, addon_total_amount_snapshot, commission_fee_snapshot, sale_total_amount_snapshot, sale_inclusions_snapshot, buyer_preferred_pickup_at, agreed_pickup_at, pickup_location_text, pickup_notes, buyer_message, seller_notes, status, requested_at, reviewed_at, paid_at, completed_at, created_at, updated_at')
           .eq('seller_id', user.id)
           .order('created_at', { ascending: false }),
         supabase
           .from('item_purchase_requests')
-          .select('id, item_id, buyer_id, seller_id, buyer_requested_quantity, seller_approved_quantity, sale_price_snapshot, sale_total_amount_snapshot, sale_inclusions_snapshot, buyer_preferred_pickup_at, agreed_pickup_at, pickup_location_text, pickup_notes, buyer_message, seller_notes, status, requested_at, reviewed_at, paid_at, completed_at, created_at, updated_at')
+          .select('id, item_id, buyer_id, seller_id, buyer_requested_quantity, seller_approved_quantity, sale_price_snapshot, addon_total_amount_snapshot, commission_fee_snapshot, sale_total_amount_snapshot, sale_inclusions_snapshot, buyer_preferred_pickup_at, agreed_pickup_at, pickup_location_text, pickup_notes, buyer_message, seller_notes, status, requested_at, reviewed_at, paid_at, completed_at, created_at, updated_at')
           .eq('buyer_id', user.id)
           .order('created_at', { ascending: false }),
         userHasActiveDamageHold(user.id),
@@ -940,6 +940,13 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
           .select('id, first_name, middle_name, last_name, suffix, username')
           .in('id', purchaseRequestParticipantIds)
       : { data: [], error: null };
+    const purchaseRequestAddonsResult = rawPurchaseRequests.length
+      ? await supabase
+          .from('item_purchase_request_addons')
+          .select('id, purchase_request_id, item_addon_id, addon_name_snapshot, description_snapshot, image_url_snapshot, price_snapshot, quantity, total_amount, is_required')
+          .in('purchase_request_id', rawPurchaseRequests.map((request) => request.id))
+          .order('created_at', { ascending: true })
+      : { data: [], error: null };
 
     if (imagesResult.error) {
       nextErrors.push(`item_images: ${imagesResult.error.message}`);
@@ -985,6 +992,9 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
     }
     if (purchaseRequestProfilesResult.error) {
       nextErrors.push(`purchase request profiles: ${purchaseRequestProfilesResult.error.message}`);
+    }
+    if (purchaseRequestAddonsResult.error) {
+      nextErrors.push(`purchase request add-ons: ${purchaseRequestAddonsResult.error.message}`);
     }
 
     const imagesByItemId = new Map();
@@ -1071,6 +1081,12 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
     const bookingItemsById = new Map((bookingItemsResult.data || []).map((bookingItem) => [bookingItem.id, bookingItem]));
     const purchaseItemsById = new Map((purchaseRequestItemsResult.data || []).map((item) => [item.id, item]));
     const purchaseProfilesById = new Map((purchaseRequestProfilesResult.data || []).map((person) => [person.id, person]));
+    const purchaseAddonsByRequestId = new Map();
+    (purchaseRequestAddonsResult.data || []).forEach((addon) => {
+      const current = purchaseAddonsByRequestId.get(addon.purchase_request_id) || [];
+      current.push(addon);
+      purchaseAddonsByRequestId.set(addon.purchase_request_id, current);
+    });
     const nextBookings = rawBookings.map((booking) => {
       const bookingItem = bookingItemsById.get(booking.item_id) || null;
       const bookingItemImages = (bookingImagesByItemId.get(booking.item_id) || [])
@@ -1097,6 +1113,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
     const nextPurchaseRequests = rawPurchaseRequests.map((request) => ({
       ...request,
       buyer: purchaseProfilesById.get(request.buyer_id) || null,
+      addons: purchaseAddonsByRequestId.get(request.id) || [],
       item: purchaseItemsById.get(request.item_id) || null,
       seller: purchaseProfilesById.get(request.seller_id) || null,
     }));
@@ -2280,8 +2297,9 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
     const rentalsTotal = ownerBookings.reduce((sum, booking) => sum + (Number(booking.rental_fee_total ?? booking.total_due) || 0), 0);
     const salesTotal = sellerPurchaseRequests.reduce((sum, request) => {
       const qty = Number(request.seller_approved_quantity || request.buyer_requested_quantity) || 1;
-      const amount = Number(request.sale_total_amount_snapshot) || (Number(request.sale_price_snapshot) || 0) * qty;
-      return sum + amount;
+      const totalPaid = Number(request.sale_total_amount_snapshot) || (Number(request.sale_price_snapshot) || 0) * qty;
+      const sellerAmount = Math.max(0, totalPaid - (Number(request.commission_fee_snapshot) || 0));
+      return sum + sellerAmount;
     }, 0);
     return rentalsTotal + salesTotal;
   }, [ownerBookings, sellerPurchaseRequests]);
@@ -2787,7 +2805,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
         const { data: purchaseRequest, error: purchaseFetchError } = await supabase
           .from('item_purchase_requests')
           .select(
-            'id, item_id, buyer_id, seller_id, buyer_requested_quantity, seller_approved_quantity, sale_price_snapshot, sale_total_amount_snapshot, status, payment_transaction_id'
+            'id, item_id, buyer_id, seller_id, buyer_requested_quantity, seller_approved_quantity, sale_price_snapshot, addon_total_amount_snapshot, commission_fee_snapshot, sale_total_amount_snapshot, status, payment_transaction_id'
           )
           .eq('id', purchaseRequestId)
           .eq('buyer_id', userId)
@@ -2806,6 +2824,8 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
         const purchaseAmount = toMoneyAmount(
           purchaseRequest.sale_total_amount_snapshot || (Number(purchaseRequest.sale_price_snapshot) || 0) * (purchaseQuantity > 0 ? purchaseQuantity : 1)
         );
+        const purchaseCommissionAmount = toMoneyAmount(purchaseRequest.commission_fee_snapshot);
+        const sellerPurchaseAmount = toMoneyAmount(Math.max(0, purchaseAmount - purchaseCommissionAmount));
         let purchasePaymentRecordError = '';
         let purchasePaymentTransactionId = purchaseRequest.payment_transaction_id || null;
 
@@ -2813,7 +2833,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
           try {
             const { transaction } = await insertPaymentTransactionWithTypeFallback(
               {
-                amount: purchaseAmount,
+                amount: sellerPurchaseAmount,
                 booking_id: null,
                 notes: `Purchase payment for item request ${purchaseRequest.id}.`,
                 payee_id: purchaseRequest.seller_id || null,
@@ -2846,7 +2866,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                 try {
                   const { transaction } = await insertPaymentTransactionWithTypeFallback(
                     {
-                      amount: purchaseAmount,
+                      amount: sellerPurchaseAmount,
                       booking_id: fallbackBooking.id,
                       notes: `Purchase payment for item request ${purchaseRequest.id}.`,
                       payee_id: purchaseRequest.seller_id || null,
@@ -2868,6 +2888,30 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
             } else {
               purchasePaymentRecordError = recordError.message || 'Unable to create purchase payment transaction.';
             }
+          }
+        }
+
+        if (purchaseCommissionAmount > 0) {
+          try {
+            const adminPayeeId = await resolveAdminPayeeId();
+            await insertPaymentTransactionWithTypeFallback(
+              {
+                amount: purchaseCommissionAmount,
+                booking_id: null,
+                notes: `Platform commission fee for item purchase request ${purchaseRequest.id}.`,
+                payee_id: adminPayeeId,
+                payer_id: purchaseRequest.buyer_id || userId,
+                payment_method: PAYMONGO_PAYMENT_METHOD,
+                reference_number: `paymongo:purchase:platform_fee:${purchaseRequest.id}`,
+                status: DEFAULT_PAYMENT_STATUS,
+                transaction_at: new Date().toISOString(),
+              },
+              PAYMENT_TYPE_CANDIDATES.platformFee
+            );
+          } catch (commissionRecordError) {
+            purchasePaymentRecordError = [purchasePaymentRecordError, commissionRecordError.message || 'Unable to record the purchase commission fee.']
+              .filter(Boolean)
+              .join(' ');
           }
         }
 
@@ -2921,7 +2965,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
     return () => {
       ignore = true;
     };
-  }, [loading, userId, loadListings]);
+  }, [loading, userId, loadListings, resolveAdminPayeeId]);
 
   useEffect(() => {
     if (loading || !userId) {
@@ -3251,7 +3295,20 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
             name: `${request.item?.title || 'Sale item'} purchase`,
             quantity: quantity > 0 ? quantity : 1,
           },
+          ...(request.addons || []).map((addon) => ({
+            amount: Number(addon.price_snapshot) || 0,
+            description: addon.description_snapshot || undefined,
+            name: `${addon.addon_name_snapshot || 'Purchase'} add-on`,
+            quantity: Number(addon.quantity) || 1,
+          })),
+          ...(Number(request.commission_fee_snapshot) > 0 ? [{
+            amount: Number(request.commission_fee_snapshot),
+            description: 'Borrow Ko To marketplace service fee',
+            name: 'Platform commission (15%)',
+            quantity: 1,
+          }] : []),
         ],
+        showLineItems: true,
         metadata: {
           item_id: request.item_id,
           purchase_request_id: request.id,
@@ -3268,6 +3325,40 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
     } catch (paymentError) {
       setMessage(`Unable to process purchase payment: ${paymentError.message}`);
       setMessageTone('warning');
+      setBookingActionBusyId('');
+    }
+  }
+
+  async function handleCancelPurchaseRequest(request) {
+    if (!request?.id) return;
+
+    const busyKey = `purchase:${request.id}`;
+    setBookingActionBusyId(busyKey);
+    setMessage('');
+
+    try {
+      const status = String(request.status || '').toLowerCase();
+      if (status === 'awaiting_payment') {
+        const cancelResult = await supabase.rpc('cancel_item_purchase_checkout', { p_request_id: request.id });
+        if (cancelResult.error) throw new Error(cancelResult.error.message);
+      } else {
+        const cancelResult = await supabase
+          .from('item_purchase_requests')
+          .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+          .eq('id', request.id)
+          .eq('buyer_id', userId)
+          .eq('status', 'pending');
+        if (cancelResult.error) throw new Error(cancelResult.error.message);
+      }
+
+      await loadListings(false);
+      setActiveBookingFilter('purchase-requests');
+      setMessage('Purchase request cancelled. Reserved stock was released.');
+      setMessageTone('success');
+    } catch (cancelError) {
+      setMessage(`Unable to cancel purchase request: ${cancelError.message}`);
+      setMessageTone('warning');
+    } finally {
       setBookingActionBusyId('');
     }
   }
@@ -4622,7 +4713,14 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                     <tbody>
                       {sellerPurchaseRequests.map((request, index) => (
                         <tr className="booking-row" key={`seller-purchase-${request.id}`} style={{ background: index % 2 === 0 ? alpha(theme.colors.panel, 0.56) : 'transparent' }}>
-                          <td style={bodyCellStyle}>{request.item?.title || 'Unknown item'}</td>
+                          <td style={bodyCellStyle}>
+                            <strong>{request.item?.title || 'Unknown item'}</strong>
+                            {request.addons?.length ? (
+                              <small style={{ color: theme.colors.slate, display: 'block', marginTop: 4 }}>
+                                Add-ons: {request.addons.map((addon) => `${addon.addon_name_snapshot} ×${addon.quantity}`).join(', ')}
+                              </small>
+                            ) : null}
+                          </td>
                           <td style={bodyCellStyle}>
                             {buildPersonName(request.buyer) || request.buyer?.username || 'Buyer'}
                           </td>
@@ -4675,11 +4773,19 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                         const busyKey = `purchase:${request.id}`;
                         const normalizedStatus = String(request.status || '').toLowerCase();
                         const canPay = ['awaiting_payment', 'approved'].includes(normalizedStatus);
+                        const canCancel = ['awaiting_payment', 'pending'].includes(normalizedStatus);
                         const canMarkClaimed = ['paid', 'ready_for_pickup'].includes(normalizedStatus);
 
                         return (
                           <tr className="booking-row" key={`buyer-purchase-${request.id}`} style={{ background: index % 2 === 0 ? alpha(theme.colors.panel, 0.56) : 'transparent' }}>
-                            <td style={bodyCellStyle}>{request.item?.title || 'Unknown item'}</td>
+                            <td style={bodyCellStyle}>
+                              <strong>{request.item?.title || 'Unknown item'}</strong>
+                              {request.addons?.length ? (
+                                <small style={{ color: theme.colors.slate, display: 'block', marginTop: 4 }}>
+                                  Add-ons: {request.addons.map((addon) => `${addon.addon_name_snapshot} ×${addon.quantity}`).join(', ')}
+                                </small>
+                              ) : null}
+                            </td>
                             <td style={bodyCellStyle}>
                               {buildPersonName(request.seller) || request.seller?.username || 'Seller'}
                             </td>
@@ -4695,22 +4801,37 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                             </td>
                             <td style={bodyCellStyle}>{formatDateTime(request.buyer_preferred_pickup_at)}</td>
                             <td style={bodyCellStyle}>
-                              {canPay ? (
-                                <Button
-                                  className="booking-action-button"
-                                  disabled={bookingActionBusyId === busyKey}
-                                  onClick={() => handlePayPurchaseRequest(request)}
-                                  type="button"
-                                  variant="danger"
-                                >
-                                  {bookingActionBusyId === busyKey
-                                    ? 'Processing...'
-                                    : `Pay ${currencyFormatter.format(
-                                      Number(request.sale_total_amount_snapshot) ||
-                                        (Number(request.sale_price_snapshot) || 0) *
-                                          (Number(request.seller_approved_quantity || request.buyer_requested_quantity) || 0)
-                                    )}`}
-                                </Button>
+                              {canPay || canCancel ? (
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                                  {canPay ? (
+                                    <Button
+                                      className="booking-action-button"
+                                      disabled={bookingActionBusyId === busyKey}
+                                      onClick={() => handlePayPurchaseRequest(request)}
+                                      type="button"
+                                      variant="danger"
+                                    >
+                                      {bookingActionBusyId === busyKey
+                                        ? 'Processing...'
+                                        : `Pay ${currencyFormatter.format(
+                                          Number(request.sale_total_amount_snapshot) ||
+                                            (Number(request.sale_price_snapshot) || 0) *
+                                              (Number(request.seller_approved_quantity || request.buyer_requested_quantity) || 0)
+                                        )}`}
+                                    </Button>
+                                  ) : null}
+                                  {canCancel ? (
+                                    <Button
+                                      className="booking-action-button"
+                                      disabled={bookingActionBusyId === busyKey}
+                                      onClick={() => handleCancelPurchaseRequest(request)}
+                                      type="button"
+                                      variant="ghost"
+                                    >
+                                      {bookingActionBusyId === busyKey ? 'Cancelling...' : 'Cancel'}
+                                    </Button>
+                                  ) : null}
+                                </div>
                               ) : canMarkClaimed ? (
                                 <Button
                                   className="booking-action-button"

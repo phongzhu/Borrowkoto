@@ -7,8 +7,31 @@ import { buildMapEmbedUrl, getMissingStudentProfileDetails } from './ui/profileF
 import { filterListingsByActiveOwners, isMarketplaceOwnerActive, selectPromotedMarketplaceItems } from './utils/marketplaceVisibility';
 import { clearListingDraft, readListingDraft, saveListingDraft, updateListingMainCategory, updateListingSubcategory } from './utils/listingDraft';
 import { normalizeExtractedTermsText, safeTermsStoragePath, TERMS_CONTEXT } from './services/termsService';
+import { buildPurchaseAddonState, calculatePurchaseTotals, selectPurchaseAddons } from './utils/purchaseCheckout';
 
 const { _test: registryImportHelpers } = require('../api/nub-student-auth');
+
+test('purchase checkout includes required and selected add-ons with their quantities', () => {
+  const addons = [
+    { addon_name: 'Battery', id: 'battery', is_required: true, price: 250, quantity: 3 },
+    { addon_name: 'SD Card', id: 'sd-card', is_required: false, price: 150, quantity: 2 },
+    { addon_name: 'Tripod', id: 'tripod', is_required: false, price: 100, quantity: 1 },
+  ];
+  const selection = buildPurchaseAddonState(addons);
+  selection.battery.quantity = 2;
+  selection['sd-card'] = { quantity: 2, selected: true };
+
+  const selected = selectPurchaseAddons(addons, selection);
+  expect(selected.map((addon) => addon.id)).toEqual(['battery', 'sd-card']);
+  expect(calculatePurchaseTotals({ addonRows: selected, itemQuantity: 2, salePrice: 12500 })).toEqual({
+    addonTotal: 800,
+    commissionFee: 3870,
+    grandTotal: 29670,
+    mainTotal: 25000,
+    salePrice: 12500,
+    subtotalBeforeCommission: 25800,
+  });
+});
 
 test('contains the five NU Baliwag schools and 13 unique undergraduate programs', () => {
   expect(NUB_SCHOOLS).toHaveLength(5);

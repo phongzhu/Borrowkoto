@@ -9,6 +9,7 @@ import ListingFAQs from './pages/user/ListingFAQs';
 import Messages from './pages/user/Messages';
 import Profile from './pages/user/Profile';
 import RentItem from './pages/user/rent-item';
+import BuyItem from './pages/user/buy-item';
 import ViewItemList from './pages/user/view-item-list';
 import PublicItemsCatalogPage from './pages/user/PublicItemsCatalogPage';
 import ListItemLanding from './pages/user/ListItemLanding';
@@ -51,6 +52,7 @@ export default function Root() {
             <Route path="/user/promotions" element={<Promotions />} />
             <Route path="/user/view-item-list/:itemId" element={<ViewItemList />} />
             <Route path="/user/rent-item/:itemId" element={<RentItem />} />
+            <Route path="/user/buy-item/:itemId" element={<BuyItem />} />
             <Route path="/user/rental-items" element={<MyBookings viewMode="rental-items" />} />
             <Route path="/user/rental-items/add" element={<MyBookings viewMode="rental-items" listingMode="add" />} />
             <Route path="/user/rental-items/edit/:itemId" element={<MyBookings viewMode="rental-items" />} />
