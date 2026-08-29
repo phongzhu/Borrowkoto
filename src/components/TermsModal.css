@@ -1,0 +1,144 @@
+.terms-reader-modal {
+  background: var(--ui-background-color, #fff) !important;
+  box-shadow: 0 24px 70px color-mix(in srgb, var(--ui-text-color, #10233f) 22%, transparent) !important;
+  max-width: 780px !important;
+  padding: 20px !important;
+  width: min(780px, calc(100vw - 32px)) !important;
+}
+
+.terms-reader-modal > h3 {
+  color: var(--ui-text-color, #10233f);
+  font-size: 23px !important;
+  letter-spacing: -.035em !important;
+  line-height: 1.15 !important;
+}
+
+.terms-reader-modal > div:nth-child(2) {
+  overflow: hidden !important;
+  padding-right: 0 !important;
+}
+
+.terms-reader {
+  display: grid;
+  gap: 12px;
+  min-height: 0;
+}
+
+.terms-reader-header {
+  align-items: flex-start;
+  background: var(--ui-background-color, #fff);
+  border: 1px solid color-mix(in srgb, var(--ui-primary-color, #1f3f73) 16%, var(--ui-border-color, #dbe3f0));
+  border-radius: 10px;
+  display: flex;
+  gap: 20px;
+  justify-content: space-between;
+  padding: 13px 15px;
+}
+
+.terms-reader-header > div:first-child {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.terms-reader-header span {
+  color: var(--ui-text-secondary, #63768f);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.terms-reader-header > div:first-child > span {
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.terms-reader-header h2 {
+  color: var(--ui-text-color, #10233f);
+  font-family: var(--ui-font-display, inherit);
+  font-size: 18px;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.terms-reader-version {
+  align-items: flex-end;
+  display: grid;
+  flex: 0 0 auto;
+  gap: 3px;
+  text-align: right;
+}
+
+.terms-reader-version strong {
+  color: var(--ui-primary-color, #1f3f73);
+  font-size: 13px;
+}
+
+.terms-reader-copy {
+  background: var(--ui-background-color, #fff);
+  border: 1px solid var(--ui-border-color, #dbe3f0);
+  border-radius: 10px;
+  box-sizing: border-box;
+  max-height: min(54vh, 520px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 18px 20px;
+  scrollbar-gutter: stable;
+  scrollbar-color: color-mix(in srgb, var(--ui-primary-color, #1f3f73) 30%, transparent) transparent;
+}
+
+.terms-reader-copy h3 {
+  color: var(--ui-text-color, #10233f);
+  font-family: var(--ui-font-display, inherit);
+  font-size: 15px;
+  line-height: 1.35;
+  margin: 18px 0 6px;
+}
+
+.terms-reader-copy h3:first-child {
+  margin-top: 0;
+}
+
+.terms-reader-copy p {
+  color: var(--ui-text-secondary, #52657d);
+  font-size: 13.5px;
+  line-height: 1.6;
+  margin: 0 0 9px;
+  white-space: pre-wrap;
+}
+
+.terms-reader-copy .terms-reader-bullet {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 8px minmax(0, 1fr);
+  padding-left: 2px;
+}
+
+.terms-reader-bullet > span:first-child {
+  color: var(--ui-primary-color, #1f3f73);
+  font-weight: 900;
+}
+
+.terms-reader-close {
+  min-height: 40px !important;
+  min-width: 108px;
+}
+
+@media (max-width: 620px) {
+  .terms-reader-header {
+    display: grid;
+  }
+
+  .terms-reader-version {
+    align-items: start;
+    text-align: left;
+  }
+
+  .terms-reader-copy {
+    max-height: 55vh;
+    padding: 15px;
+  }
+
+  .terms-reader-modal {
+    padding: 16px !important;
+  }
+}

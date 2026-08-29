@@ -454,6 +454,7 @@ async function handleDevStudentActivation(supabase, request, response) {
   const email = normalizeEmail(request.body?.email);
   const otp = text(request.body?.otp);
   const password = String(request.body?.password || '');
+  const termsDocumentId = text(request.body?.terms_document_id);
   if (!isNubStudentEmail(email)) {
     return response.status(400).json({ error: `Use an @${NUB_STUDENT_DOMAIN} student email.` });
   }
@@ -462,6 +463,9 @@ async function handleDevStudentActivation(supabase, request, response) {
   }
   if (!isValidStudentPassword(password)) {
     return response.status(400).json({ error: 'Use at least 8 characters with at least 1 uppercase and 1 lowercase letter.' });
+  }
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(termsDocumentId)) {
+    return response.status(400).json({ error: 'View and accept the current Terms and Conditions before activation.' });
   }
   if (isRateLimited(request, email)) {
     return response.status(429).json({ error: 'Too many activation attempts. Please wait before trying again.' });
@@ -477,6 +481,17 @@ async function handleDevStudentActivation(supabase, request, response) {
     return response.status(403).json({ error: 'Only an Enrolled student registry record can be activated.' });
   }
 
+  const { data: termsDocument, error: termsError } = await supabase
+    .from('terms_documents')
+    .select('id')
+    .eq('id', termsDocumentId)
+    .eq('is_active', true)
+    .maybeSingle();
+  if (termsError) throw termsError;
+  if (!termsDocument) {
+    return response.status(409).json({ error: 'The Terms and Conditions were updated. Review and accept the current version.' });
+  }
+
   const { user } = await ensureRegistryAuthUser(supabase, registry);
   const { error: authError } = await supabase.auth.admin.updateUserById(user.id, {
     email_confirm: true,
@@ -484,6 +499,14 @@ async function handleDevStudentActivation(supabase, request, response) {
     user_metadata: { ...(user.user_metadata || {}), ...authMetadata(registry) },
   });
   if (authError) throw authError;
+
+  const { error: acceptanceError } = await supabase.from('terms_acceptances').insert({
+    acceptance_context: 'activation',
+    terms_document_id: termsDocumentId,
+    user_agent: text(request.headers['user-agent']) || null,
+    user_id: user.id,
+  });
+  if (acceptanceError) throw acceptanceError;
 
   const { error: activationError } = await supabase
     .from('nub_student_registry')

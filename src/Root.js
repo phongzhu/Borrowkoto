@@ -25,6 +25,7 @@ import ManageReports from './pages/admin/ManageReports';
 import UISettings from './pages/admin/UISettings';
 import PromotionSettings from './pages/admin/PromotionSettings';
 import VoucherRewards from './pages/admin/VoucherRewards';
+import TermsManagement from './pages/admin/TermsManagement';
 import TransactionsTesting from './services/transactions_testing';
 import ProtectedRoute from './components/ProtectedRoute';
 import { AuthProvider } from './context/AuthContext';
@@ -73,6 +74,7 @@ export default function Root() {
             <Route path="/admin/ui-settings" element={<UISettings />} />
             <Route path="/admin/promotion-settings" element={<PromotionSettings />} />
             <Route path="/admin/voucher-rewards" element={<VoucherRewards />} />
+            <Route path="/admin/terms" element={<TermsManagement />} />
             <Route path="/services/transactions-testing" element={<TransactionsTesting />} />
           </Route>
           </Routes>

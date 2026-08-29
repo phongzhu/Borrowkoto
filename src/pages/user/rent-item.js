@@ -2,8 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import 'react-datepicker/dist/react-datepicker.css';
 import { supabase } from '../../api/supabaseClient';
+import TermsModal from '../../components/TermsModal';
 import { userHasUnsettledDues } from '../../services/accountDuesService';
 import { userHasActiveDamageHold } from '../../services/damageClaimsService';
+import { loadActiveTerms, recordTermsAcceptance, TERMS_CONTEXT } from '../../services/termsService';
 import { Badge, Button, FormField, Input, Modal, Panel, StatusMessage, Textarea } from '../../ui/primitives';
 import { sanitizeText } from '../../ui/profileFormUtils';
 import { createTestCheckoutSession } from '../../services/transaction';
@@ -266,6 +268,33 @@ export default function RentItem() {
   const [activeDuesHold, setActiveDuesHold] = useState(false);
   const [mobileNoteModal, setMobileNoteModal] = useState({ content: '', open: false, title: '' });
   const [bundleQuantityModal, setBundleQuantityModal] = useState({ itemId: '', open: false, quantity: 1 });
+  const [termsDocument, setTermsDocument] = useState(null);
+  const [termsLoading, setTermsLoading] = useState(true);
+  const [termsError, setTermsError] = useState('');
+  const [termsOpen, setTermsOpen] = useState(false);
+  const [termsViewed, setTermsViewed] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(false);
+
+  useEffect(() => {
+    let ignore = false;
+    setTermsLoading(true);
+    setTermsError('');
+
+    loadActiveTerms()
+      .then((document) => {
+        if (ignore) return;
+        setTermsDocument(document);
+        if (!document) setTermsError('Rental checkout is unavailable until the administrator publishes Terms and Conditions.');
+      })
+      .catch((error) => {
+        if (!ignore) setTermsError(error.message || 'Unable to load the current Terms and Conditions.');
+      })
+      .finally(() => {
+        if (!ignore) setTermsLoading(false);
+      });
+
+    return () => { ignore = true; };
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -784,7 +813,13 @@ export default function RentItem() {
 
     return '';
   }, [item, rentalDays]);
-  const canSubmitRequest = canSubmit && hasValidSchedule && !selectedRangeBlocked && !rentalConstraintIssue;
+  const hasAcceptedCurrentTerms = Boolean(termsDocument && termsViewed && termsAccepted);
+  const canSubmitRequest = canSubmit
+    && hasValidSchedule
+    && !selectedRangeBlocked
+    && !rentalConstraintIssue
+    && !termsLoading
+    && hasAcceptedCurrentTerms;
 
   const bundleIssues = useMemo(() => {
     return selectedBundleItems.reduce((issues, bundleItem) => {
@@ -1013,6 +1048,18 @@ export default function RentItem() {
     setMessage('');
 
     try {
+      if (!termsDocument || !termsViewed || !termsAccepted) {
+        throw new Error('View and accept the current Terms and Conditions before placing the rental order.');
+      }
+
+      const latestTermsDocument = await loadActiveTerms();
+      if (!latestTermsDocument || latestTermsDocument.id !== termsDocument.id) {
+        setTermsDocument(latestTermsDocument);
+        setTermsAccepted(false);
+        setTermsViewed(false);
+        throw new Error('The Terms and Conditions were updated. Review and accept the current version before continuing.');
+      }
+
       if (rentIssues.length) {
         throw new Error(rentIssues[0]);
       }
@@ -1282,6 +1329,13 @@ export default function RentItem() {
         createdBookingSummaries[0].totalDue = roundMoney(createdBookingSummaries[0].totalDue - appliedDiscount);
       }
 
+      await recordTermsAcceptance({
+        bookingId: createdBookingIds[0] || null,
+        context: TERMS_CONTEXT.CHECKOUT,
+        itemId: item.id,
+        termsDocumentId: termsDocument.id,
+      });
+
       const bookingIdsCsv = createdBookingIds.join(',');
       const successUrl = `${window.location.origin}/user/manage-booking?paymongo=success&booking_ids=${encodeURIComponent(bookingIdsCsv)}`;
       const cancelUrl = `${window.location.origin}/user/rent-item/${itemId}?paymongo=cancelled&booking_ids=${encodeURIComponent(bookingIdsCsv)}`;
@@ -1373,6 +1427,7 @@ export default function RentItem() {
           booking_ids: bookingIdsCsv,
           borrower_id: userId,
           item_id: item.id,
+          terms_document_id: termsDocument.id,
           voucher_id: selectedVoucherId || '',
         },
         paymentMethodTypes: ['card', 'qrph'],
@@ -1638,6 +1693,35 @@ export default function RentItem() {
                       </strong>
                     </div>
                   </div>
+
+                  <div className={`rent-terms-acceptance ${termsAccepted ? 'accepted' : ''}`}>
+                    <div className="rent-terms-heading">
+                      <span aria-hidden="true" className="rent-terms-mark">✓</span>
+                      <span className="rent-terms-copy">
+                        <strong>Terms and Conditions</strong>
+                        <small>{termsDocument ? `Policy version ${termsDocument.version}` : termsError || 'Loading current policy...'}</small>
+                      </span>
+                      <Button
+                        className="rent-terms-view"
+                        disabled={termsLoading || !termsDocument}
+                        onClick={() => { setTermsViewed(true); setTermsOpen(true); }}
+                        type="button"
+                        variant="secondary"
+                      >
+                        {termsLoading ? 'Loading...' : termsViewed ? 'Review again' : 'Review terms'}
+                      </Button>
+                    </div>
+                    <label className={`rent-terms-consent ${!termsViewed ? 'is-disabled' : ''}`}>
+                      <input
+                        checked={termsAccepted}
+                        disabled={!termsViewed || !termsDocument || termsLoading}
+                        onChange={(event) => setTermsAccepted(event.target.checked)}
+                        type="checkbox"
+                      />
+                      <span>{termsViewed ? 'I have read and agree to this policy.' : 'Review the policy before accepting.'}</span>
+                    </label>
+                  </div>
+                  {termsError ? <StatusMessage tone="warning">{termsError}</StatusMessage> : null}
 
                   {/* Action Button */}
                   <Button
@@ -2242,6 +2326,14 @@ export default function RentItem() {
               ))}
           </div>
         </Modal>
+
+        <TermsModal
+          document={termsDocument}
+          error={termsError}
+          loading={termsLoading}
+          onClose={() => setTermsOpen(false)}
+          open={termsOpen}
+        />
       </div>
       </main>
     </div>

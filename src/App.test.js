@@ -6,6 +6,7 @@ import { findCityMunicipalityByName, findRegionByName, getRegionLabel, mergeGeoc
 import { buildMapEmbedUrl, getMissingStudentProfileDetails } from './ui/profileFormUtils';
 import { filterListingsByActiveOwners, isMarketplaceOwnerActive, selectPromotedMarketplaceItems } from './utils/marketplaceVisibility';
 import { clearListingDraft, readListingDraft, saveListingDraft, updateListingMainCategory, updateListingSubcategory } from './utils/listingDraft';
+import { normalizeExtractedTermsText, safeTermsStoragePath, TERMS_CONTEXT } from './services/termsService';
 
 const { _test: registryImportHelpers } = require('../api/nub-student-auth');
 
@@ -384,6 +385,12 @@ test('allows the fixed student activation code only in explicitly enabled localh
 test('preserves Supabase error messages returned as plain objects', () => {
   expect(registryImportHelpers.readableErrorMessage({ message: 'Database trigger failed.' })).toBe('Database trigger failed.');
   expect(registryImportHelpers.readableErrorMessage(null)).toBe('Unexpected student registry error.');
+});
+
+test('normalizes extracted PDF text and creates safe versioned storage paths', () => {
+  expect(normalizeExtractedTermsText('  Terms   and Conditions \r\n\r\n\r\n Section 1  ')).toBe('Terms and Conditions\n\nSection 1');
+  expect(safeTermsStoragePath('Borrow Ko To Terms (Final).pdf')).toMatch(/^\d{4}-\d{2}-\d{2}\/.+-Borrow-Ko-To-Terms-Final-.pdf$/);
+  expect(TERMS_CONTEXT).toEqual({ ACTIVATION: 'activation', CHECKOUT: 'checkout' });
 });
 
 test('server validation rejects duplicate student identities in one import', () => {

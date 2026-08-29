@@ -58,6 +58,106 @@
   padding: 0;
 }
 
+.rent-terms-acceptance {
+  background: var(--ui-background-color, #fff);
+  border: 1px solid var(--ui-border-color, #dbe3f0);
+  border-radius: 12px;
+  display: grid;
+  overflow: hidden;
+}
+
+.rent-terms-acceptance.accepted {
+  background: var(--ui-background-color, #fff);
+  border-color: color-mix(in srgb, #2f6f49 28%, var(--ui-border-color, #dbe3f0));
+}
+
+.rent-terms-heading {
+  align-items: center;
+  display: grid;
+  gap: 9px;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  padding: 11px 12px;
+}
+
+.rent-terms-mark {
+  align-items: center;
+  background: color-mix(in srgb, var(--ui-primary-color, #1f3f73) 10%, var(--ui-background-color, #fff));
+  border-radius: 50%;
+  color: var(--ui-primary-color, #1f3f73);
+  display: flex;
+  font-size: 13px;
+  font-weight: 900;
+  height: 28px;
+  justify-content: center;
+  width: 28px;
+}
+
+.rent-terms-acceptance.accepted .rent-terms-mark {
+  background: #2f6f49;
+  color: var(--ui-background-color, #fff);
+}
+
+.rent-terms-copy {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.rent-terms-consent {
+  align-items: center;
+  border-top: 1px solid color-mix(in srgb, var(--ui-text-color, #10233f) 9%, transparent);
+  cursor: pointer;
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px 12px;
+}
+
+.rent-terms-consent.is-disabled {
+  cursor: not-allowed;
+}
+
+.rent-terms-consent > input {
+  accent-color: var(--ui-primary-color, #1f3f73);
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.rent-terms-copy strong {
+  color: var(--ui-text-color, #10233f);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.rent-terms-copy small,
+.rent-terms-consent > span {
+  color: var(--ui-text-secondary, #63768f);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.rent-terms-consent:not(.is-disabled) > span {
+  color: var(--ui-text-color, #10233f);
+}
+
+.rent-terms-view {
+  flex: 0 0 auto;
+  font-size: 10px !important;
+  min-height: 32px !important;
+  padding: 0 9px !important;
+}
+
+@media (max-width: 420px) {
+  .rent-terms-heading {
+    grid-template-columns: 28px minmax(0, 1fr);
+  }
+
+  .rent-terms-view {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+}
+
 .rent-checkout-total-list {
   border-top: 1px solid rgba(24, 33, 46, 0.08);
   display: grid;

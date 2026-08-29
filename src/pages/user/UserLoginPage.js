@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import termsPdf from '../../assets/Borrow_Ko_To_Terms_and_Conditions.pdf';
 import { supabase } from '../../api/supabaseClient';
+import TermsModal from '../../components/TermsModal';
 import { useUISettings } from '../../context/UISettingsContext';
 import { useAuth } from '../../context/AuthContext';
+import { loadActiveTerms, recordTermsAcceptance, TERMS_CONTEXT } from '../../services/termsService';
 import {
   isNubStudentEmail,
   isValidStudentPassword,
@@ -13,7 +14,7 @@ import {
 } from '../../utils/nubStudentAuth';
 import { ArrowRightIcon, EyeIcon, EyeOffIcon, KeyIcon, LockIcon, MailIcon } from '../../ui/icons';
 import { AuthLayout } from '../../ui/layouts';
-import { AuthInput, Button, FormField, Modal, StatusMessage } from '../../ui/primitives';
+import { AuthInput, Button, FormField, StatusMessage } from '../../ui/primitives';
 import { theme } from '../../ui/theme';
 
 const EMAIL_STEP = 'email';
@@ -37,6 +38,9 @@ export default function UserLoginPage() {
   const [termsOpen, setTermsOpen] = useState(false);
   const [termsViewed, setTermsViewed] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);
+  const [termsDocument, setTermsDocument] = useState(null);
+  const [termsLoading, setTermsLoading] = useState(false);
+  const [termsError, setTermsError] = useState('');
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
@@ -49,6 +53,28 @@ export default function UserLoginPage() {
       navigate('/admin/dashboard', { replace: true });
     }
   }, [authLoading, authenticatedRole, authenticatedUser, navigate]);
+
+  useEffect(() => {
+    if (step !== ACTIVATE_STEP) return undefined;
+    let ignore = false;
+    setTermsLoading(true);
+    setTermsError('');
+
+    loadActiveTerms()
+      .then((document) => {
+        if (ignore) return;
+        setTermsDocument(document);
+        if (!document) setTermsError('No Terms and Conditions have been published. Contact the administrator before activating your account.');
+      })
+      .catch((loadError) => {
+        if (!ignore) setTermsError(loadError.message || 'Unable to load the Terms and Conditions.');
+      })
+      .finally(() => {
+        if (!ignore) setTermsLoading(false);
+      });
+
+    return () => { ignore = true; };
+  }, [step]);
 
   async function navigateAfterLogin(user, { completeProfile = false } = {}) {
     const { data: roleProfile, error: roleError } = user
@@ -231,8 +257,8 @@ export default function UserLoginPage() {
       setError('The passwords do not match.');
       return;
     }
-    if (!termsViewed || !termsAccepted) {
-      setError('View and accept the Terms and Agreement before activating your account.');
+    if (!termsDocument || !termsViewed || !termsAccepted) {
+      setError('View and accept the current Terms and Conditions before activating your account.');
       return;
     }
 
@@ -247,6 +273,7 @@ export default function UserLoginPage() {
             email: normalizeEmail(email),
             otp: otp.trim(),
             password,
+            terms_document_id: termsDocument.id,
           }),
           headers: { 'Content-Type': 'application/json' },
           method: 'POST',
@@ -275,6 +302,17 @@ export default function UserLoginPage() {
       return;
     }
 
+    try {
+      await recordTermsAcceptance({
+        context: TERMS_CONTEXT.ACTIVATION,
+        termsDocumentId: termsDocument.id,
+      });
+    } catch (acceptanceError) {
+      setLoading(false);
+      setError(`Your password was saved, but the Terms and Conditions acceptance could not be recorded: ${acceptanceError.message}`);
+      return;
+    }
+
     const { error: activationError } = await supabase.rpc('complete_nub_student_activation');
     setLoading(false);
     if (activationError) {
@@ -292,6 +330,10 @@ export default function UserLoginPage() {
     setOtp('');
     setShowPassword(false);
     setShowConfirmPassword(false);
+    setTermsAccepted(false);
+    setTermsViewed(false);
+    setTermsDocument(null);
+    setTermsError('');
     setError('');
     setMessage('');
     setStep(EMAIL_STEP);
@@ -383,20 +425,19 @@ export default function UserLoginPage() {
           </FormField>
           <div style={{ alignItems: 'center', border: `1px solid ${termsViewed ? 'rgba(47, 111, 73, 0.24)' : 'rgba(23, 49, 59, 0.12)'}`, borderRadius: 18, display: 'flex', gap: 12, justifyContent: 'space-between', padding: '12px 14px' }}>
             <label style={{ alignItems: 'center', color: termsViewed ? theme.colors.ink : theme.colors.slate, cursor: termsViewed ? 'pointer' : 'not-allowed', display: 'flex', gap: 10, fontSize: 13, fontWeight: 700 }}>
-              <input checked={termsAccepted} disabled={!termsViewed} onChange={(event) => setTermsAccepted(event.target.checked)} type="checkbox" />
-              <span>I agree to the Terms and Agreement.</span>
+              <input checked={termsAccepted} disabled={!termsViewed || !termsDocument} onChange={(event) => setTermsAccepted(event.target.checked)} type="checkbox" />
+              <span>I agree to the current Terms and Conditions{termsDocument ? ` (Version ${termsDocument.version})` : ''}.</span>
             </label>
-            <Button onClick={() => { setTermsViewed(true); setTermsOpen(true); }} type="button" variant="secondary">View terms</Button>
+            <Button disabled={termsLoading || !termsDocument} onClick={() => { setTermsViewed(true); setTermsOpen(true); }} type="button" variant="secondary">{termsLoading ? 'Loading terms...' : 'View terms'}</Button>
           </div>
+          {termsError ? <StatusMessage tone="danger">{termsError}</StatusMessage> : null}
           {message ? <StatusMessage tone="success">{message}</StatusMessage> : null}
           {error ? <StatusMessage tone="danger">{error}</StatusMessage> : null}
-          <Button disabled={loading || !termsAccepted} icon={<ArrowRightIcon size={18} />} style={{ width: '100%' }} type="submit">{loading ? 'Activating...' : 'Activate and continue'}</Button>
+          <Button disabled={loading || termsLoading || !termsDocument || !termsAccepted} icon={<ArrowRightIcon size={18} />} style={{ width: '100%' }} type="submit">{loading ? 'Activating...' : 'Activate and continue'}</Button>
         </form>
       ) : null}
 
-      <Modal actions={<Button onClick={() => setTermsOpen(false)} type="button" variant="secondary">Close</Button>} contentStyle={{ width: 'min(900px, calc(100vw - 40px))' }} onClose={() => setTermsOpen(false)} open={termsOpen} title="Terms and Agreement">
-        <iframe src={termsPdf} style={{ border: 0, display: 'block', height: '65vh', width: '100%' }} title="Borrow Ko To Terms and Agreement" />
-      </Modal>
+      <TermsModal document={termsDocument} error={termsError} loading={termsLoading} onClose={() => setTermsOpen(false)} open={termsOpen} />
     </AuthLayout>
   );
 }
