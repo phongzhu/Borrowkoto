@@ -940,7 +940,7 @@ export default function ManageCatalog() {
                 <div className="catalog-item-detail-images">
                   {viewingItem.images.map((image, index) => (
                     <a href={image.image_url} key={image.id || image.image_url} rel="noreferrer" target="_blank">
-                      <img alt={`${viewingItem.title} image ${index + 1}`} loading="lazy" src={image.image_url} />
+                      <img alt={`${viewingItem.title}, view ${index + 1}`} loading="lazy" src={image.image_url} />
                       {image.is_primary ? <span>Primary</span> : null}
                     </a>
                   ))}
