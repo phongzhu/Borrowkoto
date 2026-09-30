@@ -171,11 +171,61 @@
   overflow-x: auto;
 }
 
-.terms-admin-table-wrap table {
-  border-collapse: collapse;
-  min-width: 760px;
+.terms-admin-history-filters {
+  align-items: end;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(240px, 1fr) minmax(170px, 220px) minmax(210px, 260px);
+  padding: 0 22px 18px;
+}
+
+.terms-admin-history-filters label {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.terms-admin-history-filters label > span {
+  color: var(--ui-text-secondary, #63768f);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.terms-admin-history-filters input,
+.terms-admin-history-filters select {
+  background: var(--ui-background-color, #fff);
+  border: 1px solid var(--ui-border-color, #dbe3f0);
+  border-radius: 9px;
+  box-sizing: border-box;
+  color: var(--ui-text-color, #10233f);
+  font: inherit;
+  min-height: 44px;
+  min-width: 0;
+  padding: 0 12px;
   width: 100%;
 }
+
+.terms-admin-history-filters input:focus,
+.terms-admin-history-filters select:focus {
+  border-color: var(--ui-primary-color, #1f3f73);
+  outline: 3px solid color-mix(in srgb, var(--ui-primary-color, #1f3f73) 12%, transparent);
+}
+
+.terms-admin-table-wrap table {
+  border-collapse: collapse;
+  min-width: 860px;
+  width: 100%;
+}
+
+.terms-admin-table-wrap .terms-admin-history-table {
+  table-layout: fixed;
+}
+
+.terms-admin-history-table th:nth-child(1) { width: 8%; }
+.terms-admin-history-table th:nth-child(2) { width: 34%; }
+.terms-admin-history-table th:nth-child(3) { width: 20%; }
+.terms-admin-history-table th:nth-child(4) { width: 13%; }
+.terms-admin-history-table th:nth-child(5) { width: 25%; }
 
 .terms-admin-table-wrap th,
 .terms-admin-table-wrap td {
@@ -184,7 +234,11 @@
   font-size: 12px;
   padding: 13px 18px;
   text-align: left;
-  vertical-align: middle;
+  vertical-align: top;
+}
+
+.terms-admin-history-table tbody tr:hover td {
+  background: color-mix(in srgb, var(--ui-primary-color, #1f3f73) 3%, var(--ui-background-color, #fff));
 }
 
 .terms-admin-table-wrap tr:last-child td {
@@ -222,6 +276,7 @@
 
 .terms-admin-row-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 7px;
 }
 
@@ -245,6 +300,16 @@
   }
 }
 
+@media (max-width: 900px) {
+  .terms-admin-history-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .terms-admin-history-filters label:first-child {
+    grid-column: 1 / -1;
+  }
+}
+
 @media (max-width: 760px) {
   .terms-admin-section-heading,
   .terms-admin-rule-grid {
@@ -261,3 +326,14 @@
   }
 }
 
+@media (max-width: 520px) {
+  .terms-admin-history-filters {
+    grid-template-columns: minmax(0, 1fr);
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .terms-admin-history-filters label:first-child {
+    grid-column: auto;
+  }
+}

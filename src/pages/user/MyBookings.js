@@ -4294,33 +4294,18 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                         return (
                           <tr className="booking-row" key={booking.id} style={{ background: index % 2 === 0 ? alpha(theme.colors.panel, 0.56) : 'transparent' }}>
                             <td style={bodyCellStyle}>
-                              <div style={{ alignItems: 'center', display: 'flex', gap: 10 }}>
-                                {booking.item?.primaryImage?.image_url ? (
-                                  <img
-                                    alt={booking.item.title}
-                                    className="booking-thumb"
-                                    src={booking.item.primaryImage.image_url}
-                                    style={{
-                                      border: `1px solid ${alpha(theme.colors.ink, 0.08)}`,
-                                      height: 52,
-                                      objectFit: 'cover',
-                                      width: 52,
-                                    }}
-                                  />
-                                ) : null}
-                                <div style={{ display: 'grid', gap: 4 }}>
-                                  <strong style={{ color: theme.colors.ink }}>{booking.item?.title || 'Unknown item'}</strong>
-                                  <span style={{ color: theme.colors.slate, fontSize: 13 }}>{booking.item?.item_condition || 'Condition not set'}</span>
-                                  <Button
-                                    className="booking-action-button"
-                                    onClick={() => openBookingDetail(booking)}
-                                    style={{ fontSize: 12, justifySelf: 'start', minHeight: 32, padding: '0 10px' }}
-                                    type="button"
-                                    variant="ghost"
-                                  >
-                                    View rented item
-                                  </Button>
-                                </div>
+                              <div style={{ display: 'grid', gap: 4 }}>
+                                <strong style={{ color: theme.colors.ink }}>{booking.item?.title || 'Unknown item'}</strong>
+                                <span style={{ color: theme.colors.slate, fontSize: 13 }}>{booking.item?.item_condition || 'Condition not set'}</span>
+                                <Button
+                                  className="booking-action-button"
+                                  onClick={() => openBookingDetail(booking)}
+                                  style={{ fontSize: 12, justifySelf: 'start', minHeight: 32, padding: '0 10px' }}
+                                  type="button"
+                                  variant="ghost"
+                                >
+                                  View rented item
+                                </Button>
                               </div>
                             </td>
                             <td style={bodyCellStyle}>

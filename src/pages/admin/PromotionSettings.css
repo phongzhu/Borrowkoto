@@ -1,4 +1,8 @@
 .promotion-admin-page { display: grid; gap: 20px; }
+.promotion-inner-tabs { border-bottom: 1px solid var(--ui-border-color, #dbe3f0); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.promotion-inner-tabs button { align-items: center; background: transparent !important; border: 0; border-bottom: 3px solid transparent; border-radius: 0 !important; color: var(--ui-secondary-text-color, #60718a); cursor: pointer; display: flex; font: inherit; font-size: 14px; font-weight: 800; gap: 9px; justify-content: center; min-height: 54px; padding: 0 16px; transition: color 150ms ease, border-color 150ms ease; }
+.promotion-inner-tabs button:hover, .promotion-inner-tabs button.active { border-bottom-color: var(--ui-primary-color, #1f3f73); color: var(--ui-primary-color, #1f3f73); }
+.promotion-inner-tabs button span { align-items: center; background: color-mix(in srgb, var(--ui-primary-color, #1f3f73) 8%, var(--ui-background-color, #fff)); border-radius: 999px; color: var(--ui-secondary-text-color, #60718a); display: inline-flex; font-size: .76rem; font-weight: 600; justify-content: center; min-width: 24px; padding: 2px 7px; }
 .promotion-section-heading h2 { margin: 0; }
 .promotion-section-heading p { color: var(--ui-secondary-text-color); margin: 5px 0 0; }
 .promotion-admin-card { background: var(--ui-background-color); border: 1px solid var(--ui-border-color); border-radius: 20px; overflow: hidden; }
@@ -9,6 +13,11 @@
 .promotion-settings-button { align-items: center; background: var(--ui-background-color); border: 1px solid var(--ui-border-color); border-radius: 999px; color: var(--ui-primary-text-color); cursor: pointer; display: inline-flex; flex: 0 0 46px; height: 46px; justify-content: center; transition: background 160ms ease, border-color 160ms ease; width: 46px; }
 .promotion-settings-button:hover { background: color-mix(in srgb, var(--ui-primary-color) 8%, var(--ui-background-color)); border-color: color-mix(in srgb, var(--ui-primary-color) 28%, var(--ui-border-color)); }
 .promotion-table-wrap { overflow-x: auto; }
+.promotion-table-toolbar { align-items: end; display: grid; gap: 12px; grid-template-columns: minmax(240px, 1fr) minmax(180px, 240px) minmax(210px, 260px); padding: 0 22px 18px; }
+.promotion-table-toolbar label { display: grid; gap: 7px; min-width: 0; }
+.promotion-table-toolbar label > span { color: var(--ui-secondary-text-color); font-size: .82rem; font-weight: 600; }
+.promotion-table-toolbar input, .promotion-table-toolbar select { background: var(--ui-background-color); border: 1px solid var(--ui-border-color); border-radius: 9px; box-sizing: border-box; color: var(--ui-primary-text-color); font: inherit; min-height: 44px; min-width: 0; padding: 0 12px; width: 100%; }
+.promotion-table-toolbar input:focus, .promotion-table-toolbar select:focus { border-color: var(--ui-primary-color); outline: 3px solid color-mix(in srgb, var(--ui-primary-color) 12%, transparent); }
 .promotion-table { border-collapse: collapse; min-width: 760px; width: 100%; }
 .promotion-table th { background: color-mix(in srgb, var(--ui-primary-color) 5%, var(--ui-background-color)); color: var(--ui-secondary-text-color); font-size: .78rem; letter-spacing: .06em; padding: 13px 22px; text-align: left; text-transform: uppercase; }
 .promotion-table td { border-top: 1px solid var(--ui-border-color); padding: 16px 22px; vertical-align: middle; }
@@ -37,9 +46,17 @@
 @media (max-width: 760px) {
   .promotion-section-heading { align-items: flex-start; gap: 16px; }
   .promotion-header-actions { flex-shrink: 0; }
+  .promotion-table-toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .promotion-table-toolbar label:first-child { grid-column: 1 / -1; }
   .promotion-settings-form { min-width: 0; }
   .promotion-plan-form { min-width: 0; }
   .promotion-plan-form-row { grid-template-columns: 1fr; }
   .promotion-request-list article { align-items: start; grid-template-columns: 1fr; }
   .promotion-row-actions { justify-content: flex-start; }
+}
+
+@media (max-width: 480px) {
+  .promotion-inner-tabs button { padding: 0 12px; }
+  .promotion-table-toolbar { grid-template-columns: minmax(0, 1fr); }
+  .promotion-table-toolbar label:first-child { grid-column: auto; }
 }

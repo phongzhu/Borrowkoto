@@ -62,6 +62,13 @@ function formatDate(value) {
   return dateFormatter.format(nextDate);
 }
 
+function formatDateTime(value) {
+  if (!value) return 'Not set';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Not set';
+  return date.toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' });
+}
+
 function itemStatusTone(status) {
   if (!status) {
     return 'info';
@@ -139,6 +146,7 @@ export default function ManageCatalog() {
   const [showAddCategory, setShowAddCategory] = useState(false);
   const [itemSearch, setItemSearch] = useState('');
   const [itemStatusFilter, setItemStatusFilter] = useState('active');
+  const [viewingItem, setViewingItem] = useState(null);
   const [savingCategory, setSavingCategory] = useState(false);
   const [editingCategory, setEditingCategory] = useState(null);
   const [editingCategoryForm, setEditingCategoryForm] = useState({
@@ -250,10 +258,10 @@ export default function ManageCatalog() {
 
       return {
         ...item,
-        blockCount: blocks.length,
+        availabilityBlocks: blocks,
         category: categoryMap.get(item.category_id) || null,
+        images,
         owner: ownerMap.get(item.owner_id) || null,
-        primaryImage: images[0] || null,
         subcategories: subcategoriesByItemId.get(item.id) || [],
         subcategory_ids: (subcategoriesByItemId.get(item.id) || []).map((subcategory) => subcategory.id),
       };
@@ -718,16 +726,15 @@ export default function ManageCatalog() {
 
           {!loading && filteredCategories.length ? (
             <div
+              className="catalog-category-table-wrap"
               style={{
                 border: `1px solid ${alpha(theme.colors.ink, 0.08)}`,
-                borderRadius: 12,
-                overflow: 'hidden',
                 maxHeight: 640,
                 overflowX: 'auto',
                 overflowY: 'auto',
               }}
             >
-              <table style={{ background: alpha(theme.colors.panel, 0.74), borderCollapse: 'separate', borderSpacing: 0, minWidth: 980, width: '100%' }}>
+              <table className="catalog-category-table" style={{ background: alpha(theme.colors.panel, 0.74), borderCollapse: 'separate', borderSpacing: 0, minWidth: 980, width: '100%' }}>
                 <thead style={{ background: alpha(theme.colors.ink, 0.02) }}>
                   <tr>
                     <th style={headerCellStyle}>Category</th>
@@ -747,17 +754,7 @@ export default function ManageCatalog() {
                       <tr key={category.id}>
                         <td style={bodyCellStyle}>
                           <div style={{ display: 'grid', gap: 4 }}>
-                            <strong
-                              style={{
-                                color: theme.colors.ink,
-                                fontFamily: theme.fonts.display,
-                                fontSize: 18,
-                                letterSpacing: '-0.04em',
-                              }}
-                            >
-                              {category.name}
-                            </strong>
-                            <span style={{ color: theme.colors.slate, fontFamily: theme.fonts.mono, fontSize: 12 }}>{category.id}</span>
+                            <span className="catalog-category-table-title">{category.name}</span>
                           </div>
                         </td>
                         <td style={bodyCellStyle}>
@@ -794,7 +791,7 @@ export default function ManageCatalog() {
       {activeCatalogTab === 'items' ? (
       <Panel className="catalog-items-panel">
         <div style={{ display: 'grid', gap: 14 }}>
-          <div className="form-grid admin-filter-toolbar" style={{ alignItems: 'end', display: 'grid', gap: 14, gridTemplateColumns: 'minmax(0, 1fr) 220px auto' }}>
+          <div className="form-grid admin-filter-toolbar catalog-item-toolbar" style={{ alignItems: 'end', display: 'grid', gap: 14 }}>
             <FormField label="Search items">
               <Input name="item_search" onChange={(event) => setItemSearch(event.target.value)} value={itemSearch} />
             </FormField>
@@ -835,24 +832,22 @@ export default function ManageCatalog() {
 
           {!loading && filteredItems.length ? (
             <div
+              className="catalog-item-table-wrap"
               style={{
                 border: `1px solid ${alpha(theme.colors.ink, 0.08)}`,
-                borderRadius: 12,
-                overflow: 'hidden',
+                borderRadius: 14,
                 overflowX: 'auto',
               }}
             >
-              <table style={{ background: alpha(theme.colors.panel, 0.74), borderCollapse: 'separate', borderSpacing: 0, minWidth: 1320, width: '100%' }}>
+              <table className="catalog-item-table" style={{ background: alpha(theme.colors.panel, 0.74), borderCollapse: 'separate', borderSpacing: 0, minWidth: 1180, width: '100%' }}>
                 <thead style={{ background: alpha(theme.colors.ink, 0.02) }}>
                   <tr>
                     <th style={headerCellStyle}>Item</th>
                     <th style={headerCellStyle}>Owner</th>
                     <th style={headerCellStyle}>Category</th>
                     <th style={headerCellStyle}>Rental</th>
-                    <th style={headerCellStyle}>Location</th>
                     <th style={headerCellStyle}>Status</th>
-                    <th style={headerCellStyle}>Media</th>
-                    <th style={headerCellStyle}>Blocks</th>
+                    <th style={headerCellStyle}>View item</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -863,17 +858,7 @@ export default function ManageCatalog() {
                       <tr key={item.id}>
                         <td style={bodyCellStyle}>
                           <div style={{ display: 'grid', gap: 4 }}>
-                            <strong
-                              style={{
-                                color: theme.colors.ink,
-                                fontFamily: theme.fonts.display,
-                                fontSize: 18,
-                                letterSpacing: '-0.04em',
-                              }}
-                            >
-                              {item.title}
-                            </strong>
-                            <span style={{ color: theme.colors.slate, lineHeight: 1.55 }}>{item.description}</span>
+                            <span className="catalog-item-table-title">{item.title}</span>
                           </div>
                         </td>
                         <td style={bodyCellStyle}>
@@ -895,28 +880,12 @@ export default function ManageCatalog() {
                           </div>
                         </td>
                         <td style={bodyCellStyle}>
-                          <span style={{ color: theme.colors.ink, lineHeight: 1.6 }}>{buildItemLocation(item) || 'Not set'}</span>
+                          <Badge tone={item.is_active ? itemStatusTone(item.status) : 'neutral'}>
+                            {item.is_active ? item.status || 'Unknown' : 'Inactive'}
+                          </Badge>
                         </td>
                         <td style={bodyCellStyle}>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                            <Badge tone={itemStatusTone(item.status)}>{item.status || 'Unknown'}</Badge>
-                            <Badge tone={activeTone(item.is_active)}>{item.is_active ? 'Active' : 'Inactive'}</Badge>
-                          </div>
-                        </td>
-                        <td style={bodyCellStyle}>
-                          {item.primaryImage?.image_url ? (
-                            <Button as="a" href={item.primaryImage.image_url} rel="noreferrer" target="_blank" variant="secondary">
-                              View image
-                            </Button>
-                          ) : (
-                            <span style={{ color: theme.colors.slate }}>No image</span>
-                          )}
-                        </td>
-                        <td style={bodyCellStyle}>
-                          <div style={{ display: 'grid', gap: 4 }}>
-                            <span style={{ color: theme.colors.ink }}>{item.blockCount} blocks</span>
-                            <span style={{ color: theme.colors.slate }}>Updated {formatDate(item.updated_at)}</span>
-                          </div>
+                          <Button onClick={() => setViewingItem(item)} type="button" variant="secondary">View item</Button>
                         </td>
                       </tr>
                     );
@@ -928,6 +897,73 @@ export default function ManageCatalog() {
         </div>
       </Panel>
       ) : null}
+
+      <Modal
+        actions={<Button onClick={() => setViewingItem(null)} type="button" variant="secondary">Close</Button>}
+        contentClassName="catalog-item-detail-modal"
+        onClose={() => setViewingItem(null)}
+        open={Boolean(viewingItem)}
+        title={viewingItem?.title || 'Item details'}
+      >
+        {viewingItem ? (
+          <div className="catalog-item-detail-content">
+            <div className="catalog-item-detail-heading">
+              <div className="catalog-item-detail-badges">
+                <Badge tone={itemStatusTone(viewingItem.status)}>{viewingItem.status || 'Unknown'}</Badge>
+                <Badge tone={activeTone(viewingItem.is_active)}>{viewingItem.is_active ? 'Active listing' : 'Inactive listing'}</Badge>
+              </div>
+              <p>{viewingItem.description || 'No description provided.'}</p>
+            </div>
+
+            <section className="catalog-item-detail-section">
+              <h4>Item information</h4>
+              <dl className="catalog-item-detail-grid">
+                <div><dt>Owner</dt><dd>{buildOwnerName(viewingItem.owner) || 'No name saved'}{viewingItem.owner?.username ? ` (@${viewingItem.owner.username})` : ''}</dd></div>
+                <div><dt>Category</dt><dd>{viewingItem.category?.name || 'No category'}</dd></div>
+                <div><dt>Subcategories</dt><dd>{viewingItem.subcategories?.length ? viewingItem.subcategories.map((category) => category.name).join(', ') : 'None'}</dd></div>
+                <div><dt>Condition</dt><dd>{viewingItem.item_condition || 'Not specified'}</dd></div>
+                <div><dt>Rental price</dt><dd>{currencyFormatter.format(Number(viewingItem.rental_price_per_day) || 0)} per day</dd></div>
+                <div><dt>Security deposit</dt><dd>{currencyFormatter.format(Number(viewingItem.security_deposit) || 0)}</dd></div>
+                <div><dt>Estimated value</dt><dd>{viewingItem.estimated_value == null ? 'Not set' : currencyFormatter.format(Number(viewingItem.estimated_value) || 0)}</dd></div>
+                <div><dt>Quantity</dt><dd>{viewingItem.quantity ?? 'Not set'}</dd></div>
+                <div><dt>Rental period</dt><dd>{viewingItem.min_rental_days ?? '—'} to {viewingItem.max_rental_days ?? '—'} days</dd></div>
+                <div><dt>Location</dt><dd>{buildItemLocation(viewingItem) || 'Not set'}</dd></div>
+                <div><dt>Created</dt><dd>{formatDate(viewingItem.created_at)}</dd></div>
+                <div><dt>Last updated</dt><dd>{formatDate(viewingItem.updated_at)}</dd></div>
+              </dl>
+              {viewingItem.meetup_notes ? <div className="catalog-item-detail-notes"><strong>Pickup / meetup notes</strong><p>{viewingItem.meetup_notes}</p></div> : null}
+            </section>
+
+            <section className="catalog-item-detail-section">
+              <h4>Item images <span>{viewingItem.images?.length || 0}</span></h4>
+              {viewingItem.images?.length ? (
+                <div className="catalog-item-detail-images">
+                  {viewingItem.images.map((image, index) => (
+                    <a href={image.image_url} key={image.id || image.image_url} rel="noreferrer" target="_blank">
+                      <img alt={`${viewingItem.title} image ${index + 1}`} loading="lazy" src={image.image_url} />
+                      {image.is_primary ? <span>Primary</span> : null}
+                    </a>
+                  ))}
+                </div>
+              ) : <p className="catalog-item-detail-muted">No images have been added.</p>}
+            </section>
+
+            <section className="catalog-item-detail-section">
+              <h4>Availability blocks <span>{viewingItem.availabilityBlocks?.length || 0}</span></h4>
+              {viewingItem.availabilityBlocks?.length ? (
+                <div className="catalog-item-block-list">
+                  {viewingItem.availabilityBlocks.map((block) => (
+                    <article key={block.id}>
+                      <div><strong>{block.block_type || 'Unavailable'}</strong><Badge tone="info">{block.reason || 'No reason provided'}</Badge></div>
+                      <span>{formatDateTime(block.start_datetime)} – {formatDateTime(block.end_datetime)}</span>
+                    </article>
+                  ))}
+                </div>
+              ) : <p className="catalog-item-detail-muted">No availability blocks.</p>}
+            </section>
+          </div>
+        ) : null}
+      </Modal>
 
       <Modal
         actions={

@@ -169,6 +169,9 @@ export default function ManageUsers() {
   const [message, setMessage] = useState('');
   const [messageTone, setMessageTone] = useState('success');
   const [searchQuery, setSearchQuery] = useState('');
+  const [schoolFilter, setSchoolFilter] = useState('');
+  const [programFilter, setProgramFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
   const [editTarget, setEditTarget] = useState(null);
   const [editForm, setEditForm] = useState(EMPTY_EDIT_FORM);
   const [editError, setEditError] = useState('');
@@ -200,8 +203,7 @@ export default function ManageUsers() {
   const visibleRecords = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     return registryRecords.filter((student) => {
-      if (!query) return true;
-      return [
+      const matchesQuery = !query || [
         buildName(student),
         student.student_number,
         student.email,
@@ -213,8 +215,23 @@ export default function ManageUsers() {
         student.school_status,
         getStudentAccess(student).label,
       ].filter(Boolean).join(' ').toLowerCase().includes(query);
+      return matchesQuery
+        && (!schoolFilter || student.school_code === schoolFilter)
+        && (!programFilter || student.program_code === programFilter)
+        && (!statusFilter || student.school_status === statusFilter);
     });
-  }, [registryRecords, searchQuery]);
+  }, [registryRecords, searchQuery, schoolFilter, programFilter, statusFilter]);
+
+  const availableSchools = useMemo(() => [...new Set(registryRecords.map((student) => student.school_code).filter(Boolean))].sort(), [registryRecords]);
+  const availableRecordPrograms = useMemo(() => [...new Set(registryRecords.map((student) => student.program_code).filter(Boolean))].sort(), [registryRecords]);
+  const hasActiveFilters = Boolean(searchQuery || schoolFilter || programFilter || statusFilter);
+
+  function clearFilters() {
+    setSearchQuery('');
+    setSchoolFilter('');
+    setProgramFilter('');
+    setStatusFilter('');
+  }
 
   const availablePrograms = useMemo(
     () => getNubProgramsForSchool(editForm.school_code),
@@ -435,10 +452,25 @@ export default function ManageUsers() {
         <div className="admin-registry-records-header">
           <div>
             <strong>Student records</strong>
-            <span>Select Edit to view the complete Registrar record, website access, and enrollment status.</span>
+            <span>{registryLoading ? 'Loading the student roster…' : `${visibleRecords.length.toLocaleString()} of ${registryRecords.length.toLocaleString()} records`} · Select Edit to view the complete Registrar record.</span>
           </div>
           <div className="admin-registry-record-filters">
             <Input aria-label="Search student records" onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search name, email, student number…" value={searchQuery} />
+            <select aria-label="Filter by school" onChange={(event) => setSchoolFilter(event.target.value)} value={schoolFilter}>
+              <option value="">All schools</option>
+              {availableSchools.map((school) => <option key={school} value={school}>{buildSchoolLabel(school)}</option>)}
+            </select>
+            <select aria-label="Filter by course" onChange={(event) => setProgramFilter(event.target.value)} value={programFilter}>
+              <option value="">All courses</option>
+              {availableRecordPrograms.map((program) => <option key={program} value={program}>{buildProgramLabel(program)}</option>)}
+            </select>
+            <select aria-label="Filter by enrollment status" onChange={(event) => setStatusFilter(event.target.value)} value={statusFilter}>
+              <option value="">All statuses</option>
+              <option value="Enrolled">Enrolled</option>
+              <option value="Dropped">Dropped</option>
+              <option value="Graduated">Graduated</option>
+            </select>
+            {hasActiveFilters ? <Button onClick={clearFilters} type="button" variant="ghost">Clear filters</Button> : null}
           </div>
         </div>
 
@@ -447,8 +479,8 @@ export default function ManageUsers() {
         ) : null}
 
         {!registryLoading && visibleRecords.length ? (
-          <div className="admin-registry-table-wrap" style={{ border: `1px solid ${alpha(theme.colors.ink, 0.08)}`, borderRadius: 12, overflowX: 'auto' }}>
-            <table className="admin-registry-student-table" style={{ background: alpha(theme.colors.panel, 0.74), borderCollapse: 'separate', borderSpacing: 0, minWidth: 900, width: '100%' }}>
+          <div className="admin-registry-table-wrap" style={{ border: `1px solid ${alpha(theme.colors.ink, 0.08)}`, borderRadius: 14, overflowX: 'auto' }}>
+            <table className="admin-registry-student-table" style={{ background: alpha(theme.colors.panel, 0.74), borderCollapse: 'separate', borderSpacing: 0, minWidth: 1120, width: '100%' }}>
               <thead style={{ background: alpha(theme.colors.ink, 0.02) }}>
                 <tr>
                   <th style={headerCellStyle}>Student ID</th>
@@ -456,17 +488,21 @@ export default function ManageUsers() {
                   <th style={headerCellStyle}>Email</th>
                   <th style={headerCellStyle}>Course</th>
                   <th style={headerCellStyle}>Section</th>
+                  <th style={headerCellStyle}>Enrollment</th>
+                  <th style={headerCellStyle}>Account access</th>
                   <th style={headerCellStyle}>Action</th>
                 </tr>
               </thead>
               <tbody>
                 {visibleRecords.map((student) => (
                     <tr key={student.id}>
-                      <td style={bodyCellStyle}><strong style={{ color: theme.colors.ink }}>{student.student_number}</strong></td>
+                      <td style={bodyCellStyle}><strong className="admin-registry-student-id">{student.student_number}</strong></td>
                       <td style={bodyCellStyle}><span className="admin-registry-student-name">{buildName(student)}</span></td>
-                      <td style={bodyCellStyle}><span style={{ color: theme.colors.slate }}>{student.email}</span></td>
-                      <td style={bodyCellStyle}><Badge tone="info">{student.program_code}</Badge></td>
-                      <td style={bodyCellStyle}><strong style={{ color: theme.colors.ink }}>{student.section || 'Not assigned'}</strong></td>
+                      <td style={bodyCellStyle}><span className="admin-registry-student-email">{student.email}</span></td>
+                      <td style={bodyCellStyle}><Badge tone="info">{student.program_code || 'Not assigned'}</Badge></td>
+                      <td style={bodyCellStyle}><strong className="admin-registry-student-section">{student.section || 'Not assigned'}</strong></td>
+                      <td style={bodyCellStyle}><Badge tone={student.school_status === 'Enrolled' ? 'success' : 'warning'}>{student.school_status || 'Unknown'}</Badge></td>
+                      <td style={bodyCellStyle}><Badge tone={getStudentAccess(student).tone}>{getStudentAccess(student).label}</Badge></td>
                       <td style={bodyCellStyle}>
                         <Button onClick={() => openStudentEditor(student)} type="button" variant="secondary">Edit</Button>
                       </td>

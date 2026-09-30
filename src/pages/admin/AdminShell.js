@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../../api/supabaseClient';
+import { useAuth } from '../../context/AuthContext';
 import { CatalogIcon, FaqIcon, HomeIcon, LogoutIcon, PaletteIcon, ProfileIcon, ReportIcon, StarIcon, UsersIcon } from '../../ui/icons';
 import { WorkspaceLayout } from '../../ui/layouts';
 import { Button, Modal } from '../../ui/primitives';
@@ -19,6 +20,7 @@ const navItems = [
 ];
 
 export default function AdminShell({ children, subtitle, title }) {
+  const { user } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
@@ -29,17 +31,19 @@ export default function AdminShell({ children, subtitle, title }) {
     let mounted = true;
 
     async function loadProfilePhoto() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!mounted || !user) {
+      if (!user?.id) {
+        setProfilePhotoUrl('');
         return;
       }
 
-      const { data } = await supabase.from('profiles').select('profile_photo_url').eq('id', user.id).maybeSingle();
+      const { data, error } = await supabase.from('profiles').select('profile_photo_url').eq('id', user.id).maybeSingle();
 
       if (!mounted) {
+        return;
+      }
+
+      if (error) {
+        console.warn('Unable to load the admin profile photo:', error.message);
         return;
       }
 
@@ -50,14 +54,16 @@ export default function AdminShell({ children, subtitle, title }) {
       setProfilePhotoUrl(event.detail?.profilePhotoUrl || '');
     }
 
-    loadProfilePhoto();
+    loadProfilePhoto().catch((error) => {
+      if (mounted) console.warn('Unable to load the admin profile photo:', error?.message || error);
+    });
     window.addEventListener('profile-photo-updated', handleProfilePhotoUpdate);
 
     return () => {
       mounted = false;
       window.removeEventListener('profile-photo-updated', handleProfilePhotoUpdate);
     };
-  }, []);
+  }, [user?.id]);
 
   async function handleConfirmSignOut() {
     await supabase.auth.signOut();

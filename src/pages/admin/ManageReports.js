@@ -91,6 +91,25 @@ function formatDate(value) {
   return dateFormatter.format(date);
 }
 
+function formatLocalDateInput(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  })[character]);
+}
+
 function joinParts(parts) {
   return parts.filter(Boolean).join(' | ');
 }
@@ -282,6 +301,8 @@ export default function ManageReports() {
   const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [reviewFeedback, setReviewFeedback] = useState('');
   const [reviewFeedbackTone, setReviewFeedbackTone] = useState('info');
@@ -539,10 +560,19 @@ export default function ManageReports() {
 
   const filteredRecords = useMemo(() => {
     const normalizedQuery = searchQuery.trim().toLowerCase();
+    const invalidDateRange = Boolean(startDate && endDate && startDate > endDate);
 
     return records.filter((record) => {
+      if (invalidDateRange) return false;
       if (categoryFilter !== 'all' && record.category !== categoryFilter) {
         return false;
+      }
+
+      if (startDate || endDate) {
+        const recordDate = formatLocalDateInput(record.date);
+        if (!recordDate || (startDate && recordDate < startDate) || (endDate && recordDate > endDate)) {
+          return false;
+        }
       }
 
       if (!normalizedQuery) {
@@ -556,7 +586,66 @@ export default function ManageReports() {
 
       return haystack.includes(normalizedQuery);
     });
-  }, [categoryFilter, records, searchQuery]);
+  }, [categoryFilter, endDate, records, searchQuery, startDate]);
+
+  const invalidDateRange = Boolean(startDate && endDate && startDate > endDate);
+
+  function exportFilteredRecordsPdf() {
+    if (!filteredRecords.length) return;
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      window.alert('Allow pop-ups for this page to export the PDF.');
+      return;
+    }
+
+    const categoryLabel = categoryOptions.find((option) => option.value === categoryFilter)?.label || 'All categories';
+    const dateRangeLabel = startDate || endDate
+      ? `${startDate || 'Any date'} to ${endDate || 'Any date'}`
+      : 'All dates';
+    const rows = filteredRecords.map((record) => `
+      <tr>
+        <td>${escapeHtml(record.categoryLabel)}</td>
+        <td>${escapeHtml(record.subject)}</td>
+        <td>${escapeHtml(record.reference || '—')}</td>
+        <td>${escapeHtml(record.details || '—')}</td>
+        <td>${escapeHtml(getVerificationStatusLabel(record.status))}</td>
+        <td>${escapeHtml(formatDate(record.date))}</td>
+      </tr>`).join('');
+
+    printWindow.document.open();
+    printWindow.document.write(`<!doctype html>
+      <html lang="en">
+        <head>
+          <meta charset="utf-8" />
+          <title>Borrow Ko 'To — Reports</title>
+          <style>
+            @page { size: landscape; margin: 14mm; }
+            * { box-sizing: border-box; }
+            body { color: #10233f; font: 10pt Arial, sans-serif; margin: 0; }
+            h1 { font-size: 20pt; margin: 0 0 6px; }
+            .meta { color: #52647e; display: flex; gap: 24px; margin-bottom: 16px; }
+            table { border-collapse: collapse; table-layout: fixed; width: 100%; }
+            th, td { border: 1px solid #dbe3f0; overflow-wrap: anywhere; padding: 7px 8px; text-align: left; vertical-align: top; }
+            th { background: #f1f3f7; font-size: 8pt; letter-spacing: .06em; text-transform: uppercase; }
+            th:nth-child(1) { width: 13%; } th:nth-child(2) { width: 18%; }
+            th:nth-child(3) { width: 12%; } th:nth-child(4) { width: 34%; }
+            th:nth-child(5) { width: 11%; } th:nth-child(6) { width: 12%; }
+            tr { break-inside: avoid; }
+          </style>
+        </head>
+        <body>
+          <h1>Reports</h1>
+          <div class="meta"><span>Category: ${escapeHtml(categoryLabel)}</span><span>Date range: ${escapeHtml(dateRangeLabel)}</span><span>${filteredRecords.length} records</span></div>
+          <table><thead><tr><th>Category</th><th>Subject</th><th>Reference</th><th>Details</th><th>Status</th><th>Date</th></tr></thead><tbody>${rows}</tbody></table>
+        </body>
+      </html>`);
+    printWindow.document.close();
+    printWindow.onload = () => {
+      printWindow.focus();
+      printWindow.print();
+    };
+  }
 
   const totalRecords = records.length;
   const openRecords = useMemo(() => records.filter((record) => ['open', 'pending'].includes((record.status || '').toLowerCase())).length, [records]);
@@ -754,7 +843,7 @@ export default function ManageReports() {
       </Modal>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-        <SectionGrid columns={5} style={{ gap: 16, position: 'relative', zIndex: 1 }}>
+        <SectionGrid className="admin-reports-summary-grid" columns={5} style={{ gap: 16, position: 'relative', zIndex: 1 }}>
           <MetricCard
             detail="Combined records loaded from the report-related tables in Supabase."
             icon={<span style={{ fontSize: 18, fontWeight: 700 }}>#</span>}
@@ -794,7 +883,7 @@ export default function ManageReports() {
 
         <Panel style={{ marginTop: 0, padding: '8px 24px 24px', position: 'relative', zIndex: 0 }}>
           <div style={{ display: 'grid', gap: 10 }}>
-            <div className="form-grid admin-filter-toolbar" style={{ alignItems: 'end', display: 'grid', gap: 12, gridTemplateColumns: 'minmax(0, 1fr) 280px auto' }}>
+            <div className="form-grid admin-filter-toolbar admin-report-filter-toolbar" style={{ alignItems: 'end', display: 'grid', gap: 12 }}>
               <label style={{ display: 'grid', gap: 10 }}>
                 <span style={{ color: theme.colors.ink, fontSize: 14, fontWeight: 600 }}>Search records</span>
                 <Input name="report_search" onChange={(event) => setSearchQuery(event.target.value)} value={searchQuery} />
@@ -827,11 +916,25 @@ export default function ManageReports() {
                 </select>
               </label>
 
+              <label style={{ display: 'grid', gap: 10 }}>
+                <span style={{ color: theme.colors.ink, fontSize: 14, fontWeight: 600 }}>Start date</span>
+                <Input max={endDate || undefined} onChange={(event) => setStartDate(event.target.value)} type="date" value={startDate} />
+              </label>
+
+              <label style={{ display: 'grid', gap: 10 }}>
+                <span style={{ color: theme.colors.ink, fontSize: 14, fontWeight: 600 }}>End date</span>
+                <Input min={startDate || undefined} onChange={(event) => setEndDate(event.target.value)} type="date" value={endDate} />
+              </label>
+
               <Badge style={{ alignSelf: 'center', justifySelf: 'flex-start', marginBottom: 2 }} tone="info">
                 {loading ? 'Loading records' : `${filteredRecords.length} shown`}
               </Badge>
+              <Button disabled={!filteredRecords.length} onClick={exportFilteredRecordsPdf} type="button" variant="secondary">
+                Export PDF
+              </Button>
             </div>
 
+            {invalidDateRange ? <StatusMessage tone="warning">Start date must be on or before the end date.</StatusMessage> : null}
             {loading ? <StatusMessage tone="info">Loading report records.</StatusMessage> : null}
             {!loading && !filteredRecords.length ? <StatusMessage tone="info">No records match the current search and category filter.</StatusMessage> : null}
 

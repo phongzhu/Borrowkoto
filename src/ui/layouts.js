@@ -281,10 +281,10 @@ function SidebarNavItem({ active, compact, collapsed, icon, item, onNavigate, pa
   );
 }
 
-export function SectionGrid({ children, columns = 3, style }) {
+export function SectionGrid({ children, className, columns = 3, style }) {
   return (
     <div
-      className="section-grid"
+      className={['section-grid', className].filter(Boolean).join(' ')}
       style={{
         alignItems: 'start',
         display: 'grid',

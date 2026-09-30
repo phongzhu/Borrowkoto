@@ -26,8 +26,28 @@ export default function TermsManagement() {
   const [message, setMessage] = useState('');
   const [messageTone, setMessageTone] = useState('info');
   const [previewDocument, setPreviewDocument] = useState(null);
+  const [historySearch, setHistorySearch] = useState('');
+  const [historyStatus, setHistoryStatus] = useState('all');
+  const [historySort, setHistorySort] = useState('newest');
 
   const currentDocument = useMemo(() => documents.find((document) => document.is_active) || null, [documents]);
+  const visibleDocuments = useMemo(() => {
+    const query = historySearch.trim().toLowerCase();
+    return documents
+      .filter((document) => {
+        if (historyStatus === 'current' && !document.is_active) return false;
+        if (historyStatus === 'archived' && document.is_active) return false;
+        const haystack = `${document.title || ''} ${document.file_name || ''} ${document.version || ''}`.toLowerCase();
+        return !query || haystack.includes(query);
+      })
+      .sort((left, right) => {
+        if (historySort === 'version_asc') return Number(left.version) - Number(right.version);
+        if (historySort === 'version_desc') return Number(right.version) - Number(left.version);
+        const leftDate = new Date(left.published_at || left.created_at || 0).getTime() || 0;
+        const rightDate = new Date(right.published_at || right.created_at || 0).getTime() || 0;
+        return historySort === 'oldest' ? leftDate - rightDate : rightDate - leftDate;
+      });
+  }, [documents, historySearch, historySort, historyStatus]);
 
   const loadDocuments = useCallback(async () => {
     setLoading(true);
@@ -139,7 +159,7 @@ export default function TermsManagement() {
   }
 
   return (
-    <AdminShell subtitle="Publish the policy students must accept during activation and before rental payment." title="Terms and Conditions">
+    <AdminShell subtitle="" title="">
       <main className="terms-admin-page">
         {message ? <StatusMessage tone={messageTone}>{message}</StatusMessage> : null}
 
@@ -173,14 +193,20 @@ export default function TermsManagement() {
         </section>
 
         <section className="terms-admin-history">
-          <div className="terms-admin-section-heading"><div><span>Document history</span><h2>Published versions</h2><p>Older versions remain available for acceptance audit records.</p></div></div>
+          <div className="terms-admin-section-heading"><div><span>Document history</span><h2>Published versions</h2><p>{visibleDocuments.length} of {documents.length} versions · Older versions remain available for acceptance audit records.</p></div></div>
+          <div className="terms-admin-history-filters">
+            <label><span>Search versions</span><Input aria-label="Search published terms documents" onChange={(event) => setHistorySearch(event.target.value)} placeholder="Title, file name, or version" value={historySearch} /></label>
+            <label><span>Document status</span><select aria-label="Filter terms documents by status" onChange={(event) => setHistoryStatus(event.target.value)} value={historyStatus}><option value="all">All documents</option><option value="current">Current</option><option value="archived">Archived</option></select></label>
+            <label><span>Sort by</span><select aria-label="Sort terms documents" onChange={(event) => setHistorySort(event.target.value)} value={historySort}><option value="newest">Published: newest first</option><option value="oldest">Published: oldest first</option><option value="version_desc">Version: newest first</option><option value="version_asc">Version: oldest first</option></select></label>
+          </div>
           <div className="terms-admin-table-wrap">
-            <table>
+            <table className="terms-admin-history-table">
               <thead><tr><th>Version</th><th>Document</th><th>Published</th><th>Status</th><th>Actions</th></tr></thead>
               <tbody>
                 {loading ? <tr><td colSpan="5" className="terms-admin-empty">Loading documents...</td></tr> : null}
                 {!loading && !documents.length ? <tr><td colSpan="5" className="terms-admin-empty">No Terms and Conditions have been published.</td></tr> : null}
-                {!loading && documents.map((document) => (
+                {!loading && documents.length > 0 && !visibleDocuments.length ? <tr><td colSpan="5" className="terms-admin-empty">No documents match these filters.</td></tr> : null}
+                {!loading && visibleDocuments.map((document) => (
                   <tr key={document.id}>
                     <td><strong>v{document.version}</strong></td>
                     <td><div className="terms-admin-document-name"><ReportIcon size={18} /><span><strong>{document.title}</strong><small>{document.file_name}</small></span></div></td>
@@ -199,4 +225,3 @@ export default function TermsManagement() {
     </AdminShell>
   );
 }
-
