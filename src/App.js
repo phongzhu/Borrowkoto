@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from './api/supabaseClient';
 import { useAuth } from './context/AuthContext';
 import { useUISettings } from './context/UISettingsContext';
-import { getNubProgramsForSchool, itemMatchesAcademicFilters, NUB_PROGRAMS, NUB_SCHOOLS } from './data/nubAcademicData';
+import { getNubProgramsForSchool, NUB_PROGRAMS, NUB_SCHOOLS } from './data/nubAcademicData';
 import { RENTABLE_ITEM_STATUSES } from './utils/bookingEnums';
 import { filterListingsByActiveOwners, selectPromotedMarketplaceItems } from './utils/marketplaceVisibility';
 import DataLoadingScreen from './ui/DataLoadingScreen';
