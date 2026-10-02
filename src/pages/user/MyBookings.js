@@ -699,6 +699,8 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
   const [savingStatusId, setSavingStatusId] = useState('');
   const [deletingItemId, setDeletingItemId] = useState('');
   const [bookingActionBusyId, setBookingActionBusyId] = useState('');
+  const [purchasePaymentRecovery, setPurchasePaymentRecovery] = useState(null);
+  const [purchasePaymentRecoverySessionId, setPurchasePaymentRecoverySessionId] = useState('');
   const [paymentReturnProcessing, setPaymentReturnProcessing] = useState(
     () => new URLSearchParams(window.location.search).get('paymongo') === 'success'
   );
@@ -818,12 +820,12 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
           .order('created_at', { ascending: false }),
         supabase
           .from('item_purchase_requests')
-          .select('id, item_id, buyer_id, seller_id, buyer_requested_quantity, seller_approved_quantity, sale_price_snapshot, addon_total_amount_snapshot, commission_fee_snapshot, sale_total_amount_snapshot, sale_inclusions_snapshot, buyer_preferred_pickup_at, agreed_pickup_at, pickup_location_text, pickup_notes, buyer_message, seller_notes, status, requested_at, reviewed_at, paid_at, completed_at, created_at, updated_at')
+          .select('id, item_id, buyer_id, seller_id, buyer_requested_quantity, seller_approved_quantity, sale_price_snapshot, addon_total_amount_snapshot, commission_fee_snapshot, sale_total_amount_snapshot, sale_inclusions_snapshot, buyer_preferred_pickup_at, agreed_pickup_at, pickup_location_text, pickup_notes, buyer_message, seller_notes, status, requested_at, reviewed_at, paid_at, completed_at, paymongo_checkout_session_id, created_at, updated_at')
           .eq('seller_id', user.id)
           .order('created_at', { ascending: false }),
         supabase
           .from('item_purchase_requests')
-          .select('id, item_id, buyer_id, seller_id, buyer_requested_quantity, seller_approved_quantity, sale_price_snapshot, addon_total_amount_snapshot, commission_fee_snapshot, sale_total_amount_snapshot, sale_inclusions_snapshot, buyer_preferred_pickup_at, agreed_pickup_at, pickup_location_text, pickup_notes, buyer_message, seller_notes, status, requested_at, reviewed_at, paid_at, completed_at, created_at, updated_at')
+          .select('id, item_id, buyer_id, seller_id, buyer_requested_quantity, seller_approved_quantity, sale_price_snapshot, addon_total_amount_snapshot, commission_fee_snapshot, sale_total_amount_snapshot, sale_inclusions_snapshot, buyer_preferred_pickup_at, agreed_pickup_at, pickup_location_text, pickup_notes, buyer_message, seller_notes, status, requested_at, reviewed_at, paid_at, completed_at, paymongo_checkout_session_id, created_at, updated_at')
           .eq('buyer_id', user.id)
           .order('created_at', { ascending: false }),
         userHasActiveDamageHold(user.id),
@@ -2969,9 +2971,19 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
 
       try {
         const { data: paymentResult, error: paymentError } = await supabase.functions.invoke('purchase-payment', {
-          body: { purchase_request_id: purchaseRequestId },
+          body: {
+            checkout_session_id: query.get('checkout_session_id') || undefined,
+            purchase_request_id: purchaseRequestId,
+          },
         });
-        if (paymentError) throw new Error(paymentError.message || 'Unable to verify the PayMongo payment.');
+        if (paymentError) {
+          let details = paymentError.message || 'Unable to verify the PayMongo payment.';
+          if (paymentError.context && typeof paymentError.context.json === 'function') {
+            const responseBody = await paymentError.context.json().catch(() => null);
+            details = responseBody?.error || details;
+          }
+          throw new Error(details);
+        }
         if (!paymentResult?.paid) throw new Error(paymentResult?.error || 'PayMongo has not confirmed this payment yet.');
 
         await loadListings(false);
@@ -2985,7 +2997,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
         }
       } catch (paymentError) {
         if (!ignore) {
-          setMessage(`Purchase payment succeeded, but status update failed: ${paymentError.message}`);
+          setMessage(`Unable to verify or record purchase payment: ${paymentError.message}`);
           setMessageTone('warning');
           setBookingActionBusyId('');
           window.history.replaceState({}, '', window.location.pathname);
@@ -3347,17 +3359,59 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
           purchase_request_id: request.id,
           source: 'purchase_request_payment',
         },
+        referenceNumber: request.id,
         successUrl,
       });
 
-      if (checkoutSession?.attributes?.checkout_url) {
+      if (checkoutSession?.id && checkoutSession?.attributes?.checkout_url) {
+        const { error: linkError } = await supabase.rpc('set_item_purchase_checkout_session', {
+          p_checkout_session_id: checkoutSession.id,
+          p_livemode: Boolean(checkoutSession.attributes.livemode),
+          p_request_id: request.id,
+        });
+        if (linkError) throw new Error(linkError.message || 'Unable to link this checkout to the purchase request.');
         window.location.href = checkoutSession.attributes.checkout_url;
       } else {
-        throw new Error('Failed to get checkout URL from PayMongo.');
+        throw new Error('PayMongo did not return a checkout session.');
       }
     } catch (paymentError) {
       setMessage(`Unable to process purchase payment: ${paymentError.message}`);
       setMessageTone('warning');
+      setBookingActionBusyId('');
+    }
+  }
+
+  async function handleRecoverPurchasePayment() {
+    const purchaseRequestId = purchasePaymentRecovery?.id;
+    const checkoutSessionId = purchasePaymentRecoverySessionId.trim();
+    if (!purchaseRequestId || !checkoutSessionId) return;
+
+    const busyKey = `purchase-recovery:${purchaseRequestId}`;
+    setBookingActionBusyId(busyKey);
+    setMessage('');
+    try {
+      const { data, error } = await supabase.functions.invoke('purchase-payment', {
+        body: { checkout_session_id: checkoutSessionId, purchase_request_id: purchaseRequestId },
+      });
+      if (error) {
+        let details = error.message || 'Unable to verify the PayMongo payment.';
+        if (error.context && typeof error.context.json === 'function') {
+          const responseBody = await error.context.json().catch(() => null);
+          details = responseBody?.error || details;
+        }
+        throw new Error(details);
+      }
+      if (!data?.paid) throw new Error(data?.error || 'PayMongo has not confirmed this payment yet.');
+
+      setPurchasePaymentRecovery(null);
+      setPurchasePaymentRecoverySessionId('');
+      setMessage('The original PayMongo payment was verified and recorded.');
+      setMessageTone('success');
+      await loadListings(false);
+    } catch (error) {
+      setMessage(error.message || 'Unable to verify the PayMongo payment.');
+      setMessageTone('warning');
+    } finally {
       setBookingActionBusyId('');
     }
   }
@@ -4919,7 +4973,20 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                                           Number(request.sale_total_amount_snapshot) ||
                                             (Number(request.sale_price_snapshot) || 0) *
                                               (Number(request.seller_approved_quantity || request.buyer_requested_quantity) || 0)
-                                        )}`}
+                                      )}`}
+                                    </Button>
+                                  ) : null}
+                                  {normalizedStatus === 'awaiting_payment' && !request.paymongo_checkout_session_id ? (
+                                    <Button
+                                      className="booking-action-button"
+                                      onClick={() => {
+                                        setPurchasePaymentRecovery(request);
+                                        setPurchasePaymentRecoverySessionId('');
+                                      }}
+                                      type="button"
+                                      variant="secondary"
+                                    >
+                                      Verify previous payment
                                     </Button>
                                   ) : null}
                                   {canCancel ? (
@@ -5329,6 +5396,51 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
           </div>
         </div>
       ) : null}
+
+      <Modal
+        actions={(
+          <>
+            <Button
+              onClick={() => {
+                setPurchasePaymentRecovery(null);
+                setPurchasePaymentRecoverySessionId('');
+              }}
+              type="button"
+              variant="secondary"
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={!purchasePaymentRecoverySessionId.trim() || bookingActionBusyId === `purchase-recovery:${purchasePaymentRecovery?.id}`}
+              onClick={handleRecoverPurchasePayment}
+              type="button"
+            >
+              {bookingActionBusyId === `purchase-recovery:${purchasePaymentRecovery?.id}` ? 'Verifying…' : 'Verify payment'}
+            </Button>
+          </>
+        )}
+        onClose={() => {
+          setPurchasePaymentRecovery(null);
+          setPurchasePaymentRecoverySessionId('');
+        }}
+        open={Boolean(purchasePaymentRecovery)}
+        size="compact"
+        title="Verify an existing payment"
+      >
+        <div style={{ display: 'grid', gap: 14 }}>
+          <StatusMessage tone="info">
+            Enter the Checkout Session ID from the original PayMongo payment record. We’ll verify it against this purchase before recording anything. Do not submit another payment while checking the original one.
+          </StatusMessage>
+          <FormField label="PayMongo Checkout Session ID">
+            <Input
+              autoComplete="off"
+              onChange={(event) => setPurchasePaymentRecoverySessionId(event.target.value)}
+              placeholder="cs_…"
+              value={purchasePaymentRecoverySessionId}
+            />
+          </FormField>
+        </div>
+      </Modal>
 
       <Modal
         actions={(

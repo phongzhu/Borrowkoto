@@ -12,18 +12,29 @@ function json(body: unknown, status = 200) {
   });
 }
 
-async function getCheckoutSession(sessionId: string, secret: string) {
-  const response = await fetch(`https://api.paymongo.com/v1/checkout_sessions/${encodeURIComponent(sessionId)}`, {
-    headers: {
-      Authorization: `Basic ${btoa(`${secret}:`)}`,
-      'Content-Type': 'application/json',
-    },
-  });
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error(payload?.errors?.[0]?.detail || `Unable to verify the PayMongo checkout (${response.status}).`);
+function paymongoSecrets(livemode: boolean | null) {
+  const primarySecret = Deno.env.get('PAYMONGO_SECRET_KEY') || '';
+  const liveSecret = Deno.env.get('PAYMONGO_LIVE_SECRET_KEY') || primarySecret;
+  const testSecret = Deno.env.get('PAYMONGO_TEST_SECRET_KEY') || (primarySecret.startsWith('sk_test_') ? primarySecret : '');
+  const candidates = livemode === true ? [liveSecret] : livemode === false ? [testSecret] : [testSecret, liveSecret];
+  return [...new Set(candidates.map((secret) => secret.trim()).filter(Boolean))];
+}
+
+async function getCheckoutSession(sessionId: string, secrets: string[]) {
+  let lastMessage = 'Unable to verify the PayMongo checkout.';
+  for (const secret of secrets) {
+    const response = await fetch(`https://api.paymongo.com/v1/checkout_sessions/${encodeURIComponent(sessionId)}`, {
+      headers: {
+        Authorization: `Basic ${btoa(`${secret}:`)}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    const payload = await response.json().catch(() => null);
+    if (response.ok) return payload?.data;
+    lastMessage = payload?.errors?.[0]?.detail || `Unable to verify the PayMongo checkout (${response.status}).`;
+    if (![401, 403, 404].includes(response.status)) break;
   }
-  return payload?.data;
+  throw new Error(lastMessage);
 }
 
 Deno.serve(async (request) => {
@@ -34,9 +45,7 @@ Deno.serve(async (request) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY') || '';
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
-    const paymongoSecret = Deno.env.get('PAYMONGO_SECRET_KEY') || Deno.env.get('PAYMONGO_TEST_SECRET_KEY') || '';
     if (!supabaseUrl || !anonKey || !serviceRoleKey) throw new Error('Payment verification is not configured.');
-    if (!paymongoSecret) throw new Error('PayMongo verification is not configured.');
 
     const authorization = request.headers.get('Authorization') || '';
     const token = authorization.replace(/^Bearer\s+/i, '');
@@ -49,7 +58,7 @@ Deno.serve(async (request) => {
     const { data: { user }, error: authError } = await userClient.auth.getUser(token);
     if (authError || !user) return json({ error: 'Authentication required.' }, 401);
 
-    const { purchase_request_id: purchaseRequestId } = await request.json();
+    const { purchase_request_id: purchaseRequestId, checkout_session_id: providedSessionId } = await request.json();
     if (typeof purchaseRequestId !== 'string' || !purchaseRequestId.trim()) {
       return json({ error: 'A purchase request is required.' }, 400);
     }
@@ -59,7 +68,7 @@ Deno.serve(async (request) => {
     });
     const { data: purchase, error: purchaseError } = await admin
       .from('item_purchase_requests')
-      .select('id,buyer_id,seller_id,buyer_requested_quantity,seller_approved_quantity,sale_price_snapshot,sale_total_amount_snapshot,commission_fee_snapshot,status,payment_transaction_id,paymongo_checkout_session_id,paid_at')
+      .select('id,buyer_id,seller_id,buyer_requested_quantity,seller_approved_quantity,sale_price_snapshot,sale_total_amount_snapshot,commission_fee_snapshot,status,payment_transaction_id,paymongo_checkout_session_id,paymongo_livemode,paid_at')
       .eq('id', purchaseRequestId)
       .eq('buyer_id', user.id)
       .maybeSingle();
@@ -69,12 +78,18 @@ Deno.serve(async (request) => {
       return json({ error: 'This purchase request is no longer payable.' }, 409);
     }
 
-    const sessionId = String(purchase.paymongo_checkout_session_id || '');
-    if (!sessionId) return json({ error: 'No PayMongo checkout is linked to this purchase. Reopen checkout to continue.' }, 409);
+    const savedSessionId = String(purchase.paymongo_checkout_session_id || '');
+    const sessionId = savedSessionId || String(providedSessionId || '').trim();
+    if (!sessionId) {
+      return json({ error: 'This older purchase has no saved PayMongo session. Enter the original checkout session ID from your PayMongo payment record to verify it. Do not pay again until the original payment is checked.' }, 409);
+    }
 
-    const session = await getCheckoutSession(sessionId, paymongoSecret);
+    const session = await getCheckoutSession(sessionId, paymongoSecrets(purchase.paymongo_livemode));
     const attributes = session?.attributes || {};
     if (session?.id !== sessionId) return json({ error: 'PayMongo checkout reference mismatch.' }, 409);
+    if (!savedSessionId && attributes.reference_number !== purchase.id && attributes.metadata?.purchase_request_id !== purchase.id) {
+      return json({ error: 'The supplied checkout does not identify this purchase. Verify the session ID in PayMongo.' }, 409);
+    }
     if (attributes.reference_number && attributes.reference_number !== purchase.id) {
       return json({ error: 'This PayMongo checkout belongs to a different purchase.' }, 409);
     }
@@ -167,6 +182,8 @@ Deno.serve(async (request) => {
       .update({
         paid_at: purchase.paid_at || paidAt,
         payment_transaction_id: transactionIds.purchase_payment,
+        paymongo_checkout_session_id: sessionId,
+        paymongo_livemode: typeof attributes.livemode === 'boolean' ? attributes.livemode : purchase.paymongo_livemode,
         status: 'paid',
         updated_at: new Date().toISOString(),
       })
