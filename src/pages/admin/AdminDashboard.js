@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../api/supabaseClient';
+import DataLoadingScreen from '../../ui/DataLoadingScreen';
 import AdminShell from './AdminShell';
 import './AdminDashboard.css';
 import { CalendarIcon, CatalogIcon, CheckIcon, ReportIcon, SearchIcon, ShieldIcon, UsersIcon } from '../../ui/icons';
@@ -435,6 +436,14 @@ export default function AdminDashboard() {
   const bookingBreakdown = useMemo(() => Object.entries(summary.bookingStatuses).map(([label, value]) => ({ label: formatLabel(label), value })), [summary.bookingStatuses]);
   const registryBreakdown = useMemo(() => Object.entries(summary.registryStatuses).map(([label, value]) => ({ label, value })), [summary.registryStatuses]);
   const damageBreakdown = useMemo(() => Object.entries(summary.damageStatuses).map(([label, value]) => ({ label: formatLabel(label), value })), [summary.damageStatuses]);
+
+  if (loading) {
+    return (
+      <AdminShell subtitle="" title="">
+        <DataLoadingScreen label="Loading admin dashboard" message="Loading system analytics from the database." title="Preparing the dashboard" />
+      </AdminShell>
+    );
+  }
 
   return (
     <AdminShell subtitle="" title="">

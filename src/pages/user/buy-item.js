@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../../api/supabaseClient';
+import DataLoadingScreen from '../../ui/DataLoadingScreen';
 import TermsModal from '../../components/TermsModal';
 import { loadActiveTerms } from '../../services/termsService';
 import { createTestCheckoutSession } from '../../services/transaction';
@@ -459,7 +460,7 @@ export default function BuyItem() {
       <main className="rent-checkout-public-main">
         <div className="rent-order-shell">
           {message ? <StatusMessage tone={messageTone}>{message}</StatusMessage> : null}
-          {loading ? <StatusMessage tone="info">Loading purchase checkout.</StatusMessage> : null}
+          {loading ? <DataLoadingScreen label="Loading purchase checkout" message="Loading item and purchase details from the database." title="Preparing checkout" /> : null}
 
           {!loading && item ? (
             <Panel className="rent-order-panel">

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-labelledby="title">
+  <title id="title">GCash</title>
+  <defs>
+    <linearGradient id="gcash-blue" x1="8" y1="4" x2="88" y2="92" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2f80ed"/>
+      <stop offset="1" stop-color="#1464d8"/>
+    </linearGradient>
+  </defs>
+  <rect width="96" height="96" rx="24" fill="url(#gcash-blue)"/>
+  <circle cx="42" cy="48" r="25" fill="none" stroke="#0b47a1" stroke-width="7"/>
+  <path d="M51 35a17 17 0 1 0 6 22H43v-9h26v5a27 27 0 1 1-8-23" fill="#fff"/>
+  <path d="M69 31c5 4 8 10 8 17m-6-24c8 6 13 15 13 25" fill="none" stroke="#bce8ff" stroke-linecap="round" stroke-width="4"/>
+</svg>

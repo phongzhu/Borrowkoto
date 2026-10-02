@@ -192,6 +192,12 @@
 .catalog-category-table th:nth-child(5) { width: 10%; }
 .catalog-category-table th:nth-child(6) { width: 9%; }
 .catalog-category-table th:nth-child(7) { width: 8%; }
+.catalog-category-table.is-main-only th:nth-child(1) { width: 25%; }
+.catalog-category-table.is-main-only th:nth-child(2) { width: 32%; }
+.catalog-category-table.is-main-only th:nth-child(3) { width: 9%; }
+.catalog-category-table.is-main-only th:nth-child(4) { width: 12%; }
+.catalog-category-table.is-main-only th:nth-child(5) { width: 12%; }
+.catalog-category-table.is-main-only th:nth-child(6) { width: 10%; }
 
 .catalog-category-table td {
   overflow-wrap: anywhere;
@@ -1329,6 +1335,14 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  justify-content: flex-end;
+  width: 100%;
+}
+
+.admin-report-details-modal > div:last-child {
+  border-top: 1px solid #e2e8f0;
+  justify-content: flex-end !important;
+  padding-top: 12px !important;
 }
 
 .admin-report-detail-table-wrap {
@@ -1375,6 +1389,111 @@
 .admin-report-detail-table td strong {
   color: #10233f;
   font-size: 14px;
+}
+
+.app-modal-content.admin-damage-review-modal {
+  max-width: 900px !important;
+  width: min(900px, calc(100vw - 40px)) !important;
+}
+
+.admin-damage-review-modal > div:last-child {
+  border-top: 1px solid #e2e8f0;
+  justify-content: flex-end !important;
+  margin-top: 0;
+  padding-top: 14px !important;
+}
+
+.admin-damage-review-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+  width: 100%;
+}
+
+.admin-damage-review-content {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+
+.admin-damage-review-summary > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.admin-damage-evidence-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 320px));
+}
+
+.admin-damage-evidence-card {
+  align-content: start;
+  background: #fff;
+  border: 1px solid #dbe3f0;
+  border-radius: 16px;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  overflow: hidden;
+  padding: 12px;
+}
+
+.admin-damage-evidence-card > strong {
+  color: #526173;
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.admin-damage-evidence-card > a {
+  color: #3157a4;
+  display: grid;
+  font-size: 12px;
+  gap: 7px;
+  text-decoration: none;
+}
+
+.admin-damage-evidence-card img {
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 11px;
+  display: block;
+  height: 230px;
+  object-fit: contain;
+  width: 100%;
+}
+
+.admin-damage-review-field {
+  display: grid;
+  gap: 8px;
+}
+
+@media (max-width: 760px) {
+  .admin-damage-review-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 520px) {
+  .app-modal-content.admin-damage-review-modal {
+    width: calc(100vw - 20px) !important;
+  }
+
+  .admin-damage-review-summary {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .admin-damage-review-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-damage-review-actions button:last-child {
+    grid-column: 1 / -1;
+  }
 }
 
 .ui-settings-page {

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../api/supabaseClient';
+import DataLoadingScreen from '../../ui/DataLoadingScreen';
 import { MessageIcon, SearchIcon } from '../../ui/icons';
 import { Badge, Button, FormField, Input, Panel, StatusMessage, Textarea } from '../../ui/primitives';
 import UserShell from './UserShell';
@@ -117,6 +118,14 @@ export default function ListingFAQs() {
     </UserShell>;
   }
 
+  if (loading) {
+    return (
+      <UserShell title="" subtitle="">
+        <DataLoadingScreen label="Loading product FAQs" message="Loading your listing FAQs from the database." title="Getting your FAQs" />
+      </UserShell>
+    );
+  }
+
   return <UserShell title="" subtitle="">
     <Panel className="listing-faq-page">
       <div className="listing-faq-page-head">
@@ -125,7 +134,7 @@ export default function ListingFAQs() {
       </div>
       {error ? <StatusMessage tone="warning">{error}</StatusMessage> : null}
       <div className="listing-faq-toolbar"><SearchIcon size={17}/><Input aria-label="Search listings and FAQs" onChange={(event) => setSearch(event.target.value)} placeholder="Search product, question, or answer" value={search}/></div>
-      {loading ? <StatusMessage tone="info">Loading your product FAQs.</StatusMessage> : null}
+      {loading ? <DataLoadingScreen label="Loading product FAQs" message="Loading your listing FAQs from the database." title="Getting your FAQs" /> : null}
       {!loading ? <div className="listing-faq-table-wrap"><table><thead><tr><th>Product listing</th><th>Status</th><th>FAQ answers</th><th>Last updated</th><th>Action</th></tr></thead><tbody>{filteredItems.map((item) => { const itemFaqs = faqMap.get(item.id) || []; const latest = itemFaqs.reduce((value, faq) => !value || new Date(faq.updated_at) > new Date(value) ? faq.updated_at : value, ''); return <tr key={item.id}><td data-label="Product"><strong>{item.title}</strong><small>Listing #{item.id.slice(0, 8)}</small></td><td data-label="Status"><Badge tone={item.is_active ? 'success' : 'warning'}>{item.status || (item.is_active ? 'Active' : 'Inactive')}</Badge></td><td data-label="FAQ answers"><strong>{itemFaqs.length}</strong><small>{itemFaqs.length ? 'Available in buyer chat' : 'Needs configuration'}</small></td><td data-label="Last updated">{formatDate(latest)}</td><td data-label="Action"><Button onClick={() => openManager(item)} type="button" variant="secondary">View / manage</Button></td></tr>; })}</tbody></table>{!filteredItems.length ? <StatusMessage tone="info">No listings match this search.</StatusMessage> : null}</div> : null}
     </Panel>
   </UserShell>;

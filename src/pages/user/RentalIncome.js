@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../api/supabaseClient';
+import DataLoadingScreen from '../../ui/DataLoadingScreen';
 import { CatalogIcon, CheckIcon, SparkIcon, StarIcon, UploadIcon } from '../../ui/icons';
 import { Badge, Panel, StatusMessage } from '../../ui/primitives';
 import { BOOKING_STATUS, TERMINAL_BOOKING_STATUSES } from '../../utils/bookingEnums';
@@ -91,6 +92,7 @@ export default function RentalIncome() {
   const [paymentTransactions, setPaymentTransactions] = useState([]);
   const [purchaseRequests, setPurchaseRequests] = useState([]);
   const [historyPage, setHistoryPage] = useState(1);
+  const [historyFilters, setHistoryFilters] = useState({ startDate: '', endDate: '', type: 'all', status: 'all', query: '' });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -498,10 +500,23 @@ export default function RentalIncome() {
     };
   }, [ownerBookings, wallet.totalEarned]);
 
-  const totalHistoryPages = useMemo(
-    () => Math.max(1, Math.ceil(wallet.transactionHistory.length / TRANSACTIONS_PER_PAGE)),
-    [wallet.transactionHistory.length]
-  );
+  const filteredHistory = useMemo(() => {
+    const start = historyFilters.startDate ? new Date(`${historyFilters.startDate}T00:00:00`).getTime() : null;
+    const end = historyFilters.endDate ? new Date(`${historyFilters.endDate}T23:59:59.999`).getTime() : null;
+    const query = historyFilters.query.trim().toLowerCase();
+    return wallet.transactionHistory.filter((entry) => {
+      const timestamp = new Date(entry.date || 0).getTime();
+      if (start !== null && timestamp < start) return false;
+      if (end !== null && timestamp > end) return false;
+      if (historyFilters.type !== 'all' && entry.transactionType !== historyFilters.type) return false;
+      if (historyFilters.status !== 'all' && entry.statusLabel !== historyFilters.status) return false;
+      if (query && ![entry.itemTitle, entry.helperText, entry.transactionType, entry.statusLabel, entry.periodLabel].join(' ').toLowerCase().includes(query)) return false;
+      return true;
+    });
+  }, [historyFilters, wallet.transactionHistory]);
+  const historyTypes = useMemo(() => Array.from(new Set(wallet.transactionHistory.map((entry) => entry.transactionType))).sort(), [wallet.transactionHistory]);
+  const historyStatuses = useMemo(() => Array.from(new Set(wallet.transactionHistory.map((entry) => entry.statusLabel))).sort(), [wallet.transactionHistory]);
+  const totalHistoryPages = useMemo(() => Math.max(1, Math.ceil(filteredHistory.length / TRANSACTIONS_PER_PAGE)), [filteredHistory.length]);
 
   useEffect(() => {
     setHistoryPage((currentPage) => Math.min(currentPage, totalHistoryPages));
@@ -510,15 +525,24 @@ export default function RentalIncome() {
   const paginatedHistory = useMemo(() => {
     const startIndex = (historyPage - 1) * TRANSACTIONS_PER_PAGE;
     const endIndex = startIndex + TRANSACTIONS_PER_PAGE;
-    return wallet.transactionHistory.slice(startIndex, endIndex);
-  }, [historyPage, wallet.transactionHistory]);
+    return filteredHistory.slice(startIndex, endIndex);
+  }, [filteredHistory, historyPage]);
   const historyStart = (historyPage - 1) * TRANSACTIONS_PER_PAGE + (paginatedHistory.length ? 1 : 0);
   const historyEnd = (historyPage - 1) * TRANSACTIONS_PER_PAGE + paginatedHistory.length;
+
+  function exportHistoryPdf() {
+    const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    const rows = filteredHistory.map((entry) => `<tr><td><strong>${escapeHtml(entry.itemTitle)}</strong><br>${escapeHtml(entry.helperText)}</td><td>${escapeHtml(entry.transactionType)}</td><td>${escapeHtml(entry.periodLabel)}</td><td>${escapeHtml(entry.statusLabel)}</td><td>${escapeHtml(formatDate(entry.date))}</td><td>${escapeHtml(currencyFormatter.format(entry.amount))}</td></tr>`).join('');
+    printWindow.document.write(`<!doctype html><html><head><title>Transaction History</title><meta charset="utf-8"><style>body{font:12px Arial,sans-serif;color:#17243a;padding:24px}h1{font-size:20px;margin:0 0 6px}p{color:#52627a;margin:0 0 18px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #d8deea;padding:9px;text-align:left;vertical-align:top}th{background:#f1f3f8;font-size:10px;text-transform:uppercase;letter-spacing:.06em}td:last-child,th:last-child{text-align:right;white-space:nowrap}@media print{body{padding:0}}</style></head><body><h1>Transaction History</h1><p>${escapeHtml(historyFilters.startDate || 'Any start date')} to ${escapeHtml(historyFilters.endDate || 'Any end date')} · ${filteredHistory.length} transactions</p><table><thead><tr><th>Transaction</th><th>Type</th><th>Period</th><th>Status</th><th>Booked</th><th>Amount</th></tr></thead><tbody>${rows || '<tr><td colspan="6">No transactions match the selected filters.</td></tr>'}</tbody></table><script>window.onload=()=>window.print();</script></body></html>`);
+    printWindow.document.close();
+  }
 
   if (loading) {
     return (
       <UserShell subtitle="" title="">
-        <StatusMessage tone="info">Loading wallet...</StatusMessage>
+      <DataLoadingScreen label="Loading wallet" message="Loading your rental income from the database." title="Getting your wallet" />
       </UserShell>
     );
   }
@@ -668,7 +692,17 @@ export default function RentalIncome() {
                 <h3>Transaction History</h3>
                 <span>Booking, rental, and purchase money activity.</span>
               </div>
-              <strong>{wallet.transactionHistory.length} transactions</strong>
+              <strong>{filteredHistory.length} of {wallet.transactionHistory.length} transactions</strong>
+            </div>
+
+            <div className="income-history-filters">
+              <label className="income-history-search">Search<input onChange={(event) => { setHistoryFilters((current) => ({ ...current, query: event.target.value })); setHistoryPage(1); }} placeholder="Item, description, or period" type="search" value={historyFilters.query} /></label>
+              <label>Type<select onChange={(event) => { setHistoryFilters((current) => ({ ...current, type: event.target.value })); setHistoryPage(1); }} value={historyFilters.type}><option value="all">All types</option>{historyTypes.map((type) => <option key={type} value={type}>{type}</option>)}</select></label>
+              <label>Status<select onChange={(event) => { setHistoryFilters((current) => ({ ...current, status: event.target.value })); setHistoryPage(1); }} value={historyFilters.status}><option value="all">All statuses</option>{historyStatuses.map((status) => <option key={status} value={status}>{status}</option>)}</select></label>
+              <label>Start date<input onChange={(event) => { setHistoryFilters((current) => ({ ...current, startDate: event.target.value })); setHistoryPage(1); }} type="date" value={historyFilters.startDate} /></label>
+              <label>End date<input onChange={(event) => { setHistoryFilters((current) => ({ ...current, endDate: event.target.value })); setHistoryPage(1); }} type="date" value={historyFilters.endDate} /></label>
+              <button className="income-history-reset" onClick={() => { setHistoryFilters({ startDate: '', endDate: '', type: 'all', status: 'all', query: '' }); setHistoryPage(1); }} type="button">Clear</button>
+              <button className="income-history-export" disabled={!filteredHistory.length} onClick={exportHistoryPdf} type="button">Export PDF</button>
             </div>
 
             {paginatedHistory.length ? (
@@ -710,10 +744,10 @@ export default function RentalIncome() {
                 </table>
               </div>
             ) : (
-              <StatusMessage tone="info">No wallet activity yet.</StatusMessage>
+              <StatusMessage tone="info">{wallet.transactionHistory.length ? 'No transactions match these filters.' : 'No wallet activity yet.'}</StatusMessage>
             )}
 
-            {wallet.transactionHistory.length > TRANSACTIONS_PER_PAGE ? (
+            {filteredHistory.length > TRANSACTIONS_PER_PAGE ? (
               <div className="income-history-pagination">
                 <button
                   disabled={historyPage === 1}
@@ -747,7 +781,7 @@ export default function RentalIncome() {
             ) : null}
 
             <span className="income-history-count">
-              Showing {historyStart}-{historyEnd} of {wallet.transactionHistory.length} transactions
+              Showing {historyStart}-{historyEnd} of {filteredHistory.length} transactions
             </span>
           </div>
         </Panel>

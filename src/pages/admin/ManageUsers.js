@@ -9,6 +9,7 @@ import {
   NUB_STUDENT_NUMBER_PATTERN,
 } from '../../data/nubAcademicData';
 import { CheckIcon, ReportIcon, UploadIcon, UsersIcon } from '../../ui/icons';
+import DataLoadingScreen from '../../ui/DataLoadingScreen';
 import { Badge, Button, FormField, Input, Modal, Panel, StatusMessage } from '../../ui/primitives';
 import { alpha, theme } from '../../ui/theme';
 import { parseNubStudentRegistryFile } from '../../utils/nubStudentRegistryCsv';
@@ -383,6 +384,14 @@ export default function ManageUsers() {
 
   const registryCount = registryError ? null : registryRecords.length;
 
+  if (registryLoading) {
+    return (
+      <AdminShell subtitle="" title="">
+        <DataLoadingScreen label="Loading student records" message="Loading the student registry from the database." title="Getting student records" />
+      </AdminShell>
+    );
+  }
+
   return (
     <AdminShell subtitle="" title="">
       {registryError ? <StatusMessage tone="warning">Unable to load the student registry: {registryError}</StatusMessage> : null}
@@ -475,7 +484,7 @@ export default function ManageUsers() {
         </div>
 
         {registryLoading ? (
-          <div className="admin-registry-message"><StatusMessage tone="info">Loading student records…</StatusMessage></div>
+          <DataLoadingScreen label="Loading student records" message="Loading the student registry from the database." title="Getting student records" />
         ) : null}
 
         {!registryLoading && visibleRecords.length ? (

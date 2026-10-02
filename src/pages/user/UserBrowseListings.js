@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../api/supabaseClient';
+import { useAuth } from '../../context/AuthContext';
 import { getNubProgramsForSchool, itemMatchesAcademicFilters, NUB_PROGRAMS, NUB_SCHOOLS } from '../../data/nubAcademicData';
 import { getDamageClaimsForBorrower, userHasActiveDamageHold } from '../../services/damageClaimsService';
+import DataLoadingScreen from '../../ui/DataLoadingScreen';
 import { CatalogIcon, CloseIcon, FilterIcon } from '../../ui/icons';
 import { Badge, Button, Modal, Panel, StarRating, StatusMessage } from '../../ui/primitives';
 import { alpha, theme } from '../../ui/theme';
@@ -326,6 +328,7 @@ function ListingRow({ description, items, onOpen, title }) {
 
 export default function UserBrowseListings() {
   const navigate = useNavigate();
+  const { loading: authLoading, user } = useAuth();
   const [categories, setCategories] = useState([]);
   const [items, setItems] = useState([]);
   const [recentViewedItemIds, setRecentViewedItemIds] = useState([]);
@@ -348,11 +351,12 @@ export default function UserBrowseListings() {
   useEffect(() => {
     let mounted = true;
 
+    if (authLoading) return () => { mounted = false; };
+
     async function loadListings() {
       setLoading(true);
 
-      const [{ data: authData }, categoriesResult, itemsResult] = await Promise.all([
-        supabase.auth.getUser(),
+      const [categoriesResult, itemsResult] = await Promise.all([
         supabase.from('categories').select('id, name, parent_category_id').eq('is_active', true).order('name', { ascending: true }),
         supabase
           .from('items')
@@ -371,7 +375,7 @@ export default function UserBrowseListings() {
       const nextErrors = [];
       const nextCategories = categoriesResult.data || [];
       const rawItems = itemsResult.data || [];
-      const currentUserId = authData?.user?.id || null;
+      const currentUserId = user?.id || null;
 
       if (currentUserId) {
         const [hasHold, borrowerClaims] = await Promise.all([
@@ -385,7 +389,7 @@ export default function UserBrowseListings() {
 
         const pendingClaim =
           (borrowerClaims || []).find((claim) =>
-            ['pending_admin_review', 'approved', 'awaiting_payment'].includes(String(claim.status || '').toLowerCase())
+            ['approved', 'awaiting_payment'].includes(String(claim.status || '').toLowerCase())
           ) || null;
 
         let nextItemTitle = '';
@@ -579,7 +583,7 @@ export default function UserBrowseListings() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [authLoading, user?.id]);
 
   const conditionOptions = useMemo(
     () =>
@@ -914,6 +918,14 @@ export default function UserBrowseListings() {
     if (!programStillValid) setProgramFilter('all');
   }
 
+  if (loading) {
+    return (
+      <UserShell subtitle="" title="">
+        <DataLoadingScreen label="Loading item listings" message="Loading available items from the database." title="Finding listings" />
+      </UserShell>
+    );
+  }
+
   return (
     <UserShell subtitle="" title="">
       {activeDamageHold && pendingDamageClaim ? (
@@ -986,7 +998,7 @@ export default function UserBrowseListings() {
               <span>{loading ? 'Loading listings...' : `${filteredItems.length} items`}</span>
             </div>
 
-            {loading ? <StatusMessage tone="info">Loading item listings.</StatusMessage> : null}
+            {loading ? <DataLoadingScreen label="Loading item listings" message="Loading available items from the database." title="Finding listings" /> : null}
             {!loading && !filteredItems.length ? <StatusMessage tone="info">No active item listings are visible for the current search or filters.</StatusMessage> : null}
 
             {!loading ? (

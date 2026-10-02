@@ -259,6 +259,54 @@
   white-space: nowrap;
 }
 
+.income-history-filters {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.income-history-filters label {
+  color: #10233f;
+  display: grid;
+  font-size: 11px;
+  font-weight: 800;
+  gap: 5px;
+}
+
+.income-history-filters input,
+.income-history-filters select {
+  background: var(--ui-background-color, #fff);
+  border: 1px solid #dbe3f0;
+  border-radius: 8px;
+  color: #10233f;
+  font: inherit;
+  font-size: 13px;
+  min-height: 38px;
+  min-width: 145px;
+  padding: 0 10px;
+}
+
+.income-history-filters .income-history-search { flex: 1 1 220px; }
+.income-history-filters .income-history-search input { width: 100%; }
+
+.income-history-reset,
+.income-history-export {
+  border: 1px solid #dbe3f0;
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  min-height: 38px;
+  padding: 0 14px;
+}
+
+.income-history-reset { background: var(--ui-background-color, #fff); color: #10233f; }
+.income-history-export { background: var(--ui-primary-color, #101077); border-color: var(--ui-primary-color, #101077); color: #fff !important; }
+.income-history-export:hover:not(:disabled) { background: color-mix(in srgb, var(--ui-primary-color, #101077) 84%, #000); }
+.income-history-export:disabled { color: #fff !important; cursor: not-allowed; opacity: .62; }
+
 .income-history-table-wrap {
   background: var(--ui-background-color, #ffffff);
   border: 1px solid color-mix(in srgb, var(--ui-primary-color, #00202e) 10%, transparent);
@@ -290,7 +338,7 @@
 
 .income-history-table td {
   border-bottom: 1px solid color-mix(in srgb, var(--ui-primary-color, #00202e) 8%, transparent);
-  color: var(--ui-secondary-color, #515567);
+  color: #10233f;
   font-size: 13px;
   padding: 14px;
   vertical-align: middle;
@@ -312,7 +360,7 @@
 }
 
 .income-history-title strong {
-  color: var(--ui-primary-text-color, #17313b);
+  color: #10233f;
   font-size: 14px;
   font-weight: 800;
   overflow: hidden;
@@ -321,12 +369,12 @@
 }
 
 .income-history-title span {
-  color: var(--ui-secondary-color, #515567);
+  color: #10233f;
   font-size: 12px;
 }
 
 .income-history-amount {
-  color: var(--ui-primary-text-color, #17313b);
+  color: #10233f;
   font-size: 1rem;
   font-weight: 900;
   letter-spacing: -0.02em;
@@ -334,7 +382,7 @@
 }
 
 .income-history-amount.is-earned {
-  color: #2f6f49;
+  color: #10233f;
 }
 
 .income-history-pagination {
@@ -403,6 +451,12 @@
     align-items: flex-start;
     flex-direction: column;
   }
+
+  .income-history-filters { align-items: stretch; }
+  .income-history-filters label,
+  .income-history-filters input,
+  .income-history-filters select,
+  .income-history-filters button { width: 100%; }
 
   .income-history-table {
     min-width: 0;

@@ -13,6 +13,7 @@ import PhilippineAddressFields from '../../ui/PhilippineAddressFields';
 import { Badge, Button, FormField, Input, MetricCard, Modal, Panel, StatusMessage, Textarea } from '../../ui/primitives';
 import { sanitizeText, validateCoordinates } from '../../ui/profileFormUtils';
 import { alpha, theme } from '../../ui/theme';
+import DataLoadingScreen from '../../ui/DataLoadingScreen';
 import { BOOKING_STATUS } from '../../utils/bookingEnums';
 import { clearListingDraft, readListingDraft, saveListingDraft, updateListingMainCategory, updateListingSubcategory } from '../../utils/listingDraft';
 import UserShell from './UserShell';
@@ -333,6 +334,14 @@ function isReturnedBookingStatus(status) {
   return ['done', 'completed', 'returned', 'closed'].includes(String(status || '').toLowerCase());
 }
 
+function isRejectedDamageClaim(claim) {
+  return String(claim?.status || '').toLowerCase() === 'rejected';
+}
+
+function isPayableDamageClaim(claim) {
+  return ['approved', 'awaiting_payment'].includes(String(claim?.status || '').toLowerCase());
+}
+
 function isBorrowerCancellableStatus(status) {
   return ['pending', 'approved', 'accepted', 'confirmed', 'active', 'ongoing', 'in_progress', 'booked'].includes(
     String(status || '').toLowerCase()
@@ -361,6 +370,19 @@ function ratingLabel(value) {
   return 'Very poor';
 }
 
+function sortBookingRows(rows, sort) {
+  const dateValue = (row) => new Date(row.created_at || row.requested_at || row.requested_start || row.approved_start || row.buyer_preferred_pickup_at || 0).getTime();
+  const amountValue = (row) => Number(row.total_due ?? row.amount_due ?? row.admin_approved_amount ?? row.claimed_amount ?? row.sale_total_amount_snapshot ?? row.sale_price_snapshot) || 0;
+  return rows.slice().sort((left, right) => {
+    if (sort === 'oldest') return dateValue(left) - dateValue(right);
+    if (sort === 'amount-high') return amountValue(right) - amountValue(left);
+    if (sort === 'amount-low') return amountValue(left) - amountValue(right);
+    if (sort === 'status') return String(left.status || left.damageClaim?.status || '').localeCompare(String(right.status || right.damageClaim?.status || ''));
+    if (sort === 'item') return String(left.item?.title || '').localeCompare(String(right.item?.title || ''));
+    return dateValue(right) - dateValue(left);
+  });
+}
+
 function normalizeEntityId(value) {
   return String(value || '').trim().toLowerCase();
 }
@@ -381,8 +403,8 @@ const LATE_FEE_PAYABLE_STATUSES = new Set([
 const BORROWER_CANCELLABLE_STATUS_CANDIDATES = [BOOKING_STATUS.PENDING, BOOKING_STATUS.ACCEPTED, BOOKING_STATUS.FOR_PICKUP, BOOKING_STATUS.ACTIVE];
 const RETURN_STATUS_CANDIDATES = ['done', 'completed', 'returned', 'closed'];
 const OWNER_RETURNABLE_STATUSES = [BOOKING_STATUS.ACCEPTED, BOOKING_STATUS.FOR_PICKUP, BOOKING_STATUS.ACTIVE, BOOKING_STATUS.OVERDUE, BOOKING_STATUS.RETURN_PENDING];
-const LATE_FEE_OWNER_SHARE = 0.7;
-const LATE_FEE_ADMIN_SHARE = 0.3;
+const LATE_FEE_OWNER_SHARE = 0.85;
+const LATE_FEE_ADMIN_SHARE = 0.15;
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const DAMAGE_REPORT_WINDOW_MS = 24 * 60 * 60 * 1000;
 const PAYMONGO_PAYMENT_METHOD = 'paymongo';
@@ -654,6 +676,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [messageTone, setMessageTone] = useState('success');
+  const [returnCompletionNotice, setReturnCompletionNotice] = useState(null);
   const [search, setSearch] = useState('');
   const [listingStatusFilter, setListingStatusFilter] = useState('all');
   const [listingCategoryFilter, setListingCategoryFilter] = useState('all');
@@ -680,10 +703,16 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
     () => new URLSearchParams(window.location.search).get('paymongo') === 'success'
   );
   const [bookingDetailId, setBookingDetailId] = useState('');
+  const [bookingDetailLateFeePayments, setBookingDetailLateFeePayments] = useState([]);
+  const [bookingDetailLateFeePaymentsLoading, setBookingDetailLateFeePaymentsLoading] = useState(false);
+  const [bookingDetailLateFeePaymentsError, setBookingDetailLateFeePaymentsError] = useState('');
   const [activeBookingFilter, setActiveBookingFilter] = useState(() => {
     const queryTab = new URLSearchParams(window.location.search).get('tab');
-    return queryTab === 'dues' ? 'borrowed' : 'approval';
+    if (queryTab === 'dues') return 'borrowed';
+    if (queryTab === 'late') return 'late';
+    return 'approval';
   });
+  const [bookingSorts, setBookingSorts] = useState({ approval: 'newest', borrowed: 'newest', late: 'newest', returns: 'newest', damage: 'newest', purchase: 'newest' });
   const [manageBookingView, setManageBookingView] = useState('bookings');
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [reviewBooking, setReviewBooking] = useState(null);
@@ -923,7 +952,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
       ? await supabase
           .from('damage_claims')
           .select(
-            'id, report_id, booking_id, item_id, owner_id, borrower_id, damage_description, claimed_amount, admin_approved_amount, amount_due, status, created_at, updated_at'
+            'id, report_id, booking_id, item_id, owner_id, borrower_id, damage_description, claimed_amount, admin_approved_amount, amount_due, status, admin_notes, reviewed_at, created_at, updated_at'
           )
           .in('booking_id', bookingIds)
           .order('created_at', { ascending: false })
@@ -2236,6 +2265,24 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
 
   const ownerBookings = useMemo(() => bookings.filter((booking) => isSameEntityId(booking.owner_id, userId)), [bookings, userId]);
   const borrowerBookings = useMemo(() => bookings.filter((booking) => isSameEntityId(booking.borrower_id, userId)), [bookings, userId]);
+  const lateBorrowerBookings = useMemo(
+    () => borrowerBookings.filter((booking) =>
+      LATE_FEE_PAYABLE_STATUSES.has(String(booking.status || '').toLowerCase()) && calculateLateFee(booking).total > 0
+    ),
+    [borrowerBookings]
+  );
+  const regularBorrowerBookings = useMemo(() => {
+    const lateBookingIds = new Set(lateBorrowerBookings.map((booking) => String(booking.id)));
+    return borrowerBookings.filter((booking) => !lateBookingIds.has(String(booking.id)));
+  }, [borrowerBookings, lateBorrowerBookings]);
+  const sortedRegularBorrowerBookings = useMemo(
+    () => sortBookingRows(regularBorrowerBookings, bookingSorts.borrowed),
+    [bookingSorts.borrowed, regularBorrowerBookings]
+  );
+  const sortedLateBorrowerBookings = useMemo(
+    () => sortBookingRows(lateBorrowerBookings, bookingSorts.late),
+    [bookingSorts.late, lateBorrowerBookings]
+  );
   const pendingApprovals = useMemo(
     () => ownerBookings.filter((booking) => String(booking.status || '').toLowerCase() === 'pending'),
     [ownerBookings]
@@ -2254,7 +2301,9 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
   );
   const completedOwnerBookings = useMemo(() => ownerBookings.filter((booking) => isReturnedBookingStatus(booking.status)), [ownerBookings]);
   const reportableCompletedBookings = useMemo(
-    () => completedOwnerBookings.filter((booking) => getDamageReportWindowStatus(booking).canReport && !booking.damageClaim),
+    () => completedOwnerBookings.filter((booking) =>
+      getDamageReportWindowStatus(booking).canReport && (!booking.damageClaim || isRejectedDamageClaim(booking.damageClaim))
+    ),
     [completedOwnerBookings]
   );
   const payableDamageBookings = useMemo(
@@ -2264,8 +2313,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
         if (!claim) {
           return false;
         }
-        const normalizedStatus = String(claim.status || '').toLowerCase();
-        if (!['awaiting_payment', 'approved', 'pending_admin_review'].includes(normalizedStatus)) {
+        if (!isPayableDamageClaim(claim)) {
           return false;
         }
         const amountDue = Number(claim.amount_due) || Number(claim.admin_approved_amount) || Number(claim.claimed_amount) || 0;
@@ -2274,12 +2322,110 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
     [borrowerBookings]
   );
   const bookingDetail = useMemo(() => bookings.find((booking) => booking.id === bookingDetailId) || null, [bookings, bookingDetailId]);
+  const isLateFeePaymentReturn = (() => {
+    const query = new URLSearchParams(window.location.search);
+    return query.get('payment_status') === 'success' && query.get('late_fee_paid') === 'true';
+  })();
   const bookingDetailLateFee = useMemo(() => calculateLateFee(bookingDetail), [bookingDetail]);
-  const bookingDetailDepositApplied = toMoneyAmount(
-    Math.min(Number(bookingDetail?.security_deposit || 0), bookingDetailLateFee.total)
+  useEffect(() => {
+    if (!bookingDetail?.id) {
+      setBookingDetailLateFeePayments([]);
+      setBookingDetailLateFeePaymentsError('');
+      setBookingDetailLateFeePaymentsLoading(false);
+      return undefined;
+    }
+
+    let ignore = false;
+    setBookingDetailLateFeePaymentsLoading(true);
+    setBookingDetailLateFeePaymentsError('');
+
+    async function loadLateFeePayments() {
+      const { data, error: paymentError } = await supabase
+        .from('payment_transactions')
+        .select('id, amount, status, payment_method, transaction_type, transaction_at, notes')
+        .eq('booking_id', bookingDetail.id)
+        .in('transaction_type', ['late_fee_owner_share', 'late_fee_admin_share'])
+        .order('transaction_at', { ascending: true });
+
+      if (ignore) {
+        return;
+      }
+
+      if (paymentError) {
+        setBookingDetailLateFeePayments([]);
+        setBookingDetailLateFeePaymentsError(paymentError.message || 'Unable to load late-fee payment status.');
+      } else {
+        setBookingDetailLateFeePayments(data || []);
+      }
+      setBookingDetailLateFeePaymentsLoading(false);
+    }
+
+    loadLateFeePayments();
+
+    return () => {
+      ignore = true;
+    };
+  }, [bookingDetail?.id, bookingDetail?.status, bookingDetail?.updated_at]);
+  const bookingDetailLateFeePaymentTotal = useMemo(() => {
+    if (!bookingDetailLateFeePayments.length) {
+      return bookingDetailLateFee.total;
+    }
+    return toMoneyAmount(bookingDetailLateFeePayments.reduce((total, payment) => total + Number(payment.amount || 0), 0));
+  }, [bookingDetailLateFee.total, bookingDetailLateFeePayments]);
+  const bookingDetailLateFeePaid = useMemo(
+    () => toMoneyAmount(bookingDetailLateFeePayments
+      .filter((payment) => SETTLED_LATE_FEE_PAYMENT_STATUSES.has(String(payment.status || '').toLowerCase()))
+      .reduce((total, payment) => total + Number(payment.amount || 0), 0)),
+    [bookingDetailLateFeePayments]
   );
+  const bookingDetailLateFeeDepositApplied = useMemo(
+    () => toMoneyAmount(bookingDetailLateFeePayments
+      .filter((payment) =>
+        payment.payment_method === 'security_deposit' &&
+        SETTLED_LATE_FEE_PAYMENT_STATUSES.has(String(payment.status || '').toLowerCase())
+      )
+      .reduce((total, payment) => total + Number(payment.amount || 0), 0)),
+    [bookingDetailLateFeePayments]
+  );
+  const bookingDetailLateFeePayMongoPaid = toMoneyAmount(Math.max(0, bookingDetailLateFeePaid - bookingDetailLateFeeDepositApplied));
+  const bookingDetailLateFeeRemaining = toMoneyAmount(Math.max(0, bookingDetailLateFeePaymentTotal - bookingDetailLateFeePaid));
+  const bookingDetailLateFeeIsPaid = bookingDetailLateFeePaymentTotal > 0 && bookingDetailLateFeeRemaining <= 0;
+  const bookingDetailLateFeeDays = useMemo(() => {
+    const notes = bookingDetailLateFeePayments.map((payment) => String(payment.notes || ''));
+    const match = notes.map((note) => note.match(/(\d+)\s+day\(s\)\s+overdue/i)).find(Boolean);
+    return match ? Number(match[1]) : bookingDetailLateFee.daysLate;
+  }, [bookingDetailLateFee.daysLate, bookingDetailLateFeePayments]);
+  const bookingDetailLateFeePaidAt = useMemo(() => {
+    const paidPayments = bookingDetailLateFeePayments.filter((payment) =>
+      SETTLED_LATE_FEE_PAYMENT_STATUSES.has(String(payment.status || '').toLowerCase()) && payment.transaction_at
+    );
+    return paidPayments.reduce((latest, payment) => {
+      const paymentTime = new Date(payment.transaction_at).getTime();
+      return Number.isFinite(paymentTime) && paymentTime > latest ? paymentTime : latest;
+    }, 0);
+  }, [bookingDetailLateFeePayments]);
+  const bookingDetailHasLateFee = bookingDetailLateFeePayments.length > 0 || (
+    bookingDetailLateFee.total > 0 &&
+    (LATE_FEE_PAYABLE_STATUSES.has(String(bookingDetail?.status || '').toLowerCase()) ||
+      String(bookingDetail?.status || '').toLowerCase() === BOOKING_STATUS.RETURN_PENDING)
+  );
+  const bookingDetailCanOwnerCompleteReturn = Boolean(
+    bookingDetail &&
+    isSameEntityId(bookingDetail.owner_id, userId) &&
+    OWNER_RETURNABLE_STATUSES.includes(String(bookingDetail.status || '').toLowerCase()) &&
+    (bookingDetailLateFee.total <= 0 || (
+      bookingDetailLateFeeIsPaid &&
+      !bookingDetailLateFeePaymentsLoading &&
+      !bookingDetailLateFeePaymentsError
+    ))
+  );
+  const bookingDetailDepositApplied = bookingDetailLateFeePayments.length
+    ? bookingDetailLateFeeDepositApplied
+    : toMoneyAmount(Math.min(Number(bookingDetail?.security_deposit || 0), bookingDetailLateFee.total));
   const bookingDetailPayMongoDue = toMoneyAmount(
-    Math.max(0, bookingDetailLateFee.total - bookingDetailDepositApplied)
+    bookingDetailLateFeePayments.length
+      ? bookingDetailLateFeeRemaining
+      : Math.max(0, bookingDetailLateFee.total - bookingDetailDepositApplied)
   );
   const reviewRating = Number(reviewForm.rating) || 0;
   const showManageBooking = viewMode === 'all' || viewMode === 'manage-booking';
@@ -2288,7 +2434,8 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
   const pageSubtitle = '';
   const bookingFilters = [
     { count: pendingApprovals.length + pendingPurchaseApprovals.length, key: 'approval', label: 'Needs approval' },
-    { count: borrowerBookings.length, key: 'borrowed', label: 'Borrowed' },
+    { count: regularBorrowerBookings.length, key: 'borrowed', label: 'Borrowed' },
+    { count: lateBorrowerBookings.length, key: 'late', label: 'Late bookings' },
     { count: ownerBookings.length, key: 'returns', label: 'Return completion' },
     { count: reportableCompletedBookings.length + payableDamageBookings.length, key: 'damage-reports', label: 'Damage reports' },
     { count: sellerPurchaseRequests.length + buyerPurchaseRequests.length, key: 'purchase-requests', label: 'Purchase requests' },
@@ -2309,6 +2456,19 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
         .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
         .slice(0, 4),
     [borrowerBookings, ownerBookings]
+  );
+
+  const renderBookingSort = (group) => (
+    <label className="borrowed-bookings-sort">Sort by
+      <select aria-label={`Sort ${group} table`} onChange={(event) => setBookingSorts((current) => ({ ...current, [group]: event.target.value }))} value={bookingSorts[group]}>
+        <option value="newest">Newest first</option>
+        <option value="oldest">Oldest first</option>
+        <option value="amount-high">Amount: high to low</option>
+        <option value="amount-low">Amount: low to high</option>
+        <option value="status">Status</option>
+        <option value="item">Item name</option>
+      </select>
+    </label>
   );
 
   const recordRentalCheckoutTransactions = useCallback(
@@ -2392,11 +2552,17 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
       return;
     }
 
+    setBookingDetailLateFeePayments([]);
+    setBookingDetailLateFeePaymentsError('');
+    setBookingDetailLateFeePaymentsLoading(true);
     setBookingDetailId(booking.id);
   }
 
   function closeBookingDetail() {
     setBookingDetailId('');
+    setBookingDetailLateFeePayments([]);
+    setBookingDetailLateFeePaymentsError('');
+    setBookingDetailLateFeePaymentsLoading(false);
   }
 
   const autoApprovePaidBookings = useCallback(async (bookingIds) => {
@@ -2672,7 +2838,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
             {
               amount: lateFee.ownerShare,
               booking_id: bookingRow.id,
-              notes: `Late fee: ${lateFee.daysLate} day(s) overdue at ${currencyFormatter.format(lateFee.feePerDay)} per day. Owner share 70%.`,
+              notes: `Late fee: ${lateFee.daysLate} day(s) overdue at ${currencyFormatter.format(lateFee.feePerDay)} per day. Owner share 85%.`,
               payee_id: bookingRow.owner_id,
               payer_id: bookingRow.borrower_id,
               payment_method: PAYMONGO_PAYMENT_METHOD,
@@ -2684,7 +2850,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
             {
               amount: lateFee.adminShare,
               booking_id: bookingRow.id,
-              notes: `Late fee: ${lateFee.daysLate} day(s) overdue at ${currencyFormatter.format(lateFee.feePerDay)} per day. Admin share 30%.`,
+              notes: `Late fee: ${lateFee.daysLate} day(s) overdue at ${currencyFormatter.format(lateFee.feePerDay)} per day. Admin share 15%.`,
               payee_id: adminPayeeId,
               payer_id: bookingRow.borrower_id,
               payment_method: PAYMONGO_PAYMENT_METHOD,
@@ -2757,9 +2923,9 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
           setBookingDetailId(bookingId);
           setActiveBookingFilter('borrowed');
           setMessage(
-            `${currencyFormatter.format(depositApplied)} was applied from the security deposit and `
+          `${currencyFormatter.format(depositApplied)} was applied from the security deposit and `
             + `${currencyFormatter.format(payMongoAmount)} was paid through PayMongo. `
-            + `The return is now awaiting the owner's confirmation.`
+            + 'The return is awaiting the owner\u2019s confirmation.'
           );
           setMessageTone('success');
           setBookingActionBusyId('');
@@ -3407,6 +3573,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
 
     setBookingActionBusyId(booking.id);
     setMessage('');
+    setReturnCompletionNotice(null);
 
     try {
       const returnedAt = new Date();
@@ -3444,10 +3611,14 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
 
       const lateFeeCoveredByDeposit = toMoneyAmount(Math.min(securityDepositAmount, settledLateFeeTotal));
       const nextStatus = await updateBookingStatusWithFallback(booking, RETURN_STATUS_CANDIDATES);
-      const refundableDepositAmount = toMoneyAmount(Math.max(0, securityDepositAmount - lateFeeCoveredByDeposit));
+      const refundableDepositAmount = lateFee.total > 0
+        ? 0
+        : securityDepositAmount;
 
       if (booking?.damageClaim?.id) {
         depositReturnSkippedReason = 'deposit is held because this booking has a damage claim';
+      } else if (lateFee.total > 0 && securityDepositAmount > 0) {
+        depositReturnSkippedReason = 'no security deposit refund is issued when a booking has a late fee';
       } else if (refundableDepositAmount <= 0 && securityDepositAmount > 0) {
         depositReturnSkippedReason = 'the security deposit was fully applied to the late fee';
       } else if (refundableDepositAmount > 0) {
@@ -3480,25 +3651,32 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                 status: nextStatus,
                 updated_at: new Date().toISOString(),
               }
-            : currentBooking
+          : currentBooking
         )
       );
+      closeBookingDetail();
 
       if (lateFee.total > 0) {
         const payMongoBalance = toMoneyAmount(Math.max(0, settledLateFeeTotal - lateFeeCoveredByDeposit));
-        const lateFeeMessage = `Return confirmed. ${currencyFormatter.format(lateFeeCoveredByDeposit)} was applied from the security deposit${payMongoBalance > 0 ? ` and ${currencyFormatter.format(payMongoBalance)} was verified through PayMongo` : ''}. The booking is completed.`;
-        const depositMessage =
-          depositReturnedAmount > 0
-            ? ` Security deposit returned: ${currencyFormatter.format(depositReturnedAmount)}.`
-            : depositReturnSkippedReason
-              ? ` Security deposit not returned now: ${depositReturnSkippedReason}.`
-              : '';
+        const lateFeeMessage = 'The return was confirmed and the booking is now complete.';
         if (depositReturnRecordError) {
-          setMessage(`${lateFeeMessage}${depositMessage} Deposit return record also failed: ${depositReturnRecordError}`);
-          setMessageTone('warning');
+          setReturnCompletionNotice({
+            message: `${lateFeeMessage} Deposit return record also failed: ${depositReturnRecordError}`,
+            tone: 'warning',
+            title: 'Booking completed with a deposit issue',
+          });
         } else {
-          setMessage(`${lateFeeMessage}${depositMessage}`);
-          setMessageTone('success');
+          setReturnCompletionNotice({
+            itemTitle: booking.item?.title || 'Rented item',
+            message: lateFeeMessage,
+            paymentSummary: {
+              depositApplied: lateFeeCoveredByDeposit,
+              lateFeeTotal: lateFee.total,
+              payMongoPaid: payMongoBalance,
+            },
+            tone: 'success',
+            title: 'Booking completed',
+          });
         }
       } else {
         const depositMessage =
@@ -3508,23 +3686,34 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
               ? ` Security deposit not returned now: ${depositReturnSkippedReason}.`
               : '';
         if (depositReturnRecordError) {
-          setMessage(`Booking marked as done/returned. No late fee was applied.${depositMessage} Deposit return recording failed: ${depositReturnRecordError}`);
-          setMessageTone('warning');
+          setReturnCompletionNotice({
+            message: `Booking marked as done/returned. No late fee was applied.${depositMessage} Deposit return recording failed: ${depositReturnRecordError}`,
+            tone: 'warning',
+            title: 'Booking completed with a deposit issue',
+          });
         } else {
-          setMessage(`Booking marked as done/returned. No late fee was applied.${depositMessage}`);
-          setMessageTone('success');
+          setReturnCompletionNotice({
+            itemTitle: booking.item?.title || 'Rented item',
+            message: `Booking marked as done/returned. No late fee was applied.${depositMessage}`,
+            securityDepositReturned: depositReturnedAmount,
+            tone: 'success',
+            title: 'Booking completed',
+          });
         }
       }
     } catch (doneError) {
-      setMessage(`Unable to mark booking as done: ${doneError.message}`);
-      setMessageTone('warning');
+      setReturnCompletionNotice({
+        message: `Unable to mark booking as done: ${doneError.message}`,
+        tone: 'warning',
+        title: 'Could not complete booking',
+      });
     } finally {
       setBookingActionBusyId('');
     }
   }
 
   function openDamageReport(booking) {
-    if (booking?.damageClaim) {
+    if (booking?.damageClaim && !isRejectedDamageClaim(booking.damageClaim)) {
       openDamageClaimDetail(booking);
       return;
     }
@@ -3589,7 +3778,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
       return;
     }
 
-    if (damageReportBooking?.damageClaim) {
+    if (damageReportBooking?.damageClaim && !isRejectedDamageClaim(damageReportBooking.damageClaim)) {
       setMessage('A damage report already exists for this booking. Open View report to review it.');
       setMessageTone('warning');
       return;
@@ -3616,8 +3805,10 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
     try {
       const { data: existingDamageClaim, error: existingDamageClaimError } = await supabase
         .from('damage_claims')
-        .select('id')
+        .select('id, status')
         .eq('booking_id', damageReportBooking.id)
+        .neq('status', 'rejected')
+        .limit(1)
         .maybeSingle();
 
       if (existingDamageClaimError) {
@@ -3625,7 +3816,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
       }
 
       if (existingDamageClaim?.id) {
-        throw new Error('A damage report already exists for this booking.');
+        throw new Error('An active damage report already exists for this booking.');
       }
 
       const claimedAmount = Number(damageReportBooking?.item?.estimated_value || 0);
@@ -3748,7 +3939,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
           : currentBooking));
         setMessage(
           `The ${currencyFormatter.format(depositApplied)} late fee was covered by your security deposit. `
-          + `${currencyFormatter.format(refundableDeposit)} remains refundable after the owner confirms the return.`
+          + `No security deposit refund will be issued because this booking had a late fee.`
         );
         setMessageTone('success');
         setBookingActionBusyId('');
@@ -3789,6 +3980,12 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
 
   async function handlePayDamageClaim(booking) {
     if (!booking?.id || !booking.damageClaim?.id) {
+      return;
+    }
+
+    if (!isPayableDamageClaim(booking.damageClaim)) {
+      setMessage('This damage claim is still under admin review and is not available for payment.');
+      setMessageTone('info');
       return;
     }
 
@@ -3928,6 +4125,18 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
       setMessageTone('warning');
       setSavingReview(false);
     }
+  }
+
+  if (loading) {
+    return (
+      <UserShell subtitle={pageSubtitle} title={pageTitle}>
+        <DataLoadingScreen
+          label={showRentalItems ? 'Loading rental items' : 'Loading bookings'}
+          message="Loading your bookings and listings from the database."
+          title={showRentalItems && !showManageBooking ? 'Getting your listings' : 'Getting your bookings'}
+        />
+      </UserShell>
+    );
   }
 
   return (
@@ -4085,7 +4294,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
 
             {activeBookingFilter === 'approval' ? (
             <div style={{ display: 'grid', gap: 10 }}>
-              <strong className="booking-section-title" style={{ color: theme.colors.ink, fontSize: 16 }}>Incoming requests requiring your approval</strong>
+              <div className="borrowed-bookings-toolbar"><strong className="booking-section-title" style={{ color: theme.colors.ink, fontSize: 16 }}>Incoming requests requiring your approval</strong>{renderBookingSort('approval')}</div>
               {!pendingApprovals.length ? (
                 <StatusMessage tone="info">No pending booking requests right now.</StatusMessage>
               ) : (
@@ -4112,7 +4321,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                       </tr>
                     </thead>
                     <tbody>
-                      {pendingApprovals.map((booking, index) => (
+                      {sortBookingRows(pendingApprovals, bookingSorts.approval).map((booking, index) => (
                         <tr className="booking-row" key={booking.id} style={{ background: index % 2 === 0 ? alpha(theme.colors.panel, 0.56) : 'transparent' }}>
                           <td style={bodyCellStyle}>
                             <div style={{ alignItems: 'center', display: 'flex', gap: 10 }}>
@@ -4141,11 +4350,22 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                               <span style={{ color: theme.colors.slate, fontSize: 13 }}>{booking.counterpart?.username ? `@${booking.counterpart.username}` : ''}</span>
                             </div>
                           </td>
-                          <td style={bodyCellStyle}>
+                          <td className="booking-addons-cell" style={bodyCellStyle}>
                             {booking.addons?.length ? (
-                              <Badge tone="info">{booking.addons.length} selected</Badge>
+                              <div className="booking-addon-list">
+                                {booking.addons.map((addon) => (
+                                  <div className="booking-addon-row" key={addon.id}>
+                                    <strong>{addon.addon_name_snapshot || 'Add-on'}</strong>
+                                    <span>
+                                      ×{Math.max(1, Number(addon.quantity) || 1)} · {currencyFormatter.format(
+                                        Number(addon.total_amount) || (Number(addon.price_snapshot) || 0) * (Number(addon.quantity) || 1)
+                                      )}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
                             ) : (
-                              <span style={{ color: theme.colors.slate }}>None</span>
+                              <span className="booking-addon-empty">None</span>
                             )}
                           </td>
                           <td style={bodyCellStyle}>
@@ -4174,7 +4394,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
 
             {activeBookingFilter === 'approval' ? (
             <div style={{ display: 'grid', gap: 10, marginTop: 6 }}>
-              <strong className="booking-section-title" style={{ color: theme.colors.ink, fontSize: 16 }}>Pending purchase requests for your sale listings</strong>
+              <div className="borrowed-bookings-toolbar"><strong className="booking-section-title" style={{ color: theme.colors.ink, fontSize: 16 }}>Pending purchase requests for your sale listings</strong>{renderBookingSort('approval')}</div>
               {!pendingPurchaseApprovals.length ? (
                 <StatusMessage tone="info">No pending purchase requests right now.</StatusMessage>
               ) : (
@@ -4200,7 +4420,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                       </tr>
                     </thead>
                     <tbody>
-                      {pendingPurchaseApprovals.map((request, index) => {
+                      {sortBookingRows(pendingPurchaseApprovals, bookingSorts.approval).map((request, index) => {
                         const qty = Number(request.buyer_requested_quantity) || 0;
                         const unitPrice = Number(request.sale_price_snapshot) || 0;
                         const total = Number(request.sale_total_amount_snapshot) || unitPrice * qty;
@@ -4255,11 +4475,18 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
             </div>
             ) : null}
 
-            {activeBookingFilter === 'borrowed' ? (
+            {activeBookingFilter === 'borrowed' || activeBookingFilter === 'late' ? (
             <div style={{ display: 'grid', gap: 10 }}>
-              <strong className="booking-section-title" style={{ color: theme.colors.ink, fontSize: 16 }}>My borrowed bookings</strong>
-              {!borrowerBookings.length ? (
-                <StatusMessage tone="info">You do not have borrowed bookings yet.</StatusMessage>
+              <div className="borrowed-bookings-toolbar">
+                <strong className="booking-section-title" style={{ color: theme.colors.ink, fontSize: 16 }}>
+                  {activeBookingFilter === 'late' ? 'My late bookings' : 'My borrowed bookings'}
+                </strong>
+                {renderBookingSort(activeBookingFilter === 'late' ? 'late' : 'borrowed')}
+              </div>
+              {!(activeBookingFilter === 'late' ? lateBorrowerBookings : regularBorrowerBookings).length ? (
+                <StatusMessage tone="info">
+                  {activeBookingFilter === 'late' ? 'You do not have any late bookings.' : 'You do not have any current borrowed bookings.'}
+                </StatusMessage>
               ) : (
                 <div
                   className="booking-table-wrap"
@@ -4284,7 +4511,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                       </tr>
                     </thead>
                     <tbody>
-                      {borrowerBookings.map((booking, index) => {
+                      {(activeBookingFilter === 'late' ? sortedLateBorrowerBookings : sortedRegularBorrowerBookings).map((booking, index) => {
                         const isReturned = isReturnedBookingStatus(booking.status);
                         const canCancel = isBorrowerCancellableStatus(booking.status);
                         const lateFee = calculateLateFee(booking);
@@ -4314,8 +4541,21 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                                 <span style={{ color: theme.colors.slate, fontSize: 13 }}>{booking.counterpart?.username ? `@${booking.counterpart.username}` : ''}</span>
                               </div>
                             </td>
-                            <td style={bodyCellStyle}>
-                              {booking.addons?.length ? <Badge tone="info">{booking.addons.length} selected</Badge> : <span style={{ color: theme.colors.slate }}>None</span>}
+                            <td className="booking-addons-cell" style={bodyCellStyle}>
+                              {booking.addons?.length ? (
+                                <div className="booking-addon-list">
+                                  {booking.addons.map((addon) => (
+                                    <div className="booking-addon-row" key={addon.id}>
+                                      <strong>{addon.addon_name_snapshot || 'Add-on'}</strong>
+                                      <span>
+                                        ×{Math.max(1, Number(addon.quantity) || 1)} · {currencyFormatter.format(
+                                          Number(addon.total_amount) || (Number(addon.price_snapshot) || 0) * (Number(addon.quantity) || 1)
+                                        )}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : <span className="booking-addon-empty">None</span>}
                             </td>
                             <td className="booking-schedule-cell" style={bodyCellStyle}>
                               <div style={{ display: 'grid', gap: 4 }}>
@@ -4387,7 +4627,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
 
             {activeBookingFilter === 'returns' ? (
             <div style={{ display: 'grid', gap: 14 }}>
-              <strong className="booking-section-title">Owner return completion</strong>
+              <div className="borrowed-bookings-toolbar"><strong className="booking-section-title">Owner return completion</strong>{renderBookingSort('returns')}</div>
               {!ownerBookings.length ? (
                 <StatusMessage tone="info">No incoming bookings are assigned to your listings.</StatusMessage>
               ) : (
@@ -4404,13 +4644,13 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                       </tr>
                     </thead>
                     <tbody>
-                      {ownerBookings.map((booking) => {
+                      {sortBookingRows(ownerBookings, bookingSorts.returns).map((booking) => {
                         const normalizedBookingStatus = String(booking.status || '').toLowerCase();
                         const lateFee = calculateLateFee(booking);
                         const depositAppliedToLateFee = toMoneyAmount(Math.min(Number(booking.security_deposit || 0), lateFee.total));
                         const remainingLateFee = toMoneyAmount(Math.max(0, lateFee.total - depositAppliedToLateFee));
-                        const awaitingBorrowerLateFeePayment = lateFee.total > 0 && normalizedBookingStatus !== BOOKING_STATUS.RETURN_PENDING;
-                        const canMarkDone = OWNER_RETURNABLE_STATUSES.includes(normalizedBookingStatus) && !awaitingBorrowerLateFeePayment;
+                        const awaitingBorrowerLateFeePayment = lateFee.total > 0 && LATE_FEE_PAYABLE_STATUSES.has(normalizedBookingStatus);
+                        const canReviewReturn = OWNER_RETURNABLE_STATUSES.includes(normalizedBookingStatus);
 
                         return (
                           <tr className="booking-row" key={booking.id}>
@@ -4457,18 +4697,18 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                               <Badge tone={bookingStatusTone(booking.status)}>{formatListingStatusLabel(booking.status)}</Badge>
                             </td>
                             <td data-label="Action" style={bodyCellStyle}>
-                              {canMarkDone ? (
-                                <Button
-                                  className="booking-action-button"
-                                  disabled={bookingActionBusyId === booking.id}
-                                  onClick={() => handleMarkReturned(booking)}
-                                  type="button"
-                                  variant="secondary"
-                                >
-                                  {bookingActionBusyId === booking.id ? 'Saving...' : 'Complete return'}
-                                </Button>
-                              ) : awaitingBorrowerLateFeePayment ? (
-                                <Badge tone="warning">Awaiting borrower payment</Badge>
+                              {canReviewReturn ? (
+                                <div style={{ display: 'grid', gap: 6, justifyItems: 'start' }}>
+                                  <Button
+                                    className="booking-action-button"
+                                    onClick={() => openBookingDetail(booking)}
+                                    type="button"
+                                    variant="secondary"
+                                  >
+                                    View item and payment
+                                  </Button>
+                                  {awaitingBorrowerLateFeePayment ? <Badge tone="warning">Awaiting borrower payment</Badge> : null}
+                                </div>
                               ) : isReturnedBookingStatus(booking.status) ? (
                                 <Badge tone="success">Completed</Badge>
                               ) : (
@@ -4487,7 +4727,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
 
             {activeBookingFilter === 'damage-reports' ? (
             <div style={{ display: 'grid', gap: 10 }}>
-              <strong className="booking-section-title" style={{ color: theme.colors.ink, fontSize: 16 }}>Damage balances to settle</strong>
+              <div className="borrowed-bookings-toolbar"><strong className="booking-section-title" style={{ color: theme.colors.ink, fontSize: 16 }}>Damage balances to settle</strong>{renderBookingSort('damage')}</div>
               {!payableDamageBookings.length ? (
                 <StatusMessage tone="info">No borrower damage balances are pending payment right now.</StatusMessage>
               ) : (
@@ -4512,7 +4752,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                       </tr>
                     </thead>
                     <tbody>
-                      {payableDamageBookings.map((booking, index) => {
+                      {sortBookingRows(payableDamageBookings, bookingSorts.damage).map((booking, index) => {
                         const claim = booking.damageClaim;
                         const amountDue =
                           Number(claim?.amount_due) || Number(claim?.admin_approved_amount) || Number(claim?.claimed_amount) || 0;
@@ -4568,7 +4808,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                 </div>
               )}
 
-              <strong className="booking-section-title" style={{ color: theme.colors.ink, fontSize: 16 }}>Completed transactions eligible for damage report</strong>
+              <div className="borrowed-bookings-toolbar"><strong className="booking-section-title" style={{ color: theme.colors.ink, fontSize: 16 }}>Completed transactions eligible for damage report</strong>{renderBookingSort('damage')}</div>
               {!completedOwnerBookings.length ? (
                 <StatusMessage tone="info">No completed owner transactions are available for damage reporting.</StatusMessage>
               ) : (
@@ -4600,7 +4840,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                         </tr>
                       </thead>
                       <tbody>
-                        {completedOwnerBookings.map((booking, index) => {
+                        {sortBookingRows(completedOwnerBookings, bookingSorts.damage).map((booking, index) => {
                           const reportWindow = getDamageReportWindowStatus(booking);
 
                           return (
@@ -4634,7 +4874,17 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                                 <Badge tone={reportWindow.tone}>{reportWindow.label}</Badge>
                               </td>
                               <td style={bodyCellStyle}>
-                                {booking.damageClaim ? (
+                                {booking.damageClaim && isRejectedDamageClaim(booking.damageClaim) && reportWindow.canReport ? (
+                                  <Button
+                                    className="booking-action-button"
+                                    disabled={bookingActionBusyId === booking.id}
+                                    onClick={() => openDamageReport(booking)}
+                                    type="button"
+                                    variant="danger"
+                                  >
+                                    Resubmit report
+                                  </Button>
+                                ) : booking.damageClaim ? (
                                   <Button
                                     className="booking-action-button"
                                     onClick={() => openDamageClaimDetail(booking)}
@@ -4670,7 +4920,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
 
             {activeBookingFilter === 'purchase-requests' ? (
             <div style={{ display: 'grid', gap: 12 }}>
-              <strong className="booking-section-title" style={{ color: theme.colors.ink, fontSize: 16 }}>Purchase requests for your sale listings</strong>
+              <div className="borrowed-bookings-toolbar"><strong className="booking-section-title" style={{ color: theme.colors.ink, fontSize: 16 }}>Purchase requests for your sale listings</strong>{renderBookingSort('purchase')}</div>
               {!sellerPurchaseRequests.length ? (
                 <StatusMessage tone="info">No incoming purchase requests yet.</StatusMessage>
               ) : (
@@ -4696,7 +4946,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                       </tr>
                     </thead>
                     <tbody>
-                      {sellerPurchaseRequests.map((request, index) => (
+                      {sortBookingRows(sellerPurchaseRequests, bookingSorts.purchase).map((request, index) => (
                         <tr className="booking-row" key={`seller-purchase-${request.id}`} style={{ background: index % 2 === 0 ? alpha(theme.colors.panel, 0.56) : 'transparent' }}>
                           <td style={bodyCellStyle}>
                             <strong>{request.item?.title || 'Unknown item'}</strong>
@@ -4727,7 +4977,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                 </div>
               )}
 
-              <strong className="booking-section-title" style={{ color: theme.colors.ink, fontSize: 16 }}>Your purchase requests to other sellers</strong>
+              <div className="borrowed-bookings-toolbar"><strong className="booking-section-title" style={{ color: theme.colors.ink, fontSize: 16 }}>Your purchase requests to other sellers</strong>{renderBookingSort('purchase')}</div>
               {!buyerPurchaseRequests.length ? (
                 <StatusMessage tone="info">You have not submitted purchase requests yet.</StatusMessage>
               ) : (
@@ -4754,7 +5004,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                       </tr>
                     </thead>
                     <tbody>
-                      {buyerPurchaseRequests.map((request, index) => {
+                      {sortBookingRows(buyerPurchaseRequests, bookingSorts.purchase).map((request, index) => {
                         const busyKey = `purchase:${request.id}`;
                         const normalizedStatus = String(request.status || '').toLowerCase();
                         const canPay = ['awaiting_payment', 'approved'].includes(normalizedStatus);
@@ -4853,13 +5103,20 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
           title=""
         >
           <div style={{ display: 'grid', gap: 14 }}>
-            {!canCreateListing ? (
+            {!loading && !canCreateListing ? (
               <StatusMessage tone="warning">
                 {readinessIssues.map((issue) => issue).join(' ')}
               </StatusMessage>
             ) : null}
 
             <section className="inventory-layout">
+              {loading ? (
+                <DataLoadingScreen
+                  label="Loading rental item listings"
+                  message="Loading your product listings from the database."
+                  title="Getting your listings"
+                />
+              ) : <>
               <div className="inventory-stat-grid">
                 <article className="inventory-stat-card">
                   <header>
@@ -4964,7 +5221,6 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                   </div>
                 </div>
 
-            {loading ? <StatusMessage tone="info">Loading your product listings.</StatusMessage> : null}
             {!loading && !filteredItems.length ? <StatusMessage tone="info">No product listings are saved on your account yet.</StatusMessage> : null}
 
             {!loading && filteredItems.length ? (
@@ -5142,6 +5398,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                   </div>
                 ) : null}
               </div>
+              </>}
             </section>
           </div>
         </Panel>
@@ -5207,6 +5464,91 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
       ) : null}
 
       <Modal
+        actions={(
+          <Button onClick={() => setReturnCompletionNotice(null)} type="button" variant="secondary">
+            Close
+          </Button>
+        )}
+        onClose={() => setReturnCompletionNotice(null)}
+        open={Boolean(returnCompletionNotice)}
+        size="compact"
+        title={returnCompletionNotice?.title || 'Booking update'}
+      >
+        {returnCompletionNotice ? (
+          <div style={{ display: 'grid', gap: 16 }}>
+            {returnCompletionNotice.tone === 'success' ? (
+              <>
+                <div
+                  style={{
+                    alignItems: 'center',
+                    background: 'linear-gradient(135deg, #f0fdf4 0%, #f7fef9 100%)',
+                    border: '1px solid #bbebcc',
+                    borderRadius: 16,
+                    display: 'flex',
+                    gap: 14,
+                    padding: 18,
+                  }}
+                >
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      alignItems: 'center',
+                      background: '#dcfce7',
+                      border: '1px solid #bbebcc',
+                      borderRadius: '50%',
+                      color: '#15803d',
+                      display: 'inline-flex',
+                      flex: '0 0 42px',
+                      fontSize: 22,
+                      height: 42,
+                      justifyContent: 'center',
+                      width: 42,
+                    }}
+                  >
+                    {'\u2713'}
+                  </span>
+                  <div style={{ display: 'grid', gap: 4 }}>
+                    <strong style={{ color: '#166534', fontSize: 16 }}>{returnCompletionNotice.itemTitle || 'Rented item'}</strong>
+                    <span style={{ color: '#3f6f50', lineHeight: 1.5 }}>{returnCompletionNotice.message}</span>
+                  </div>
+                </div>
+                {returnCompletionNotice.paymentSummary ? (
+                  <div style={{ border: '1px solid #e2e8f0', borderRadius: 14, display: 'grid', gap: 10, padding: 16 }}>
+                    <strong style={{ color: theme.colors.ink, fontSize: 14 }}>Return payment summary</strong>
+                    <div style={{ display: 'grid', gap: 9 }}>
+                      <div style={{ alignItems: 'center', display: 'flex', justifyContent: 'space-between', gap: 16 }}>
+                        <span style={{ color: theme.colors.slate }}>Late fee</span>
+                        <strong style={{ color: theme.colors.ink }}>{currencyFormatter.format(returnCompletionNotice.paymentSummary.lateFeeTotal)}</strong>
+                      </div>
+                      <div style={{ alignItems: 'center', display: 'flex', justifyContent: 'space-between', gap: 16 }}>
+                        <span style={{ color: theme.colors.slate }}>Applied from security deposit</span>
+                        <strong style={{ color: theme.colors.ink }}>{currencyFormatter.format(returnCompletionNotice.paymentSummary.depositApplied)}</strong>
+                      </div>
+                      <div style={{ alignItems: 'center', display: 'flex', justifyContent: 'space-between', gap: 16 }}>
+                        <span style={{ color: theme.colors.slate }}>Paid through PayMongo</span>
+                        <strong style={{ color: theme.colors.ink }}>{currencyFormatter.format(returnCompletionNotice.paymentSummary.payMongoPaid)}</strong>
+                      </div>
+                      <div style={{ alignItems: 'center', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', gap: 16, paddingTop: 9 }}>
+                        <span style={{ color: theme.colors.slate }}>Security deposit refund</span>
+                        <strong style={{ color: '#9a3412' }}>Not issued due to late fee</strong>
+                      </div>
+                    </div>
+                  </div>
+                ) : returnCompletionNotice.securityDepositReturned > 0 ? (
+                  <div style={{ alignItems: 'center', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12, display: 'flex', justifyContent: 'space-between', gap: 12, padding: 14 }}>
+                    <span style={{ color: theme.colors.slate }}>Security deposit returned</span>
+                    <strong style={{ color: theme.colors.ink }}>{currencyFormatter.format(returnCompletionNotice.securityDepositReturned)}</strong>
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <StatusMessage tone={returnCompletionNotice.tone}>{returnCompletionNotice.message}</StatusMessage>
+            )}
+          </div>
+        ) : null}
+      </Modal>
+
+      <Modal
         actions={
           <>
             {editingItem ? (
@@ -5250,7 +5592,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
           }}
           className="responsive-modal-grid responsive-scroll-form listing-form-page"
         >
-          {loadingListingDetails ? <StatusMessage tone="info">Loading the selected product details.</StatusMessage> : null}
+          {loadingListingDetails ? <DataLoadingScreen compact label="Loading product details" message="Loading the selected product from the database." title="Getting product details" /> : null}
 
           <div className="listing-form-section" style={{ gridColumn: '1 / -1' }}>
             <div className="listing-form-section-title">Product Info</div>
@@ -5961,6 +6303,25 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
       <Modal
         actions={
           <>
+            {bookingDetail &&
+            isSameEntityId(bookingDetail.owner_id, userId) &&
+            OWNER_RETURNABLE_STATUSES.includes(String(bookingDetail.status || '').toLowerCase()) ? (
+              <Button
+                className="booking-action-button"
+                disabled={bookingActionBusyId === bookingDetail.id || !bookingDetailCanOwnerCompleteReturn}
+                onClick={() => handleMarkReturned(bookingDetail)}
+                type="button"
+                variant="secondary"
+              >
+                {bookingActionBusyId === bookingDetail.id
+                  ? 'Completing return...'
+                  : bookingDetailLateFee.total > 0 && !bookingDetailLateFeeIsPaid
+                    ? bookingDetailLateFeePaymentsError
+                      ? 'Payment status unavailable'
+                      : 'Awaiting borrower payment'
+                    : 'Complete return'}
+              </Button>
+            ) : null}
             <Button onClick={closeBookingDetail} variant="ghost">
               Close
             </Button>
@@ -5976,7 +6337,9 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                 variant="danger"
               >
                 {bookingActionBusyId === bookingDetail.id
-                  ? 'Opening secure checkout...'
+                  ? isLateFeePaymentReturn
+                    ? 'Recording payment...'
+                    : 'Opening secure checkout...'
                   : bookingDetailPayMongoDue > 0
                     ? `Pay ${currencyFormatter.format(bookingDetailPayMongoDue)}`
                     : 'Apply deposit and submit return'}
@@ -5985,7 +6348,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
             {bookingDetail &&
             bookingDetail.borrower_id === userId &&
             bookingDetail.damageClaim &&
-            ['pending_admin_review', 'approved', 'awaiting_payment'].includes(String(bookingDetail.damageClaim.status || '').toLowerCase()) ? (
+            isPayableDamageClaim(bookingDetail.damageClaim) ? (
               <Button
                 className="booking-action-button"
                 disabled={bookingActionBusyId === bookingDetail.id}
@@ -6029,8 +6392,30 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                 : 'Review the rented item, schedule, fees, and selected add-ons for this booking.'}
             </StatusMessage>
 
-                {bookingDetail.damageClaim &&
-            ['pending_admin_review', 'approved', 'awaiting_payment'].includes(String(bookingDetail.damageClaim.status || '').toLowerCase()) ? (
+            {bookingDetail.item ? (
+              <div className="booking-detail-card booking-detail-section-card">
+                <strong style={{ color: theme.colors.ink, fontSize: 16 }}>Rented item</strong>
+                <div style={{ alignItems: 'start', display: 'flex', flexWrap: 'wrap', gap: 14 }}>
+                  {bookingDetail.item.primaryImage?.image_url ? (
+                    <img
+                      alt={bookingDetail.item.title || 'Rented item'}
+                      className="booking-thumb"
+                      src={bookingDetail.item.primaryImage.image_url}
+                      style={{ borderRadius: 12, height: 120, objectFit: 'cover', width: 140 }}
+                    />
+                  ) : null}
+                  <div style={{ display: 'grid', gap: 6, minWidth: 180 }}>
+                    <strong style={{ color: theme.colors.ink }}>{bookingDetail.item.title || 'Unknown item'}</strong>
+                    <span style={{ color: theme.colors.slate }}>Condition: {bookingDetail.item.item_condition || 'Not specified'}</span>
+                    {bookingDetail.item.description ? (
+                      <span style={{ color: theme.colors.slate, lineHeight: 1.5 }}>{bookingDetail.item.description}</span>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+                {bookingDetail.damageClaim && bookingDetail.borrower_id === userId && isPayableDamageClaim(bookingDetail.damageClaim) ? (
               <StatusMessage tone="warning">
                 This booking has a pending damage balance of{' '}
                 {currencyFormatter.format(
@@ -6040,7 +6425,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
               </StatusMessage>
             ) : null}
 
-            {bookingDetail.damageClaim ? (
+            {bookingDetail.damageClaim && !(bookingDetail.borrower_id === userId && String(bookingDetail.damageClaim.status || '').toLowerCase() === 'pending_admin_review') ? (
               <div
                 className="booking-detail-card"
                 style={{
@@ -6077,7 +6462,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                 </span>
 
                 {bookingDamageClaimLoading ? (
-                  <StatusMessage tone="info">Loading damage evidence.</StatusMessage>
+                  <DataLoadingScreen compact label="Loading damage evidence" message="Loading report evidence from the database." title="Getting evidence" />
                 ) : Array.isArray(bookingDamageClaimDetail?.evidence) && bookingDamageClaimDetail.evidence.length ? (
                   <div style={{ display: 'grid', gap: 8 }}>
                     <strong style={{ color: theme.colors.ink, fontSize: 13 }}>Photo evidence</strong>
@@ -6144,44 +6529,87 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                   <strong>{currencyFormatter.format(Number(bookingDetail.security_deposit) || 0)}</strong>
                 </div>
               </div>
-              {bookingDetailLateFee.total > 0 && LATE_FEE_PAYABLE_STATUSES.has(String(bookingDetail.status || '').toLowerCase()) ? (
-                <div className="late-fee-payment-panel">
+              {bookingDetailHasLateFee ? (
+                <div className={`late-fee-payment-panel${bookingDetailLateFeeIsPaid ? ' is-paid' : ''}`}>
                   <div className="late-fee-payment-head">
                     <div>
-                      <span>Payment required</span>
+                      <span>
+                        {bookingDetailLateFeePaymentsLoading
+                          ? 'Checking payment status'
+                          : bookingDetailLateFeePaymentsError
+                            ? 'Payment status unavailable'
+                            : isLateFeePaymentReturn && bookingActionBusyId === bookingDetail.id
+                              ? 'Recording payment'
+                            : bookingDetailLateFeeIsPaid
+                              ? 'Payment complete'
+                              : bookingDetailLateFeePayments.some((payment) =>
+                                  Number(payment.amount || 0) > 0 &&
+                                  !SETTLED_LATE_FEE_PAYMENT_STATUSES.has(String(payment.status || '').toLowerCase())
+                                )
+                                ? 'Payment processing'
+                                : 'Payment required'}
+                      </span>
                       <strong>Late return fee</strong>
                     </div>
-                    <span className="late-fee-overdue-pill">
-                      {bookingDetailLateFee.daysLate} day{bookingDetailLateFee.daysLate === 1 ? '' : 's'} overdue
+                    <span className={`late-fee-overdue-pill${bookingDetailLateFeeIsPaid ? ' is-paid' : ''}`}>
+                      {bookingDetailLateFeeIsPaid
+                        ? 'Paid'
+                        : `${bookingDetailLateFeeDays} day${bookingDetailLateFeeDays === 1 ? '' : 's'} overdue`}
                     </span>
                   </div>
                   <div className="late-fee-payment-total">
-                    <span>Remaining amount to pay</span>
-                    <strong>{currencyFormatter.format(bookingDetailPayMongoDue)}</strong>
+                    <span>Total late fee</span>
+                    <strong>{currencyFormatter.format(bookingDetailLateFeePaymentTotal)}</strong>
                   </div>
                   <div className="late-fee-breakdown">
                     <div>
-                      <span>Accrued late fee</span>
-                      <strong>{currencyFormatter.format(bookingDetailLateFee.total)}</strong>
-                      <small>Based on days overdue</small>
+                      <span>Security deposit applied</span>
+                      <strong>{'\u2212'}{currencyFormatter.format(bookingDetailDepositApplied)}</strong>
+                      <small>Applied to the late fee</small>
                     </div>
                     <div>
-                      <span>Security deposit applied</span>
-                      <strong>−{currencyFormatter.format(bookingDetailDepositApplied)}</strong>
-                      <small>Applied before PayMongo</small>
+                      <span>Paid through PayMongo</span>
+                      <strong>{currencyFormatter.format(bookingDetailLateFeePayMongoPaid)}</strong>
+                      <small>Recorded late-fee payment</small>
+                    </div>
+                    <div>
+                      <span>Remaining balance</span>
+                      <strong>{currencyFormatter.format(bookingDetailLateFeeRemaining)}</strong>
+                      <small>{bookingDetailLateFeeRemaining > 0 ? 'Still due' : 'Fully settled'}</small>
                     </div>
                   </div>
-                  {bookingDetail.borrower_id === userId ? (
+                  {bookingDetailLateFeePaymentsError ? (
                     <div className="late-fee-payment-note">
-                      {bookingDetailPayMongoDue > 0
-                        ? 'Only the remaining balance is collected through PayMongo. Any unused deposit is returned after the owner confirms the item return.'
-                        : 'Your deposit covers the fee. Submit the return now; any unused deposit is returned after owner confirmation.'}
+                      {bookingDetailLateFeePaymentsError} Late-fee payment status could not be loaded.
+                    </div>
+                  ) : bookingDetailLateFeeIsPaid ? (
+                    <div className="late-fee-payment-note">
+                      {bookingDetailLateFeePaidAt
+                        ? `Late fee payment recorded ${formatDateTime(new Date(bookingDetailLateFeePaidAt).toISOString())}. `
+                        : 'Late fee payment is recorded. '}
+                      {String(bookingDetail.status || '').toLowerCase() === BOOKING_STATUS.RETURN_PENDING
+                        ? 'The return is awaiting owner confirmation.'
+                        : 'The original booking total above is separate from this paid late fee.'}
+                    </div>
+                  ) : bookingDetail.borrower_id === userId ? (
+                    <div className="late-fee-payment-note">
+                      {bookingDetailLateFeeRemaining > 0
+                        ? 'Any late fee balance not covered by the security deposit is collected through PayMongo.'
+                        : 'Your security deposit covers the late fee.'}
+                    </div>
+                  ) : bookingDetail.owner_id === userId ? (
+                    <div className="late-fee-payment-note">
+                      {bookingDetailLateFeePaymentsLoading
+                        ? 'Checking the borrower’s late-fee payment.'
+                        : bookingDetailLateFeePaymentsError
+                          ? 'Payment could not be verified. Try reopening the item details before completing the return.'
+                          : 'Verify the late-fee payment above before completing the return.'}
                     </div>
                   ) : null}
                 </div>
               ) : null}
               <div className="booking-detail-total-row">
-                <span>Total due</span>
+                <span>Original booking total</span>
                 <strong>{currencyFormatter.format(Number(bookingDetail.total_due) || 0)}</strong>
               </div>
             </div>
@@ -6234,9 +6662,26 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
 
       <Modal
         actions={
-          <Button onClick={closeDamageClaimDetail} variant="ghost">
-            Close
-          </Button>
+          <>
+            {damageClaimDetailBooking?.damageClaim &&
+            isRejectedDamageClaim(damageClaimDetailBooking.damageClaim) &&
+            getDamageReportWindowStatus(damageClaimDetailBooking).canReport ? (
+              <Button
+                onClick={() => {
+                  const bookingToResubmit = damageClaimDetailBooking;
+                  closeDamageClaimDetail();
+                  openDamageReport(bookingToResubmit);
+                }}
+                type="button"
+                variant="danger"
+              >
+                Resubmit report
+              </Button>
+            ) : null}
+            <Button onClick={closeDamageClaimDetail} variant="ghost">
+              Close
+            </Button>
+          </>
         }
         size="compact"
         onClose={closeDamageClaimDetail}
@@ -6244,10 +6689,18 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
         title={damageClaimDetailBooking?.item?.title ? `Damage report: ${damageClaimDetailBooking.item.title}` : 'Damage report'}
       >
         {damageClaimDetailLoading ? (
-          <StatusMessage tone="info">Loading damage report details.</StatusMessage>
+          <DataLoadingScreen compact label="Loading damage report" message="Loading report details from the database." title="Getting report details" />
         ) : damageClaimDetailBooking?.damageClaim ? (
           <div className="booking-detail-modal-layout">
-            <StatusMessage tone="info">A damage report has already been submitted for this booking.</StatusMessage>
+            {isRejectedDamageClaim(damageClaimDetailBooking.damageClaim) ? (
+              <StatusMessage tone={getDamageReportWindowStatus(damageClaimDetailBooking).canReport ? 'warning' : 'info'}>
+                {getDamageReportWindowStatus(damageClaimDetailBooking).canReport
+                  ? `This report was rejected. You can revise and resubmit it before ${formatDateTime(getDamageReportWindowStatus(damageClaimDetailBooking).deadline)}.`
+                  : 'This report was rejected, but the 24-hour damage report window has closed.'}
+              </StatusMessage>
+            ) : (
+              <StatusMessage tone="info">A damage report has already been submitted for this booking.</StatusMessage>
+            )}
             <div className="booking-detail-card booking-detail-summary-card">
               <div className="booking-detail-kv-grid">
                 <div>
@@ -6270,6 +6723,12 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                 </div>
               </div>
             </div>
+            {isRejectedDamageClaim(damageClaimDetailBooking.damageClaim) ? (
+              <div className="damage-report-rejection-reason">
+                <strong>Admin’s reason for rejection</strong>
+                <p>{damageClaimDetail?.admin_notes || damageClaimDetailBooking.damageClaim.admin_notes || 'No specific reason was provided.'}</p>
+              </div>
+            ) : null}
             {Array.isArray(damageClaimDetail?.evidence) && damageClaimDetail.evidence.length ? (
               <div className="booking-detail-card booking-detail-section-card">
                 <strong style={{ color: theme.colors.ink, fontSize: 13 }}>Uploaded photo evidence</strong>
@@ -6332,6 +6791,14 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
                 <strong>{currencyFormatter.format(Number(damageReportBooking.item?.estimated_value) || 0)}</strong>
               </div>
             </div>
+
+            {isRejectedDamageClaim(damageReportBooking.damageClaim) ? (
+              <div className="damage-report-rejection-reason">
+                <strong>Admin’s reason for rejecting the previous report</strong>
+                <p>{damageReportBooking.damageClaim.admin_notes || 'No specific reason was provided.'}</p>
+                <span>Address this feedback in your updated description and evidence.</span>
+              </div>
+            ) : null}
 
             <div className="damage-report-review-notice">
               <strong>Admin review required</strong>

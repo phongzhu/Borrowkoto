@@ -415,7 +415,7 @@
   border-radius: 14px;
   display: grid;
   gap: 8px;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   padding: 8px;
 }
 
@@ -966,6 +966,16 @@
   padding: 18px;
 }
 
+.late-fee-payment-panel.is-paid {
+  background: linear-gradient(145deg, #f0fdf4 0%, #fff 100%);
+  border-color: rgba(22, 132, 82, 0.24);
+}
+
+.late-fee-payment-panel.is-paid .late-fee-payment-head > div > span,
+.late-fee-payment-panel.is-paid .late-fee-payment-total strong {
+  color: #16794b;
+}
+
 .late-fee-payment-head {
   align-items: center;
   display: flex;
@@ -1002,6 +1012,12 @@
   white-space: nowrap;
 }
 
+.late-fee-overdue-pill.is-paid {
+  background: #dcfce7;
+  border-color: #bbf7d0;
+  color: #166534;
+}
+
 .late-fee-payment-total {
   align-items: end;
   border-bottom: 1px solid rgba(163, 67, 56, 0.12);
@@ -1036,6 +1052,10 @@
   display: grid;
   gap: 2px;
   padding: 12px;
+}
+
+.late-fee-payment-panel.is-paid .late-fee-breakdown > div {
+  border-color: rgba(22, 132, 82, 0.14);
 }
 
 .late-fee-breakdown span,
@@ -1333,6 +1353,35 @@
   color: #77654c;
   font-size: 11px;
   line-height: 1.55;
+}
+
+.damage-report-rejection-reason {
+  background: #fff4f2;
+  border: 1px solid rgba(160, 55, 45, 0.2);
+  border-radius: 12px;
+  display: grid;
+  gap: 5px;
+  padding: 12px 14px;
+}
+
+.damage-report-rejection-reason > strong {
+  color: #8f332d;
+  font-size: 12px;
+}
+
+.damage-report-rejection-reason > p {
+  color: #583c39;
+  font-size: 12px;
+  line-height: 1.55;
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.damage-report-rejection-reason > span {
+  color: #77605d;
+  font-size: 11px;
+  line-height: 1.5;
 }
 
 .damage-report-field {
@@ -3313,7 +3362,8 @@
   margin-top: 0 !important;
 }
 
-.booking-list-panel > div:not(.booking-filter-tabs) > .booking-section-title {
+.booking-list-panel > div:not(.booking-filter-tabs) > .booking-section-title,
+.booking-list-panel .borrowed-bookings-toolbar > .booking-section-title {
   align-items: center;
   color: var(--ui-text-color) !important;
   display: flex;
@@ -3324,12 +3374,44 @@
   min-height: 28px;
 }
 
-.booking-list-panel > div:not(.booking-filter-tabs) > .booking-section-title::before {
+.booking-list-panel > div:not(.booking-filter-tabs) > .booking-section-title::before,
+.booking-list-panel .borrowed-bookings-toolbar > .booking-section-title::before {
   background: var(--ui-primary-color);
   border-radius: 999px;
   content: "";
   height: 18px;
   width: 4px;
+}
+
+.borrowed-bookings-toolbar {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.borrowed-bookings-sort {
+  align-items: center;
+  color: var(--ui-secondary-text-color, #64748b);
+  display: flex;
+  flex: 0 0 auto;
+  font-size: 13px;
+  font-weight: 600;
+  gap: 9px;
+}
+
+.borrowed-bookings-sort select {
+  background: var(--ui-background-color, #fff);
+  border: 1px solid var(--ui-border-color, #d8dde6);
+  border-radius: 8px;
+  color: var(--ui-text-color, #182230);
+  font: inherit;
+  min-height: 38px;
+  padding: 0 32px 0 11px;
+}
+
+@media (max-width: 560px) {
+  .borrowed-bookings-toolbar { align-items: flex-start; flex-direction: column; }
 }
 
 .booking-list-panel .booking-table-wrap {
@@ -3400,6 +3482,45 @@
 
 .booking-list-panel .booking-table td span {
   line-height: 1.45;
+}
+
+.booking-list-panel .booking-table .booking-addons-cell {
+  max-width: 220px;
+  min-width: 150px;
+  white-space: normal;
+}
+
+.booking-addon-list {
+  display: grid;
+  gap: 6px;
+  max-width: 210px;
+  min-width: 130px;
+}
+
+.booking-addon-row {
+  background: color-mix(in srgb, var(--ui-primary-color) 4%, var(--ui-background-color));
+  border: 1px solid color-mix(in srgb, var(--ui-primary-color) 12%, var(--ui-border-color));
+  border-radius: 9px;
+  display: grid;
+  gap: 3px;
+  padding: 6px 8px;
+}
+
+.booking-addon-row strong {
+  color: var(--ui-text-color) !important;
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.booking-addon-row > span {
+  color: var(--ui-text-secondary) !important;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.booking-addon-empty {
+  color: var(--ui-text-secondary) !important;
 }
 
 .booking-list-panel .booking-table .booking-thumb {

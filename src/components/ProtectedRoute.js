@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { getUserUnsettledDues } from '../services/accountDuesService';
+import DataLoadingScreen from '../ui/DataLoadingScreen';
 import { Button, Modal, StatusMessage } from '../ui/primitives';
 
 const currencyFormatter = new Intl.NumberFormat('en-PH', {
@@ -11,8 +12,8 @@ const currencyFormatter = new Intl.NumberFormat('en-PH', {
 
 function AuthLoadingScreen() {
   return (
-    <div aria-live="polite" role="status" style={{ padding: 32, textAlign: 'center' }}>
-      Checking your session…
+    <div style={{ margin: '0 auto', maxWidth: 760, padding: '16px 20px' }}>
+      <DataLoadingScreen label="Checking your session" message="Connecting to your account securely." title="Getting your account ready" />
     </div>
   );
 }

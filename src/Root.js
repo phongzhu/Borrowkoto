@@ -15,6 +15,7 @@ import PublicItemsCatalogPage from './pages/user/PublicItemsCatalogPage';
 import ListItemLanding from './pages/user/ListItemLanding';
 import UserRentalsCalendar from './pages/user/UserRentalsCalendar';
 import RentalIncome from './pages/user/RentalIncome';
+import WithdrawEarnings from './pages/user/WithdrawEarnings';
 import SavedListings from './pages/user/SavedListings';
 import Rewards from './pages/user/Rewards';
 import Promotions from './pages/user/Promotions';
@@ -23,6 +24,7 @@ import ManageCatalog from './pages/admin/ManageCatalog';
 import AdminProfile from './pages/admin/AdminProfile';
 import ManageUsers from './pages/admin/ManageUsers';
 import ManageReports from './pages/admin/ManageReports';
+import ManageWithdrawals from './pages/admin/ManageWithdrawals';
 import UISettings from './pages/admin/UISettings';
 import PromotionSettings from './pages/admin/PromotionSettings';
 import VoucherRewards from './pages/admin/VoucherRewards';
@@ -59,6 +61,7 @@ export default function Root() {
             <Route path="/user/manage-booking" element={<MyBookings viewMode="manage-booking" />} />
             <Route path="/user/schedule-booking" element={<Navigate to="/user/manage-booking?tab=schedule" replace />} />
             <Route path="/user/rental-income" element={<RentalIncome />} />
+            <Route path="/user/withdraw-earnings" element={<WithdrawEarnings />} />
             <Route path="/user/bookings" element={<MyBookings viewMode="manage-booking" />} />
             <Route path="/user/calendar" element={<UserRentalsCalendar />} />
             <Route path="/user/messages" element={<Messages />} />
@@ -73,6 +76,7 @@ export default function Root() {
             <Route path="/admin/users" element={<ManageUsers />} />
             <Route path="/admin/catalog" element={<ManageCatalog />} />
             <Route path="/admin/reports" element={<ManageReports />} />
+            <Route path="/admin/withdrawals" element={<ManageWithdrawals />} />
             <Route path="/admin/ui-settings" element={<UISettings />} />
             <Route path="/admin/promotion-settings" element={<PromotionSettings />} />
             <Route path="/admin/voucher-rewards" element={<VoucherRewards />} />

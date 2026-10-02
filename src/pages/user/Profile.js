@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { supabase } from '../../api/supabaseClient';
+import DataLoadingScreen from '../../ui/DataLoadingScreen';
 import { formatNubProgram, getNubProgram, getNubSchool } from '../../data/nubAcademicData';
 import { CalendarIcon, ProfileIcon, ShieldIcon } from '../../ui/icons';
 import { SectionGrid } from '../../ui/layouts';
@@ -375,7 +376,7 @@ export default function Profile() {
   if (loading) {
     return (
       <UserShell subtitle="" title="">
-        <Panel title="Loading profile" subtitle="Pulling your account details from Supabase." />
+        <DataLoadingScreen label="Loading profile" message="Loading your account details from the database." title="Getting your profile" />
       </UserShell>
     );
   }

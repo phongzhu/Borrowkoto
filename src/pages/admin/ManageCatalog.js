@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../api/supabaseClient';
+import DataLoadingScreen from '../../ui/DataLoadingScreen';
 import AdminShell from './AdminShell';
 import { CatalogIcon, CheckIcon, ShieldIcon, UsersIcon } from '../../ui/icons';
 import { SectionGrid } from '../../ui/layouts';
@@ -309,6 +310,7 @@ export default function ManageCatalog() {
 
     return statusFilteredCategories;
   }, [categories, categoryStatusFilter, categoryTypeFilter]);
+  const showParentCategoryColumn = filteredCategories.some((category) => Boolean(category.parent_category_id));
   const editingSubcategories = useMemo(() => {
     if (!editingCategory) {
       return [];
@@ -587,6 +589,14 @@ export default function ManageCatalog() {
     await loadCatalog(false);
   }
 
+  if (loading) {
+    return (
+      <AdminShell subtitle="" title="">
+        <DataLoadingScreen label="Loading catalog" message="Loading categories and listings from the database." title="Getting the catalog" />
+      </AdminShell>
+    );
+  }
+
   return (
     <AdminShell subtitle="" title="">
       {error ? <StatusMessage tone="warning">{error}</StatusMessage> : null}
@@ -721,7 +731,7 @@ export default function ManageCatalog() {
           </div>
 
           {message ? <StatusMessage tone={messageTone}>{message}</StatusMessage> : null}
-          {loading ? <StatusMessage tone="info">Loading categories.</StatusMessage> : null}
+          {loading ? <DataLoadingScreen label="Loading categories" message="Loading catalog categories from the database." title="Getting categories" /> : null}
           {!loading && !filteredCategories.length ? <StatusMessage tone="info">No categories match the current type and status filters.</StatusMessage> : null}
 
           {!loading && filteredCategories.length ? (
@@ -734,11 +744,11 @@ export default function ManageCatalog() {
                 overflowY: 'auto',
               }}
             >
-              <table className="catalog-category-table" style={{ background: alpha(theme.colors.panel, 0.74), borderCollapse: 'separate', borderSpacing: 0, minWidth: 980, width: '100%' }}>
+              <table className={`catalog-category-table${showParentCategoryColumn ? '' : ' is-main-only'}`} style={{ background: alpha(theme.colors.panel, 0.74), borderCollapse: 'separate', borderSpacing: 0, minWidth: showParentCategoryColumn ? 980 : 840, width: '100%' }}>
                 <thead style={{ background: alpha(theme.colors.ink, 0.02) }}>
                   <tr>
                     <th style={headerCellStyle}>Category</th>
-                    <th style={headerCellStyle}>Parent</th>
+                    {showParentCategoryColumn ? <th style={headerCellStyle}>Parent</th> : null}
                     <th style={headerCellStyle}>Description</th>
                     <th style={headerCellStyle}>Items</th>
                     <th style={headerCellStyle}>Status</th>
@@ -757,9 +767,11 @@ export default function ManageCatalog() {
                             <span className="catalog-category-table-title">{category.name}</span>
                           </div>
                         </td>
-                        <td style={bodyCellStyle}>
-                          <span style={{ color: theme.colors.ink }}>{parentCategory?.name || 'None'}</span>
-                        </td>
+                        {showParentCategoryColumn ? (
+                          <td style={bodyCellStyle}>
+                            <span style={{ color: theme.colors.ink }}>{parentCategory?.name || '—'}</span>
+                          </td>
+                        ) : null}
                         <td style={bodyCellStyle}>
                           <span style={{ color: theme.colors.ink, lineHeight: 1.65 }}>{category.description || 'No description'}</span>
                         </td>
@@ -827,7 +839,7 @@ export default function ManageCatalog() {
             </Badge>
           </div>
 
-          {loading ? <StatusMessage tone="info">Loading item catalog.</StatusMessage> : null}
+          {loading ? <DataLoadingScreen label="Loading item catalog" message="Loading catalog items from the database." title="Getting catalog items" /> : null}
           {!loading && !filteredItems.length ? <StatusMessage tone="info">No items found for the current search and listing status filter.</StatusMessage> : null}
 
           {!loading && filteredItems.length ? (
@@ -836,7 +848,10 @@ export default function ManageCatalog() {
               style={{
                 border: `1px solid ${alpha(theme.colors.ink, 0.08)}`,
                 borderRadius: 14,
+                maxHeight: 'min(620px, 65vh)',
+                overscrollBehavior: 'contain',
                 overflowX: 'auto',
+                overflowY: 'auto',
               }}
             >
               <table className="catalog-item-table" style={{ background: alpha(theme.colors.panel, 0.74), borderCollapse: 'separate', borderSpacing: 0, minWidth: 1180, width: '100%' }}>

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../../api/supabaseClient';
 import { useAuth } from '../../context/AuthContext';
-import { CatalogIcon, FaqIcon, HomeIcon, LogoutIcon, PaletteIcon, ProfileIcon, ReportIcon, StarIcon, UsersIcon } from '../../ui/icons';
+import { ArrowUpRightIcon, CatalogIcon, FaqIcon, HomeIcon, LogoutIcon, PaletteIcon, ProfileIcon, ReportIcon, StarIcon, UsersIcon } from '../../ui/icons';
 import { WorkspaceLayout } from '../../ui/layouts';
 import { Button, Modal } from '../../ui/primitives';
 import { alpha, theme } from '../../ui/theme';
@@ -13,6 +13,7 @@ const navItems = [
   { path: '/admin/users', label: 'Users', icon: <UsersIcon size={18} />, badge: 'Live' },
   { path: '/admin/catalog', label: 'Catalog', icon: <CatalogIcon size={18} /> },
   { path: '/admin/reports', label: 'Reports', icon: <ReportIcon size={18} /> },
+  { path: '/admin/withdrawals', label: 'Withdrawals', icon: <ArrowUpRightIcon size={18} /> },
   { path: '/admin/ui-settings', label: 'UI settings', icon: <PaletteIcon size={18} /> },
   { path: '/admin/promotion-settings', label: 'Promotion pricing', icon: <PaletteIcon size={18} /> },
   { path: '/admin/voucher-rewards', label: 'Voucher rewards', icon: <StarIcon size={18} /> },

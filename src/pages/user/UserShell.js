@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../../api/supabaseClient';
+import { useAuth } from '../../context/AuthContext';
 import {
   BookmarkIcon,
   CalendarIcon,
@@ -26,7 +27,9 @@ const navItems = [
   { type: 'section', label: 'Rentals' },
   { path: '/user/rental-items', label: 'Rental Items', icon: <CatalogIcon size={18} /> },
   { path: '/user/manage-booking', label: 'Manage Booking', icon: <CalendarIcon size={18} /> },
+  { type: 'section', label: 'Earnings & growth' },
   { path: '/user/rental-income', label: 'Report', icon: <ReportIcon size={18} /> },
+  { path: '/user/withdraw-earnings', label: 'Withdraw earnings', icon: <ReportIcon size={18} /> },
   { path: '/user/promotions', label: 'Promote Listings', icon: <SparkIcon size={18} /> },
   { path: '/user/rewards', label: 'Rewards', icon: <StarIcon size={18} /> },
   { type: 'section', label: 'Communication' },
@@ -37,6 +40,7 @@ const navItems = [
 export default function UserShell({ children, subtitle, title }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [showSignOut, setShowSignOut] = useState(false);
   const [profilePhotoUrl, setProfilePhotoUrl] = useState('');
@@ -45,11 +49,8 @@ export default function UserShell({ children, subtitle, title }) {
     let mounted = true;
 
     async function loadProfilePhoto() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!mounted || !user) {
+      if (!user?.id) {
+        setProfilePhotoUrl('');
         return;
       }
 
@@ -73,7 +74,7 @@ export default function UserShell({ children, subtitle, title }) {
       mounted = false;
       window.removeEventListener('profile-photo-updated', handleProfilePhotoUpdate);
     };
-  }, []);
+  }, [user?.id]);
 
   async function handleConfirmSignOut() {
     await supabase.auth.signOut();

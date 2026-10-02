@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import 'react-datepicker/dist/react-datepicker.css';
 import { supabase } from '../../api/supabaseClient';
+import DataLoadingScreen from '../../ui/DataLoadingScreen';
 import TermsModal from '../../components/TermsModal';
 import { userHasUnsettledDues } from '../../services/accountDuesService';
 import { userHasActiveDamageHold } from '../../services/damageClaimsService';
@@ -1535,7 +1536,7 @@ export default function RentItem() {
       <main className="rent-checkout-public-main">
       <div className="rent-order-shell" style={{ display: 'grid', gap: 12 }}>
         {message ? <StatusMessage tone={messageTone}>{message}</StatusMessage> : null}
-        {loading ? <StatusMessage tone="info">Loading rental form.</StatusMessage> : null}
+        {loading ? <DataLoadingScreen fullScreen label="Loading rental form" message="Loading listing details from the database." title="Preparing your rental" /> : null}
 
         {!loading && item ? (
           <Panel

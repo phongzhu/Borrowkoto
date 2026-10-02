@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../api/supabaseClient';
+import DataLoadingScreen from '../../ui/DataLoadingScreen';
 import { useUISettings } from '../../context/UISettingsContext';
 import { getNubProgramsForSchool, itemMatchesAcademicFilters, NUB_PROGRAMS, NUB_SCHOOLS } from '../../data/nubAcademicData';
 import { RENTABLE_ITEM_STATUSES } from '../../utils/bookingEnums';
@@ -81,16 +82,22 @@ function conditionScore(condition) {
 }
 
 function keywordMatchScore(item, keywords) {
-  const haystack = [
-    item.title,
-    item.description,
-    item.category?.name,
-    ...(item.subcategories || []).map((subcategory) => subcategory.name),
-    item.item_condition,
-    getLocation(item),
-    ...(item.searchTags || []),
-  ].filter(Boolean).join(' ').toLowerCase();
-  return keywords.reduce((score, keyword) => score + (haystack.includes(keyword) ? 1 : 0), 0);
+  const fields = [
+    { text: item.title, weight: 5 },
+    { text: [item.category?.name, ...(item.subcategories || []).map((subcategory) => subcategory.name)].join(' '), weight: 4 },
+    { text: item.searchTags?.join(' '), weight: 3 },
+    { text: [item.description, item.item_condition, getLocation(item)].join(' '), weight: 1 },
+  ].map(({ text, weight }) => ({ text: String(text || '').toLowerCase(), weight }));
+  return keywords.reduce((score, keyword) => {
+    const field = fields.find(({ text }) => text.split(/[^\p{L}\p{N}]+/u).includes(keyword))
+      || fields.find(({ text }) => text.includes(keyword));
+    return score + (field?.weight || 0);
+  }, 0);
+}
+
+function searchKeywords(query) {
+  return String(query || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .split(/[^\p{L}\p{N}]+/u).filter((word) => word.length > 1);
 }
 
 function LogoMark({ logoUrl, brandName }) {
@@ -128,8 +135,15 @@ export default function PublicItemsCatalogPage() {
   const [savingItemId, setSavingItemId] = useState('');
 
   const initialQ = searchParams.get('q') || '';
-  const initialSchool = searchParams.get('school') || 'all';
-  const initialProgram = searchParams.get('program') || 'all';
+  const initialSchoolCodes = useMemo(() => searchParams.getAll('school').filter(Boolean), [searchParams]);
+  const initialProgramCodes = useMemo(() => searchParams.getAll('program').filter(Boolean), [searchParams]);
+  const initialSchool = initialSchoolCodes[0] || 'all';
+  const initialProgram = initialProgramCodes[0] || 'all';
+  const initialFilterCategories = useMemo(() => searchParams.getAll('filterCategory').filter(Boolean), [searchParams]);
+  const initialFilterConditions = useMemo(() => searchParams.getAll('condition').filter(Boolean), [searchParams]);
+  const initialMinPrice = searchParams.get('minPrice') || '';
+  const initialMaxPrice = searchParams.get('maxPrice') || '';
+  const initialMinRating = searchParams.get('minRating') || '0';
   const categoryId = searchParams.get('categoryId') || '';
   const requestedMode = searchParams.get('mode') || '';
   const mode = requestedMode || (categoryId ? 'category' : 'all');
@@ -141,10 +155,11 @@ export default function PublicItemsCatalogPage() {
   const [search, setSearch] = useState(initialQ);
   const [schoolFilter, setSchoolFilter] = useState(initialSchool);
   const [programFilter, setProgramFilter] = useState(initialProgram);
-  const [categoryMinPrice, setCategoryMinPrice] = useState('');
-  const [categoryMaxPrice, setCategoryMaxPrice] = useState('');
-  const [categoryMinRating, setCategoryMinRating] = useState('0');
-  const [categoryConditions, setCategoryConditions] = useState([]);
+  const [categoryMinPrice, setCategoryMinPrice] = useState(initialMinPrice);
+  const [categoryMaxPrice, setCategoryMaxPrice] = useState(initialMaxPrice);
+  const [categoryMinRating, setCategoryMinRating] = useState(initialMinRating);
+  const [categoryConditions, setCategoryConditions] = useState(initialFilterConditions);
+  const [filterCategoryIds, setFilterCategoryIds] = useState(initialFilterCategories);
   const [categorySubcategory, setCategorySubcategory] = useState('all');
   const [categoryRefineSearch, setCategoryRefineSearch] = useState('');
   const [categorySort, setCategorySort] = useState('relevance');
@@ -196,6 +211,14 @@ export default function PublicItemsCatalogPage() {
     setSchoolFilter(initialSchool);
     setProgramFilter(initialProgram);
   }, [initialProgram, initialQ, initialSchool]);
+
+  useEffect(() => {
+    setCategoryMinPrice(initialMinPrice);
+    setCategoryMaxPrice(initialMaxPrice);
+    setCategoryMinRating(initialMinRating);
+    setCategoryConditions(initialFilterConditions);
+    setFilterCategoryIds(initialFilterCategories);
+  }, [initialFilterCategories, initialFilterConditions, initialMaxPrice, initialMinPrice, initialMinRating]);
 
   useEffect(() => {
     let mounted = true;
@@ -414,9 +437,9 @@ export default function PublicItemsCatalogPage() {
   }, [mostRentedCounts]);
 
   const baseFilteredItems = useMemo(() => {
-    const q = initialQ.trim().toLowerCase();
-    const schoolCodes = initialSchool === 'all' ? [] : [initialSchool];
-    const programCodes = initialProgram === 'all' ? [] : [initialProgram];
+    const keywords = searchKeywords(initialQ);
+    const schoolCodes = initialSchoolCodes;
+    const programCodes = initialProgramCodes;
     let scoped = items
       .filter((item) => itemMatchesAcademicFilters(item, schoolCodes, programCodes))
       .map((item) => ({
@@ -426,22 +449,10 @@ export default function PublicItemsCatalogPage() {
         ...(rentalStatsByItemId.get(item.id) || { completedCount: 0, rentalCount: 0, totalDue: 0 }),
       }));
 
-    if (q) {
-      scoped = scoped.filter(({ item }) =>
-        [
-          item.title,
-          item.description,
-          item.category?.name,
-          ...(item.subcategories || []).map((subcategory) => subcategory.name),
-          item.item_condition,
-          getLocation(item),
-          ...(item.searchTags || []),
-        ]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase()
-          .includes(q)
-      );
+    if (keywords.length) {
+      scoped = scoped
+        .map((entry) => ({ ...entry, relevance: keywordMatchScore(entry.item, keywords) }))
+        .filter((entry) => entry.relevance > 0);
     }
 
     if (mode === 'category' && categoryId) {
@@ -500,10 +511,11 @@ export default function PublicItemsCatalogPage() {
       .slice()
       .sort(
         (left, right) =>
+          (right.relevance || 0) - (left.relevance || 0) ||
           new Date(right.item.created_at || 0).getTime() - new Date(left.item.created_at || 0).getTime() ||
           String(left.item.title || '').localeCompare(String(right.item.title || ''))
       );
-  }, [categoryId, categories, initialProgram, initialQ, initialSchool, items, mode, rentalStatsByItemId, totalViewsByItemId]);
+  }, [categoryId, categories, initialProgramCodes, initialQ, initialSchoolCodes, items, mode, rentalStatsByItemId, totalViewsByItemId]);
 
   const selectedCategory = useMemo(
     () => categories.find((category) => category.id === categoryId) || null,
@@ -529,6 +541,13 @@ export default function PublicItemsCatalogPage() {
       const price = Number(item.rental_price_per_day) || 0;
       const rating = Number(item.itemAverageRating) || 0;
       const normalizedCondition = String(item.item_condition || '').toLowerCase();
+      if (filterCategoryIds.length) {
+        const matchesFilterCategory = filterCategoryIds.some((id) => {
+          const selectedIds = buildDescendantIds(id, categories);
+          return selectedIds.has(item.category_id) || (item.subcategoryIds || []).some((subcategoryId) => selectedIds.has(subcategoryId));
+        });
+        if (!matchesFilterCategory) return false;
+      }
       if (categoryMinPrice !== '' && price < Number(categoryMinPrice)) return false;
       if (categoryMaxPrice !== '' && price > Number(categoryMaxPrice)) return false;
       if (Number(categoryMinRating) > 0 && rating < Number(categoryMinRating)) return false;
@@ -546,10 +565,11 @@ export default function PublicItemsCatalogPage() {
     if (categorySort === 'rating') next = next.slice().sort((a, b) => Number(b.item.itemAverageRating || 0) - Number(a.item.itemAverageRating || 0));
     if (categorySort === 'newest') next = next.slice().sort((a, b) => new Date(b.item.created_at || 0) - new Date(a.item.created_at || 0));
     return next;
-  }, [baseFilteredItems, categories, categoryConditions, categoryMaxPrice, categoryMinPrice, categoryMinRating, categorySort, categorySubcategory, isRefinedCatalog]);
+  }, [baseFilteredItems, categories, categoryConditions, categoryMaxPrice, categoryMinPrice, categoryMinRating, categorySort, categorySubcategory, filterCategoryIds, isRefinedCatalog]);
 
   const activeFilterCount = (schoolFilter !== 'all' ? 1 : 0) +
     (programFilter !== 'all' ? 1 : 0) +
+    filterCategoryIds.length +
     (categorySubcategory !== 'all' ? 1 : 0) +
     (categoryMinPrice !== '' ? 1 : 0) +
     (categoryMaxPrice !== '' ? 1 : 0) +
@@ -606,11 +626,11 @@ export default function PublicItemsCatalogPage() {
   }, [initialQ, mode, selectedCategory]);
 
   const recommendationHighlights = useMemo(() => {
-    const keywords = initialQ.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const keywords = searchKeywords(initialQ);
     if (!keywords.length || !items.length) return [];
 
-    const schoolCodes = initialSchool === 'all' ? [] : [initialSchool];
-    const programCodes = initialProgram === 'all' ? [] : [initialProgram];
+    const schoolCodes = initialSchoolCodes;
+    const programCodes = initialProgramCodes;
     let candidates = items
       .filter((item) => itemMatchesAcademicFilters(item, schoolCodes, programCodes))
       .map((item) => ({ barangay: getLocation(item), item }));
@@ -626,18 +646,19 @@ export default function PublicItemsCatalogPage() {
       const quality = rating + conditionScore(item.item_condition) * .35 + Math.min(reviews, 10) * .03;
       return { barangay, item, match: keywordMatchScore(item, keywords), price, quality };
     });
-    if (!scored.length) return [];
+    const matched = scored.filter((entry) => entry.match > 0);
+    if (!matched.length) return [];
 
-    const best = scored.slice().sort((a, b) => b.match - a.match || b.quality - a.quality || a.price - b.price)[0];
-    const cheapest = scored.slice().sort((a, b) => a.price - b.price || b.quality - a.quality)[0];
-    const priciest = scored.slice().sort((a, b) => b.price - a.price || b.quality - a.quality)[0];
+    const best = matched.slice().sort((a, b) => b.match - a.match || b.quality - a.quality || a.price - b.price)[0];
+    const cheapest = matched.slice().sort((a, b) => a.price - b.price || b.match - a.match || b.quality - a.quality)[0];
+    const priciest = matched.slice().sort((a, b) => b.price - a.price || b.match - a.match || b.quality - a.quality)[0];
 
     return [
       { ...best, description: 'Strongest balance of search relevance, condition, reviews, and price.', label: 'Best match', tone: 'best' },
       { ...cheapest, description: 'Lowest daily rental price among the available recommendations.', label: 'Cheapest', tone: 'budget' },
       { ...priciest, description: 'Premium-priced option currently available in this result set.', label: 'Priciest', tone: 'premium' },
-    ];
-  }, [categories, categoryId, initialProgram, initialQ, initialSchool, items]);
+    ].filter((entry, index, list) => list.findIndex((candidate) => candidate.item.id === entry.item.id) === index);
+  }, [categories, categoryId, initialProgramCodes, initialQ, initialSchoolCodes, items]);
 
   function updateQuery(next = {}) {
     const params = new URLSearchParams(searchParams);
@@ -672,6 +693,10 @@ export default function PublicItemsCatalogPage() {
   function handleProgramChange(value) {
     setProgramFilter(value);
     updateQuery({ program: value });
+  }
+
+  if (loading) {
+    return <DataLoadingScreen label="Loading marketplace listings" message="Loading available items from the database." title="Finding items to borrow" />;
   }
 
   return (
@@ -794,7 +819,7 @@ export default function PublicItemsCatalogPage() {
           <div className={isRefinedCatalog ? 'category-catalog-layout' : undefined}>
           {isRefinedCatalog ? (
             <aside className="category-refine" aria-label="Refine category results">
-              <div className="category-refine-title"><span>Refine by</span><button onClick={() => { setCategoryMinPrice(''); setCategoryMaxPrice(''); setCategoryMinRating('0'); setCategoryConditions([]); setCategorySubcategory('all'); }} type="button">Clear</button></div>
+              <div className="category-refine-title"><span>Refine by</span><button onClick={() => { setCategoryMinPrice(''); setCategoryMaxPrice(''); setCategoryMinRating('0'); setCategoryConditions([]); setFilterCategoryIds([]); setCategorySubcategory('all'); }} type="button">Clear</button></div>
               <fieldset><legend>School</legend><select onChange={(event) => handleSchoolChange(event.target.value)} value={schoolFilter}><option value="all">All NU Baliwag schools</option>{NUB_SCHOOLS.map((school) => <option key={school.code} value={school.code}>{school.code} — {school.name}</option>)}</select></fieldset>
               <fieldset><legend>Course</legend><select onChange={(event) => handleProgramChange(event.target.value)} value={programFilter}><option value="all">All undergraduate courses</option>{(schoolFilter === 'all' ? NUB_PROGRAMS : getNubProgramsForSchool(schoolFilter)).map((program) => <option key={program.code} value={program.code}>{program.displayCode} — {program.name}</option>)}</select></fieldset>
               {categorySubcategories.length ? <fieldset><legend>{mode === 'category' ? 'Type' : 'Category'}</legend><input aria-label={`Search ${mode === 'category' ? 'types' : 'categories'}`} className="category-refine-search" onChange={(event) => setCategoryRefineSearch(event.target.value)} placeholder={`Search ${mode === 'category' ? 'type' : 'category'}`} type="search" value={categoryRefineSearch} /><label><input checked={categorySubcategory === 'all'} name="subcategory" onChange={() => setCategorySubcategory('all')} type="radio" /> {mode === 'category' ? `All ${selectedCategory?.name || 'items'}` : 'All categories'}</label>{filteredCategorySubcategories.map((subcategory) => <label key={subcategory.id}><input checked={categorySubcategory === subcategory.id} name="subcategory" onChange={() => setCategorySubcategory(subcategory.id)} type="radio" /> {subcategory.name}</label>)}</fieldset> : null}

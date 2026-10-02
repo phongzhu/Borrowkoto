@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../api/supabaseClient';
+import DataLoadingScreen from '../../ui/DataLoadingScreen';
 import { CalendarIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon } from '../../ui/icons';
 import { Badge, Button, FormField, Panel, StatusMessage } from '../../ui/primitives';
 import { alpha, theme } from '../../ui/theme';
@@ -422,8 +423,8 @@ export default function UserRentalsCalendar({ embedded = false }) {
                   key={value}
                   onClick={() => setFilter(value)}
                   style={{
-                    background: filter === value ? theme.colors.ink : alpha(theme.colors.panel, 0.86),
-                    color: filter === value ? '#ffffff' : theme.colors.ink,
+                    background: filter === value ? 'var(--ui-primary-color)' : alpha(theme.colors.panel, 0.86),
+                    color: filter === value ? 'var(--ui-primary-text-color, #ffffff)' : 'var(--ui-text-color)',
                   }}
                   variant="secondary"
                 >
@@ -506,7 +507,7 @@ export default function UserRentalsCalendar({ embedded = false }) {
                   </strong>
                 </FormField>
 
-                {loading ? <StatusMessage tone="info">Loading rental schedules.</StatusMessage> : null}
+                {loading ? <DataLoadingScreen label="Loading rental schedules" message="Loading booking dates from the database." title="Getting the schedule" /> : null}
                 {!loading && !selectedEvents.length ? <StatusMessage tone="info">No rental or purchase activity on this date.</StatusMessage> : null}
 
                 {selectedEvents.length ? (
@@ -576,7 +577,18 @@ export default function UserRentalsCalendar({ embedded = false }) {
   );
 
   if (embedded) {
+    if (loading) {
+      return <DataLoadingScreen label="Loading rental schedules" message="Loading booking dates from the database." title="Getting the schedule" />;
+    }
     return content;
+  }
+
+  if (loading) {
+    return (
+      <UserShell subtitle="" title="">
+        <DataLoadingScreen label="Loading rental schedules" message="Loading booking dates from the database." title="Getting the schedule" />
+      </UserShell>
+    );
   }
 
   return (

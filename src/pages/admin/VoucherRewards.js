@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../../api/supabaseClient';
+import DataLoadingScreen from '../../ui/DataLoadingScreen';
 import { Badge, Button, FormField, Input, Modal, StatusMessage, Textarea } from '../../ui/primitives';
 import AdminShell from './AdminShell';
 import './VoucherRewards.css';
@@ -98,6 +99,14 @@ export default function VoucherRewards() {
 
   function discountLabel(voucher) {
     return voucher.discount_type === 'percentage' ? `${Number(voucher.discount_value)}% off` : `${money.format(voucher.discount_value)} off`;
+  }
+
+  if (loading) {
+    return (
+      <AdminShell subtitle="" title="">
+        <DataLoadingScreen label="Loading voucher rewards" message="Loading reward vouchers from the database." title="Getting voucher rewards" />
+      </AdminShell>
+    );
   }
 
   return <AdminShell subtitle="" title="">

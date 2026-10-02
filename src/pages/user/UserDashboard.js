@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../api/supabaseClient';
+import { useAuth } from '../../context/AuthContext';
 import { getDamageClaimsForBorrower, userHasActiveDamageHold } from '../../services/damageClaimsService';
+import DataLoadingScreen from '../../ui/DataLoadingScreen';
 import { Button, Modal, StatusMessage } from '../../ui/primitives';
 import UserShell from './UserShell';
 import './UserDashboard.css';
@@ -204,6 +206,7 @@ function buildTrackingTimeline(order) {
 
 export default function UserDashboard() {
   const navigate = useNavigate();
+  const { loading: authLoading, user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [orders, setOrders] = useState([]);
@@ -235,25 +238,16 @@ export default function UserDashboard() {
   useEffect(() => {
     let mounted = true;
 
+    if (authLoading) return () => { mounted = false; };
+    if (!user?.id) {
+      navigate('/login');
+      return () => { mounted = false; };
+    }
+
     async function loadDashboard() {
       setLoading(true);
       setError('');
-
-      const { data: authData, error: authError } = await supabase.auth.getUser();
-
-      if (!mounted) return;
-
-      if (authError) {
-        setError(authError.message);
-        setLoading(false);
-        return;
-      }
-
-      const userId = authData?.user?.id;
-      if (!userId) {
-        navigate('/login');
-        return;
-      }
+      const userId = user.id;
 
       const [ordersResult, savedRentResult, hasHold, borrowerClaims] = await Promise.all([
         supabase
@@ -511,7 +505,7 @@ export default function UserDashboard() {
 
       const pendingClaim =
         (borrowerClaims || []).find((claim) =>
-          ['pending_admin_review', 'approved', 'awaiting_payment'].includes(String(claim.status || '').toLowerCase())
+          ['approved', 'awaiting_payment'].includes(String(claim.status || '').toLowerCase())
         ) || null;
 
       let nextItemTitle = '';
@@ -553,7 +547,7 @@ export default function UserDashboard() {
     return () => {
       mounted = false;
     };
-  }, [navigate]);
+  }, [authLoading, navigate, user?.id]);
 
   const totalOrders = orders.length;
   const recentOrders = useMemo(() => orders.slice(0, 6), [orders]);
@@ -591,6 +585,14 @@ export default function UserDashboard() {
     setShowDamageHoldModal(false);
   }
 
+  if (loading) {
+    return (
+      <UserShell subtitle="" title="">
+        <DataLoadingScreen label="Loading dashboard" message="Loading your dashboard data from the database." title="Preparing your dashboard" />
+      </UserShell>
+    );
+  }
+
   return (
     <UserShell subtitle="" title="">
       {activeDamageHold && pendingDamageClaim ? (
@@ -600,7 +602,6 @@ export default function UserDashboard() {
       ) : null}
 
       {error ? <StatusMessage tone="warning">{error}</StatusMessage> : null}
-      {loading ? <StatusMessage tone="info">Loading dashboard...</StatusMessage> : null}
 
       <section className="mobile-dashboard-simple">
         <header className="mobile-dashboard-hero">

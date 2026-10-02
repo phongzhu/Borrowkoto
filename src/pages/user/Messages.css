@@ -6,6 +6,15 @@
   box-shadow: none !important;
 }
 
+.messages-loading-state {
+  min-height: calc(100vh - 200px);
+  width: 100%;
+}
+
+.messages-loading-state .data-loading-screen {
+  min-height: calc(100vh - 200px);
+}
+
 .messages-sidebar,
 .messages-conversation,
 .messages-conversation-header,

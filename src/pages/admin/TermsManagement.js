@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import TermsModal from '../../components/TermsModal';
 import { supabase } from '../../api/supabaseClient';
+import DataLoadingScreen from '../../ui/DataLoadingScreen';
 import { extractTermsTextFromPdf, hashFile, safeTermsStoragePath, TERMS_BUCKET } from '../../services/termsService';
 import { Badge, Button, Input, StatusMessage } from '../../ui/primitives';
 import { ReportIcon, UploadIcon } from '../../ui/icons';
@@ -156,6 +157,14 @@ export default function TermsManagement() {
       return;
     }
     window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
+  }
+
+  if (loading) {
+    return (
+      <AdminShell subtitle="" title="">
+        <DataLoadingScreen label="Loading terms documents" message="Loading the published terms and conditions from the database." title="Getting policy documents" />
+      </AdminShell>
+    );
   }
 
   return (

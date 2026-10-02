@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../api/supabaseClient';
 import { approveDamageClaim, rejectDamageClaim, resolveReportEvidenceUrl } from '../../services/damageClaimsService';
+import DataLoadingScreen from '../../ui/DataLoadingScreen';
 import AdminShell from './AdminShell';
 import { SectionGrid } from '../../ui/layouts';
 import { Badge, Button, Input, MetricCard, Modal, Panel, StatusMessage, Textarea } from '../../ui/primitives';
@@ -74,7 +75,7 @@ function getVerificationStatusLabel(status) {
     return 'approved';
   }
 
-  return status || 'Unknown';
+  return String(status || 'Unknown').replace(/[_-]+/g, ' ');
 }
 
 function formatDate(value) {
@@ -685,13 +686,39 @@ export default function ManageReports() {
     [records]
   );
 
+  if (loading) {
+    return (
+      <AdminShell subtitle="" title="">
+        <DataLoadingScreen label="Loading reports" message="Loading reports and claims from the database." title="Getting report records" />
+      </AdminShell>
+    );
+  }
+
   return (
     <AdminShell subtitle="" title="">
       {error ? <StatusMessage tone="warning">{error}</StatusMessage> : null}
       {reviewFeedback ? <StatusMessage tone={reviewFeedbackTone}>{reviewFeedback}</StatusMessage> : null}
 
       <Modal
-        actions={<Button onClick={() => setSelectedRecord(null)} type="button" variant="ghost">Close</Button>}
+        actions={selectedRecord ? (
+          <div className="admin-report-detail-actions">
+            {selectedRecord.category === 'damage_claims' ? (
+              <Button onClick={() => { setSelectedRecord(null); openDamageClaimReview(selectedRecord); }} type="button" variant="secondary">
+                Review damage
+              </Button>
+            ) : (selectedRecord.assets || []).length ? (
+              selectedRecord.assets.map((asset) => (
+                <Button as="a" href={asset.url} key={`${selectedRecord.id}-${asset.label}`} rel="noreferrer" target="_blank" variant="secondary">
+                  {asset.label}
+                </Button>
+              ))
+            ) : null}
+            <Button onClick={() => setSelectedRecord(null)} type="button" variant="ghost">
+              Close
+            </Button>
+          </div>
+        ) : null}
+        contentClassName="admin-report-details-modal"
         onClose={() => setSelectedRecord(null)}
         open={Boolean(selectedRecord)}
         title="Report details"
@@ -710,37 +737,40 @@ export default function ManageReports() {
                       <th>{index === 0 ? 'Details' : ''}</th>
                       <td>{detail}</td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="admin-report-detail-actions">
-              {selectedRecord.category === 'damage_claims' ? (
-                <Button onClick={() => { setSelectedRecord(null); openDamageClaimReview(selectedRecord); }} type="button" variant="secondary">
-                  Review damage
-                </Button>
-              ) : (selectedRecord.assets || []).length ? (
-                selectedRecord.assets.map((asset) => (
-                  <Button as="a" href={asset.url} key={`${selectedRecord.id}-${asset.label}`} rel="noreferrer" target="_blank" variant="secondary">
-                    {asset.label}
-                  </Button>
-                ))
-              ) : (
-                <span>No attached files.</span>
-              )}
-            </div>
+                ))}
+              </tbody>
+            </table>
           </div>
+        </div>
         ) : null}
       </Modal>
 
-      <Modal onClose={() => setSelectedDamageClaim(null)} open={Boolean(selectedDamageClaim)} title="Damage claim review">
+      <Modal
+        actions={selectedDamageClaim ? (
+          <div className="admin-damage-review-actions">
+            <Button disabled={damageReviewSaving} onClick={() => setSelectedDamageClaim(null)} type="button" variant="ghost">
+              Close
+            </Button>
+            <Button disabled={damageReviewSaving} onClick={() => handleDamageClaimDecision('reject')} type="button" variant="danger">
+              Reject claim
+            </Button>
+            <Button disabled={damageReviewSaving} onClick={() => handleDamageClaimDecision('approve')} type="button">
+              Approve and restrict
+            </Button>
+          </div>
+        ) : null}
+        contentClassName="admin-damage-review-modal"
+        onClose={() => setSelectedDamageClaim(null)}
+        open={Boolean(selectedDamageClaim)}
+        title="Damage claim review"
+      >
         {selectedDamageClaim ? (
-          <div style={{ display: 'grid', gap: 18 }}>
+          <div className="admin-damage-review-content">
             <StatusMessage tone="info">
-              Approving creates the borrower damage hold. Rejecting leaves the borrower able to rent and list.
+              Approving creates a damage hold for the borrower. Rejecting closes the claim without restricting their account.
             </StatusMessage>
 
-            <SectionGrid columns={3} style={{ gap: 14 }}>
+            <SectionGrid className="admin-damage-review-summary" columns={3} style={{ gap: 14 }}>
               <MetricCard
                 detail={`Booking ${selectedDamageClaim.reference}`}
                 icon={<span style={{ fontSize: 18, fontWeight: 700 }}>!</span>}
@@ -769,41 +799,22 @@ export default function ManageReports() {
 
             <ReviewDetailRow label="Owner" value={selectedDamageClaim.damageOwnerId} />
             <ReviewDetailRow label="Borrower" value={selectedDamageClaim.damageBorrowerId} />
-            <ReviewDetailRow label="Item" value={selectedDamageClaim.damageItemId} />
+            <ReviewDetailRow label="Item reference" value={selectedDamageClaim.damageItemId} />
             <ReviewDetailRow label="Description" value={selectedDamageClaim.damageDescription} />
 
-            <div className="panel-grid" style={{ display: 'grid', gap: 14, gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
+            <div className="admin-damage-evidence-grid">
               {damageEvidence.length ? (
                 damageEvidence.map((asset) => (
-                  <div
-                    key={asset.id}
-                    className="glass-panel"
-                    style={{
-                      borderRadius: 22,
-                      display: 'grid',
-                      gap: 8,
-                      minHeight: 0,
-                      overflow: 'hidden',
-                      padding: 12,
-                    }}
-                  >
-                    <strong style={{ color: theme.colors.ink, fontFamily: theme.fonts.display, fontSize: 16, letterSpacing: '-0.04em' }}>
+                  <div key={asset.id} className="admin-damage-evidence-card">
+                    <strong>
                       {asset.evidence_type || 'photo'}
                     </strong>
                     <a href={asset.display_url || asset.evidence_url} rel="noreferrer" target="_blank">
                       <img
                         alt="Damage evidence"
                         src={asset.display_url || asset.evidence_url}
-                        style={{
-                          background: alpha(theme.colors.ink, 0.04),
-                          border: `1px solid ${alpha(theme.colors.ink, 0.08)}`,
-                          borderRadius: 18,
-                          display: 'block',
-                          height: 150,
-                          objectFit: 'cover',
-                          width: '100%',
-                        }}
                       />
+                      <span>Open full image</span>
                     </a>
                   </div>
                 ))
@@ -812,12 +823,12 @@ export default function ManageReports() {
               )}
             </div>
 
-            <label style={{ display: 'grid', gap: 10 }}>
+            <label className="admin-damage-review-field">
               <span style={{ color: theme.colors.ink, fontSize: 14, fontWeight: 600 }}>Admin-approved amount</span>
               <Input min="0" onChange={(event) => setDamageReviewAmount(event.target.value)} step="0.01" type="number" value={damageReviewAmount} />
             </label>
 
-            <label style={{ display: 'grid', gap: 10 }}>
+            <label className="admin-damage-review-field">
               <span style={{ color: theme.colors.ink, fontSize: 14, fontWeight: 600 }}>Admin notes</span>
               <Textarea
                 onChange={(event) => setDamageReviewNotes(event.target.value)}
@@ -827,17 +838,6 @@ export default function ManageReports() {
               />
             </label>
 
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, justifyContent: 'flex-end' }}>
-              <Button disabled={damageReviewSaving} onClick={() => setSelectedDamageClaim(null)} type="button" variant="ghost">
-                Close
-              </Button>
-              <Button disabled={damageReviewSaving} onClick={() => handleDamageClaimDecision('reject')} type="button" variant="danger">
-                Reject
-              </Button>
-              <Button disabled={damageReviewSaving} onClick={() => handleDamageClaimDecision('approve')} type="button">
-                Approve and restrict
-              </Button>
-            </div>
           </div>
         ) : null}
       </Modal>
@@ -935,7 +935,7 @@ export default function ManageReports() {
             </div>
 
             {invalidDateRange ? <StatusMessage tone="warning">Start date must be on or before the end date.</StatusMessage> : null}
-            {loading ? <StatusMessage tone="info">Loading report records.</StatusMessage> : null}
+            {loading ? <DataLoadingScreen label="Loading reports" message="Loading reports and claims from the database." title="Getting report records" /> : null}
             {!loading && !filteredRecords.length ? <StatusMessage tone="info">No records match the current search and category filter.</StatusMessage> : null}
 
             {!loading && filteredRecords.length ? (

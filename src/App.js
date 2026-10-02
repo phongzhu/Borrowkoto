@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from './api/supabaseClient';
+import { useAuth } from './context/AuthContext';
 import { useUISettings } from './context/UISettingsContext';
 import { getNubProgramsForSchool, itemMatchesAcademicFilters, NUB_PROGRAMS, NUB_SCHOOLS } from './data/nubAcademicData';
 import { RENTABLE_ITEM_STATUSES } from './utils/bookingEnums';
 import { filterListingsByActiveOwners, selectPromotedMarketplaceItems } from './utils/marketplaceVisibility';
+import DataLoadingScreen from './ui/DataLoadingScreen';
 import borrowToolsCampaign from './assets/campaigns/borrow-tools.png';
 import borrowTechCampaign from './assets/campaigns/borrow-tech.png';
 import borrowWeekendCampaign from './assets/campaigns/borrow-weekend.png';
@@ -196,13 +198,14 @@ function formatItemRating(item) {
 
 export default function App() {
   const navigate = useNavigate();
-  const { settings } = useUISettings();
+  const { user: currentUser } = useAuth();
+  const { loading: settingsLoading, settings } = useUISettings();
   const [items, setItems] = useState([]);
   const [mostViewedCounts, setMostViewedCounts] = useState([]);
   const [mostRentedCounts, setMostRentedCounts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [search, setSearch] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [appliedSearch, setAppliedSearch] = useState('');
   const [expandedHeaderCategoryId, setExpandedHeaderCategoryId] = useState('');
   const [expandedFooterCategoryId, setExpandedFooterCategoryId] = useState('');
   const [loading, setLoading] = useState(true);
@@ -218,7 +221,6 @@ export default function App() {
   const [minimumPrice, setMinimumPrice] = useState('');
   const [maximumPrice, setMaximumPrice] = useState('');
   const [minimumRating, setMinimumRating] = useState('0');
-  const [currentUser, setCurrentUser] = useState(null);
   const [currentUserProfile, setCurrentUserProfile] = useState(null);
   const [showWelcome, setShowWelcome] = useState(false);
   const [savedItemIds, setSavedItemIds] = useState(() => new Set());
@@ -266,25 +268,6 @@ export default function App() {
     if (new URLSearchParams(window.location.search).get('filters') === 'open') {
       setFiltersOpen(true);
     }
-  }, []);
-
-  useEffect(() => {
-    let mounted = true;
-
-    async function loadCurrentUser() {
-      const { data } = await supabase.auth.getUser();
-      if (mounted) setCurrentUser(data?.user || null);
-    }
-
-    loadCurrentUser();
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (mounted) setCurrentUser(session?.user || null);
-    });
-
-    return () => {
-      mounted = false;
-      authListener?.subscription?.unsubscribe();
-    };
   }, []);
 
   useEffect(() => {
@@ -564,38 +547,8 @@ export default function App() {
   }, []);
 
   const filteredItems = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const selectedCategoryIds = categoryFilter === 'all' ? null : buildDescendantIds(categoryFilter, categories);
-
+    const q = appliedSearch.trim().toLowerCase();
     return items.filter((item) => {
-      if (!itemMatchesAcademicFilters(item, selectedSchoolCodes, selectedProgramCodes)) return false;
-      if (selectedCategoryIds) {
-        const inMainCategory = selectedCategoryIds.has(item.category_id);
-        const inSubcategory = (item.subcategoryIds || []).some((subcategoryId) => selectedCategoryIds.has(subcategoryId));
-        if (!inMainCategory && !inSubcategory) return false;
-      }
-
-      if (selectedFilterCategories.length) {
-        const matchesDrawerCategory = selectedFilterCategories.some((categoryId) => {
-          const drawerCategoryIds = buildDescendantIds(categoryId, categories);
-          return drawerCategoryIds.has(item.category_id) ||
-            (item.subcategoryIds || []).some((subcategoryId) => drawerCategoryIds.has(subcategoryId));
-        });
-        if (!matchesDrawerCategory) return false;
-      }
-
-      const dailyPrice = Number(item.rental_price_per_day) || 0;
-      if (minimumPrice !== '' && dailyPrice < Number(minimumPrice)) return false;
-      if (maximumPrice !== '' && dailyPrice > Number(maximumPrice)) return false;
-
-      if (selectedConditions.length) {
-        const normalizedCondition = String(item.item_condition || '').toLowerCase().replaceAll('_', ' ');
-        if (!selectedConditions.includes(normalizedCondition)) return false;
-      }
-
-      const itemRating = Number(item?.itemAverageRating) || 0;
-      if (Number(minimumRating) > 0 && itemRating < Number(minimumRating)) return false;
-
       if (!q) return true;
 
       return [
@@ -614,13 +567,10 @@ export default function App() {
         .toLowerCase()
         .includes(q);
     });
-  }, [categoryFilter, categories, items, maximumPrice, minimumPrice, minimumRating, search, selectedConditions, selectedFilterCategories, selectedProgramCodes, selectedSchoolCodes]);
+  }, [appliedSearch, items]);
 
   const featuredItems = filteredItems;
-  const academicFilteredItems = useMemo(
-    () => featuredItems.slice().sort((left, right) => String(left.title || '').localeCompare(String(right.title || ''))),
-    [featuredItems]
-  );
+  const academicFilteredItems = featuredItems;
 
   const totalViewsByItemId = useMemo(() => {
     const map = new Map();
@@ -792,10 +742,7 @@ export default function App() {
     return recentlyViewedIds.map((itemId) => itemsById.get(itemId)).filter(Boolean);
   }, [items, recentlyViewedIds]);
   const activeRecentItem = recentlyViewedItems[activeRecentIndex] || recentlyViewedItems[0] || null;
-  const promotedItems = selectPromotedMarketplaceItems(promotedItemIds, items, {
-    programCodes: selectedProgramCodes,
-    schoolCodes: selectedSchoolCodes,
-  });
+  const promotedItems = selectPromotedMarketplaceItems(promotedItemIds, items);
 
   useEffect(() => {
     if (!currentUser || recentCarouselPaused || recentlyViewedItems.length < 2) return undefined;
@@ -834,7 +781,6 @@ export default function App() {
     setMinimumPrice('');
     setMaximumPrice('');
     setMinimumRating('0');
-    setCategoryFilter('all');
   }
 
   function openPublicItem(itemId) {
@@ -871,7 +817,7 @@ export default function App() {
     setSavingItemId('');
   }
 
-  function openCatalogPage({ categoryId = '', mode = 'all', q = search, schoolCode = selectedSchoolCodes[0] || '', programCode = selectedProgramCodes[0] || '' } = {}) {
+  function openCatalogPage({ categoryId = '', mode = 'all', q = appliedSearch, schoolCode = selectedSchoolCodes[0] || '', programCode = selectedProgramCodes[0] || '' } = {}) {
     const params = new URLSearchParams();
 
     if (mode && mode !== 'all') {
@@ -892,7 +838,23 @@ export default function App() {
 
   function handleSearchSubmit(event) {
     event.preventDefault();
-    openCatalogPage({ mode: 'all' });
+    const submittedQuery = search.trim();
+    setAppliedSearch(submittedQuery);
+    openCatalogPage({ mode: 'all', q: submittedQuery });
+  }
+
+  function applyMarketplaceFilters() {
+    const params = new URLSearchParams();
+    if (appliedSearch.trim()) params.set('q', appliedSearch.trim());
+    selectedSchoolCodes.forEach((code) => params.append('school', code));
+    selectedProgramCodes.forEach((code) => params.append('program', code));
+    selectedFilterCategories.forEach((id) => params.append('filterCategory', id));
+    selectedConditions.forEach((condition) => params.append('condition', condition.replaceAll(' ', '_')));
+    if (minimumPrice !== '') params.set('minPrice', minimumPrice);
+    if (maximumPrice !== '') params.set('maxPrice', maximumPrice);
+    if (Number(minimumRating) > 0) params.set('minRating', minimumRating);
+    const queryString = params.toString();
+    navigate(`/items${queryString ? `?${queryString}` : ''}`);
   }
 
   function toggleCategoryExpansion(categoryId, setExpandedCategoryId) {
@@ -908,6 +870,17 @@ export default function App() {
   const expandedHeaderSubcategories = expandedHeaderCategory
     ? subcategoriesByParentId.get(expandedHeaderCategory.id) || []
     : [];
+
+  if (loading || settingsLoading) {
+    return (
+      <DataLoadingScreen
+        fullScreen
+        label="Loading the Borrow Ko 'To marketplace"
+        message="Loading available items and categories from the database."
+        title="Getting the marketplace ready"
+      />
+    );
+  }
 
   return (
     <div
@@ -1094,7 +1067,7 @@ export default function App() {
 
           <div className="market-filter-footer">
             <button className="clear" onClick={clearMarketplaceFilters} type="button">Clear all</button>
-            <button className="apply" onClick={() => setFiltersOpen(false)} type="button">Show {academicFilteredItems.length} results</button>
+            <button className="apply" onClick={applyMarketplaceFilters} type="button">Show results</button>
           </div>
         </aside>
       </div>
@@ -1249,10 +1222,19 @@ export default function App() {
 
         {promotedItems.length ? (
           <section className="landing-promoted-banner">
+            <span aria-hidden="true" className="landing-promoted-decor">
+              <i className="decor-arc decor-arc-top" />
+              <i className="decor-arc decor-arc-bottom" />
+              <i className="decor-dot-grid decor-dot-grid-top" />
+              <i className="decor-dot-grid decor-dot-grid-bottom" />
+              <i className="decor-rays" />
+            </span>
             <div className="landing-promoted-intro">
-              <span><i /> Sponsored marketplace</span>
-              <h2>Local rentals<br/>in the <b>spotlight.</b></h2>
+              <span className="landing-promoted-kicker"><i aria-hidden="true" /><span>Student rentals near you</span></span>
+              <h2>Find what you need.<br/>Borrow it <b>nearby.</b></h2>
+              <p>Rent useful items from students in your school community.</p>
               <button onClick={() => openCatalogPage({ mode: 'all' })} type="button">Browse all items <b aria-hidden="true">→</b></button>
+              <button className="landing-promoted-secondary-cta" onClick={() => navigate(currentUserProfile?.is_profile_complete ? '/user/rental-items/add' : currentUser ? '/user/profile' : '/login')} type="button">List an item</button>
             </div>
             <div className="landing-promoted-list">
               {promotedItems.map((item) => (
@@ -1401,7 +1383,6 @@ export default function App() {
           <div className="landing-section-head landing-lined-head">
             <div className="landing-shelf-heading">
               <h2>Most Viewed</h2>
-              <button className="landing-shelf-link" onClick={() => openCatalogPage({ mode: 'most-viewed' })} type="button">View all</button>
             </div>
           </div>
 
@@ -1429,7 +1410,6 @@ export default function App() {
           <div className="landing-section-head landing-lined-head">
             <div className="landing-shelf-heading">
               <h2>Most Rented</h2>
-              <button className="landing-shelf-link" onClick={() => openCatalogPage({ mode: 'most-rented' })} type="button">View all</button>
             </div>
           </div>
 

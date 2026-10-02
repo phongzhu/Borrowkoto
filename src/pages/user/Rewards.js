@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../../api/supabaseClient';
+import DataLoadingScreen from '../../ui/DataLoadingScreen';
 import { Button, StatusMessage } from '../../ui/primitives';
 import UserShell from './UserShell';
 import './Rewards.css';
@@ -50,7 +51,7 @@ export default function Rewards() {
   return <UserShell subtitle="" title="">
     <main className="rewards-page">
       {message ? <StatusMessage tone="info">{message}</StatusMessage> : null}
-      {loading ? <StatusMessage tone="info">Loading rewards…</StatusMessage> : <>
+      {loading ? <DataLoadingScreen label="Loading rewards" message="Loading your rewards from the database." title="Getting your rewards" /> : <>
         <section className="rewards-stats">
           <article><span>Available points</span><strong>{account?.points_balance || 0}</strong></article>
           <article><span>Completed rentals</span><strong>{account?.completed_borrow_count || 0}</strong></article>

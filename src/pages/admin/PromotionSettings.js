@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../api/supabaseClient';
+import DataLoadingScreen from '../../ui/DataLoadingScreen';
 import { Badge, Button, FormField, Input, Modal, StatusMessage, Textarea } from '../../ui/primitives';
 import { GearIcon } from '../../ui/icons';
 import AdminShell from './AdminShell';
@@ -178,6 +179,14 @@ export default function PromotionSettings() {
     if (error) return notify(error.message, 'danger');
     notify(`Promotion ${status === 'active' ? 'activated' : 'rejected'}.`, 'success');
     load();
+  }
+
+  if (loading) {
+    return (
+      <AdminShell subtitle="" title="">
+        <DataLoadingScreen label="Loading promotion settings" message="Loading promotion plans and requests from the database." title="Getting promotion settings" />
+      </AdminShell>
+    );
   }
 
   return (

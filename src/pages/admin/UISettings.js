@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../api/supabaseClient';
+import DataLoadingScreen from '../../ui/DataLoadingScreen';
 import {
   bodyFontFallback,
   headerFontFallback,
@@ -229,9 +230,7 @@ export default function UISettings() {
   if (loading) {
     return (
       <AdminShell subtitle="" title="">
-        <Panel>
-          <StatusMessage tone="info">Loading interface settings.</StatusMessage>
-        </Panel>
+        <DataLoadingScreen label="Loading interface settings" message="Loading system settings from the database." title="Getting interface settings" />
       </AdminShell>
     );
   }

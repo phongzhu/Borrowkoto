@@ -1,4 +1,5 @@
 import { Button, Modal, StatusMessage } from '../ui/primitives';
+import DataLoadingScreen from '../ui/DataLoadingScreen';
 import './TermsModal.css';
 
 function formatPublishedDate(value) {
@@ -64,7 +65,7 @@ export default function TermsModal({ document, error = '', loading = false, onCl
       open={open}
       title={title}
     >
-      {loading ? <StatusMessage tone="info">Loading the current Terms and Conditions...</StatusMessage> : null}
+      {loading ? <DataLoadingScreen compact label="Loading terms" message="Loading the current terms from the database." title="Getting the terms" /> : null}
       {error ? <StatusMessage tone="danger">{error}</StatusMessage> : null}
       {!loading && !error && document ? (
         <div className="terms-reader">

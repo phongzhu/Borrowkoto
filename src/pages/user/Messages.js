@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../api/supabaseClient';
+import DataLoadingScreen from '../../ui/DataLoadingScreen';
 import { ArrowRightIcon, SearchIcon, UploadIcon } from '../../ui/icons';
 import { Button, StarRating, StatusMessage } from '../../ui/primitives';
 import { alpha, theme } from '../../ui/theme';
@@ -1260,6 +1261,20 @@ export default function Messages() {
     : `linear-gradient(180deg, ${alpha(theme.colors.panel, 0.98)} 0%, ${alpha(theme.colors.canvas, 0.94)} 100%), radial-gradient(circle at top right, ${alpha(theme.colors.sky, 0.12)}, transparent 28%), radial-gradient(circle at bottom left, ${alpha(theme.colors.teal, 0.1)}, transparent 26%)`;
   const selectedItemFaqs = selectedThreadItem?.faqs || [];
 
+  if (loading) {
+    return (
+      <UserShell subtitle="" title="">
+        <div className="messages-loading-state">
+          <DataLoadingScreen
+            label="Loading conversations"
+            message="Loading your chats from the database."
+            title="Getting conversations"
+          />
+        </div>
+      </UserShell>
+    );
+  }
+
   return (
     <UserShell subtitle="" title="">
       {error ? <StatusMessage tone="warning">{error}</StatusMessage> : null}
@@ -1371,18 +1386,6 @@ export default function Messages() {
           </div>
 
           <div style={{ alignContent: 'start', display: 'grid', gap: 6, minHeight: 0, overflowY: 'auto', padding: '0 14px 14px' }}>
-            {loading ? (
-              <div
-                style={{
-                  color: theme.colors.slate,
-                  fontSize: 14,
-                  padding: '2px 10px 10px',
-                }}
-              >
-                Loading conversations.
-              </div>
-            ) : null}
-
             {!loading && filteredThreads.length ? (
               filteredThreads.map((thread) => (
                 <ThreadListItem
@@ -1720,7 +1723,7 @@ export default function Messages() {
               }}
             >
               <strong style={{ color: theme.colors.ink, fontFamily: theme.fonts.display, fontSize: 30, letterSpacing: '-0.05em' }}>
-                {loading ? 'Loading your chats' : 'Open a conversation'}
+                Open a conversation
               </strong>
               <span style={{ color: theme.colors.slate, lineHeight: 1.75, maxWidth: 520 }}>
                 Choose a seller thread on the left. Each conversation is grouped by member pair, and the compact item reference above the message box shows which listing is currently being discussed.

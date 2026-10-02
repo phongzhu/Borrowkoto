@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { supabase } from '../../api/supabaseClient';
+import DataLoadingScreen from '../../ui/DataLoadingScreen';
 import { getNubProgram } from '../../data/nubAcademicData';
 import { BookmarkIcon, CalendarIcon, MessageIcon, ShieldIcon, StarIcon } from '../../ui/icons';
 import { Button, Modal, StarRating, StatusMessage } from '../../ui/primitives';
@@ -392,35 +393,12 @@ function DetailIcon({ type, size = 18 }) {
 }
 
 function BorrowKoToItemLoader() {
-  const hand = (
-    <>
-      <path className="hand-sleeve" d="M8 45h35v78H8Z" />
-      <path d="M43 51c13 0 22-2 31-10l22-20c7-6 16-5 20 1 3 5 2 10-2 15L99 52h91c9 0 14 5 13 12-1 6-6 9-13 10l-62 4 55 5c8 1 12 5 11 12-1 6-6 9-13 9l-58-2 45 10c7 2 10 7 8 13-2 6-7 8-14 7l-70-14c-10-2-18 0-26 6l-17 13H43Z" />
-      <path className="hand-detail" d="M75 79c12-1 21 3 27 11M67 116c8-7 17-10 29-9" />
-    </>
-  );
-
   return (
-    <section aria-live="polite" aria-label="Loading item details" className="borrow-item-loader" role="status">
-      <div className="borrow-item-loader-scene" aria-hidden="true">
-        <span className="borrow-item-loader-orbit orbit-one" />
-        <span className="borrow-item-loader-orbit orbit-two" />
-        <svg className="borrow-item-loader-hand hand-left" viewBox="0 0 212 150">{hand}</svg>
-        <div className="borrow-item-loader-box">
-          <svg viewBox="0 0 92 92">
-            <path d="M12 28 46 10l34 18-34 18Z" />
-            <path d="M12 28v39l34 17V46M80 28v39L46 84" />
-            <path d="m29 19 34 18v18" />
-          </svg>
-        </div>
-        <svg className="borrow-item-loader-hand hand-right" viewBox="0 0 212 150">{hand}</svg>
-      </div>
-      <div className="borrow-item-loader-copy">
-        <strong>Getting the item ready</strong>
-        <span>Checking details and availability</span>
-        <i aria-hidden="true"><b /><b /><b /></i>
-      </div>
-    </section>
+    <DataLoadingScreen
+      label="Loading item details"
+      message="Checking item details and availability."
+      title="Getting the item ready"
+    />
   );
 }
 

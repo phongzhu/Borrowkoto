@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../api/supabaseClient';
+import DataLoadingScreen from '../../ui/DataLoadingScreen';
 import { Button, FormField, Modal, StatusMessage } from '../../ui/primitives';
 import UserShell from './UserShell';
 import './Promotions.css';
@@ -24,6 +25,11 @@ function isCourseScopedListing(item) {
     item?.subcategory_id
     && (item?.applies_to_all_programs || (item?.item_programs || []).some((row) => row?.program_code))
   );
+}
+
+function getPromotionDisplayStatus(request) {
+  if (request.status === 'active' && (!request.ends_at || new Date(request.ends_at) <= new Date())) return 'ended';
+  return request.status;
 }
 
 export default function Promotions() {
@@ -99,11 +105,19 @@ export default function Promotions() {
     load();
   }
 
+  if (loading) {
+    return (
+      <UserShell subtitle="" title="">
+        <DataLoadingScreen label="Loading promotions" message="Loading your eligible listings and promotion plans from the database." title="Getting promotions" />
+      </UserShell>
+    );
+  }
+
   return <UserShell subtitle="" title=""><main className="promotions-page">{message?<StatusMessage tone="info">{message}</StatusMessage>:null}
     <section className="promotions-tab-panel">
       <div className="promotions-tabs" role="tablist"><button aria-selected={activeTab==='available'} className={activeTab==='available'?'active':''} onClick={()=>setActiveTab('available')} role="tab" type="button">Available promotions</button><button aria-selected={activeTab==='mine'} className={activeTab==='mine'?'active':''} onClick={()=>setActiveTab('mine')} role="tab" type="button">My item promotions <span>{requests.length}</span></button></div>
       {activeTab==='available'?<form className="promotion-tab-content promotion-join-form" onSubmit={joinPromotion} role="tabpanel"><div className="promotion-form-heading"><div><span>Promoted listing</span><h2>Choose an item and plan</h2></div></div><div className="promotion-listing-field"><FormField hint="Only active listings with a valid NUB subcategory and applicable course scope can be promoted." label="Item to promote"><select disabled={!promotableItems.length} onChange={(e)=>setItemId(e.target.value)} required value={itemId}><option value="">{promotableItems.length?'Choose a course-scoped listing':'No eligible course-scoped listings available'}</option>{promotableItems.map(item=><option key={item.id} value={item.id}>{item.title}</option>)}</select></FormField></div><div className="promotion-plan-grid">{plans.map(plan=><button aria-pressed={plan.id===planId} className={plan.id===planId?'active':''} key={plan.id} onClick={()=>setPlanId(plan.id)} type="button"><span className="promotion-plan-check">{plan.id===planId?'✓':''}</span><span className="promotion-plan-duration">{plan.duration_days} days</span><strong>{plan.name}</strong><b>{money.format(plan.fee)}</b><span className="promotion-plan-description">{plan.description}</span></button>)}</div><div className="promotion-checkout-bar"><div><span>Total promotion fee</span><strong>{selectedPlan?money.format(selectedPlan.fee):'—'}</strong><small>{selectedPlan?`${selectedPlan.duration_days} days of course-relevant banner visibility`:'Select a promotion plan'}</small></div><Button className="promotion-paymongo-button" disabled={loading||paying||!itemId||!selectedPlan} type="submit">{paying?'Opening PayMongo…':'Continue to PayMongo'}</Button></div><p className="promotion-payment-note">Secure payment through PayMongo · Course eligibility is enforced before banner activation · The existing 15% rental commission remains unchanged.</p></form>:null}
-      {activeTab==='mine'?<div className="promotion-tab-content" role="tabpanel"><div className="promotion-tab-heading"><h2>My item promotions</h2><p>View active promotions and previous promotion payments for your listings.</p></div><div className="promotion-history-table-wrap"><table className="promotion-history-table"><thead><tr><th>Item</th><th>Promotion plan</th><th>Fee</th><th>Status</th><th>Promotion period</th><th className="promotion-history-actions-heading">Actions</th></tr></thead><tbody>{requests.length?requests.map(request=><tr key={request.id}><td><strong>{request.items?.title||'Listing'}</strong></td><td>{request.promotion_plans?.name||`${request.duration_days_snapshot}-day promotion`}</td><td className="promotion-history-fee">{money.format(request.fee_snapshot)}</td><td><span className={`promotion-status promotion-status-${request.status}`}>{request.status.replaceAll('_',' ')}</span></td><td><span className="promotion-period">{request.starts_at&&request.ends_at?`${new Date(request.starts_at).toLocaleDateString('en-PH')} – ${new Date(request.ends_at).toLocaleDateString('en-PH')}`:request.status==='pending_payment'?'Starts after payment':'—'}</span></td><td><div className="promotion-table-action">{['pending_payment','active'].includes(request.status)?<Button onClick={()=>setCancelTarget(request)} variant="ghost">Cancel</Button>:<span>—</span>}</div></td></tr>):<tr><td className="promotion-empty-state" colSpan="6">You have not promoted an item yet.</td></tr>}</tbody></table></div></div>:null}
+      {activeTab==='mine'?<div className="promotion-tab-content" role="tabpanel"><div className="promotion-tab-heading"><h2>My item promotions</h2><p>View active promotions and previous promotion payments for your listings.</p></div><div className="promotion-history-table-wrap"><table className="promotion-history-table"><thead><tr><th>Item</th><th>Promotion plan</th><th>Fee</th><th>Status</th><th>Promotion period</th><th className="promotion-history-actions-heading">Actions</th></tr></thead><tbody>{requests.length?requests.map(request=>{const displayStatus=getPromotionDisplayStatus(request);return <tr key={request.id}><td><strong>{request.items?.title||'Listing'}</strong></td><td>{request.promotion_plans?.name||`${request.duration_days_snapshot}-day promotion`}</td><td className="promotion-history-fee">{money.format(request.fee_snapshot)}</td><td><span className={`promotion-status promotion-status-${displayStatus}`}>{displayStatus.replaceAll('_',' ')}</span></td><td><span className="promotion-period">{request.starts_at&&request.ends_at?`${new Date(request.starts_at).toLocaleDateString('en-PH')} – ${new Date(request.ends_at).toLocaleDateString('en-PH')}`:request.status==='pending_payment'?'Starts after payment':'—'}</span></td><td><div className="promotion-table-action">{['pending_payment','active'].includes(request.status)&&displayStatus!=='ended'?<Button onClick={()=>setCancelTarget(request)} variant="ghost">Cancel</Button>:<span>—</span>}</div></td></tr>;}):<tr><td className="promotion-empty-state" colSpan="6">You have not promoted an item yet.</td></tr>}</tbody></table></div></div>:null}
     </section>
     <Modal actions={<><Button onClick={()=>setCancelTarget(null)} variant="ghost">Keep promotion</Button><Button disabled={cancelling} onClick={cancelPromotion} variant="danger">{cancelling?'Cancelling…':'Cancel promotion'}</Button></>} onClose={()=>setCancelTarget(null)} open={Boolean(cancelTarget)} size="compact" title="Cancel this promotion?">
       {cancelTarget?.status==='active'?<p>This stops the paid promotion immediately. It does not automatically refund the promotion fee.</p>:<p>This removes the unpaid promotion request. No payment will be collected.</p>}

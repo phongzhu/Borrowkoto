@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../api/supabaseClient';
+import DataLoadingScreen from '../../ui/DataLoadingScreen';
 import { Button, StatusMessage } from '../../ui/primitives';
 import { filterListingsByActiveOwners } from '../../utils/marketplaceVisibility';
 import UserShell from './UserShell';
@@ -78,12 +79,20 @@ export default function SavedListings() {
 
   const savedCount = useMemo(() => savedListings.length, [savedListings.length]);
 
+  if (loading) {
+    return (
+      <UserShell>
+        <DataLoadingScreen label="Loading saved listings" message="Loading your saved listings from the database." title="Getting your saved listings" />
+      </UserShell>
+    );
+  }
+
   return (
     <UserShell>
       <div className="saved-listings-page">
         <div className="saved-listings-header"><div><span>Library</span><h1>Saved Listings</h1></div><strong>{savedCount} saved</strong></div>
         {error ? <StatusMessage tone="warning">{error}</StatusMessage> : null}
-        {loading ? <StatusMessage tone="info">Loading your saved listings.</StatusMessage> : null}
+        {loading ? <DataLoadingScreen label="Loading saved listings" message="Loading your saved listings from the database." title="Getting your saved listings" /> : null}
         {!loading && !savedListings.length ? <StatusMessage tone="info">You do not have saved listings yet.</StatusMessage> : null}
         {savedListings.length ? (
           <div className="saved-listings-table-wrap">

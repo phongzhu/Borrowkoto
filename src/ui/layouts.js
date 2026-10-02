@@ -198,8 +198,8 @@ function SidebarHeader({ brandName, collapsed, compact, logoIcon, logoUrl, palet
 function SidebarNavItem({ active, compact, collapsed, icon, item, onNavigate, palette }) {
   const itemText = active ? palette.sidebarText : palette.sidebarMuted;
   const isDense = compact || collapsed;
-  const rowHeight = isDense ? 34 : 'clamp(34px, 5.8vh, 58px)';
-  const iconSize = isDense ? 28 : 'clamp(28px, 4.4vh, 44px)';
+  const rowHeight = isDense ? 34 : 'clamp(44px, 5.4vh, 50px)';
+  const iconSize = isDense ? 28 : 38;
 
   return (
     <button
@@ -242,7 +242,7 @@ function SidebarNavItem({ active, compact, collapsed, icon, item, onNavigate, pa
           style={{
             color: itemText,
             fontFamily: theme.fonts.display,
-            fontSize: isDense ? 12 : 15,
+            fontSize: isDense ? 12 : 14,
             fontWeight: 600,
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -565,7 +565,7 @@ export function WorkspaceLayout({
         color: palette.sidebarText,
         display: 'flex',
         flexDirection: 'column',
-        gap: isCompactViewport ? 6 : 'clamp(6px, 2.2vh, 22px)',
+        gap: isCompactViewport ? 6 : 16,
         height: '100%',
         overflowX: 'hidden',
         overflowY: 'hidden',
@@ -607,7 +607,7 @@ export function WorkspaceLayout({
         />
       )}
 
-      <nav style={{ display: 'grid', gap: isCompactViewport ? 2 : 'clamp(2px, 1vh, 10px)', marginTop: isCompactViewport ? 0 : 'clamp(0px, 0.6vh, 6px)' }}>
+      <nav style={{ display: 'grid', gap: isCompactViewport ? 2 : 6, marginTop: isCompactViewport ? 0 : 2 }}>
         {navItems.map((item, index) =>
           item.type === 'section' ? (
             !effectiveCollapsed && !isCompactViewport ? (
@@ -615,10 +615,13 @@ export function WorkspaceLayout({
                 key={`${item.label}-${index}`}
                 style={{
                   color: palette.sidebarMuted,
+                  borderTop: index === 0 ? 0 : `1px solid ${palette.sidebarBorder}`,
+                  display: 'block',
                   fontSize: 9,
                   fontWeight: 700,
                   letterSpacing: '0.16em',
-                  margin: index === 0 ? '0 12px' : 'clamp(1px, 0.4vh, 4px) 12px 0',
+                  margin: index === 0 ? '0 12px 4px' : '10px 12px 4px',
+                  paddingTop: index === 0 ? 0 : 12,
                   textTransform: 'uppercase',
                 }}
               >

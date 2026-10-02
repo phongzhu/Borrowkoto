@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../api/supabaseClient';
+import DataLoadingScreen from '../../ui/DataLoadingScreen';
 import AdminShell from './AdminShell';
 import { SectionGrid } from '../../ui/layouts';
 import { Badge, Button, FileInput, FormField, Input, Panel, StatusMessage } from '../../ui/primitives';
@@ -292,9 +293,7 @@ export default function AdminProfile() {
   if (loading) {
     return (
       <AdminShell subtitle="" title="">
-        <Panel>
-          <StatusMessage tone="info">Loading profile.</StatusMessage>
-        </Panel>
+        <DataLoadingScreen label="Loading admin profile" message="Loading administrator details from the database." title="Getting your profile" />
       </AdminShell>
     );
   }
