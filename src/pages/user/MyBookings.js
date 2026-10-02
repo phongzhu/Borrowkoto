@@ -661,6 +661,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { user: authenticatedUser } = useAuth();
+  const authenticatedUserId = authenticatedUser?.id || '';
   const { itemId: editItemId } = useParams();
   const isEditPage = Boolean(editItemId);
   const isAddPage = listingMode === 'add';
@@ -786,9 +787,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
     }
 
     try {
-      const user = authenticatedUser;
-
-      if (!user) {
+      if (!authenticatedUserId) {
         setUserId('');
         setProfile(null);
         setCategories([]);
@@ -799,36 +798,36 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
         return;
       }
 
-      setUserId(user.id);
+      setUserId(authenticatedUserId);
 
       const [profileResult, categoriesResult, itemsResult, bookingsResult, purchaseRequestsAsSellerResult, purchaseRequestsAsBuyerResult, damageHoldResult] = await Promise.all([
-        supabase.from('profiles').select('*').eq('id', user.id).maybeSingle(),
+        supabase.from('profiles').select('*').eq('id', authenticatedUserId).maybeSingle(),
         supabase.from('categories').select('id, name, parent_category_id, is_active').order('name', { ascending: true }),
         supabase
           .from('items')
           .select(
             'id, owner_id, category_id, subcategory_id, applies_to_all_programs, title, description, item_condition, rental_price_per_day, security_deposit, estimated_value, is_for_sale, sale_price, sale_inclusions, min_rental_days, max_rental_days, quantity, pickup_barangay, pickup_city, pickup_country, pickup_latitude, pickup_longitude, pickup_province, pickup_region, pickup_street, pickup_time, return_time, meetup_notes, status, is_active, created_at, updated_at'
           )
-          .eq('owner_id', user.id)
+          .eq('owner_id', authenticatedUserId)
           .order('created_at', { ascending: false }),
         supabase
           .from('bookings')
           .select(
             'id, item_id, borrower_id, owner_id, requested_start, requested_end, approved_start, approved_end, rental_days, rental_price_per_day, rental_fee_total, security_deposit, total_due, borrower_message, status, cancelled_by, cancellation_reason, created_at, updated_at'
           )
-          .or(`borrower_id.eq.${user.id},owner_id.eq.${user.id}`)
+          .or(`borrower_id.eq.${authenticatedUserId},owner_id.eq.${authenticatedUserId}`)
           .order('created_at', { ascending: false }),
         supabase
           .from('item_purchase_requests')
           .select('id, item_id, buyer_id, seller_id, buyer_requested_quantity, seller_approved_quantity, sale_price_snapshot, addon_total_amount_snapshot, commission_fee_snapshot, sale_total_amount_snapshot, sale_inclusions_snapshot, buyer_preferred_pickup_at, agreed_pickup_at, pickup_location_text, pickup_notes, buyer_message, seller_notes, status, requested_at, reviewed_at, paid_at, completed_at, paymongo_checkout_session_id, created_at, updated_at')
-          .eq('seller_id', user.id)
+          .eq('seller_id', authenticatedUserId)
           .order('created_at', { ascending: false }),
         supabase
           .from('item_purchase_requests')
           .select('id, item_id, buyer_id, seller_id, buyer_requested_quantity, seller_approved_quantity, sale_price_snapshot, addon_total_amount_snapshot, commission_fee_snapshot, sale_total_amount_snapshot, sale_inclusions_snapshot, buyer_preferred_pickup_at, agreed_pickup_at, pickup_location_text, pickup_notes, buyer_message, seller_notes, status, requested_at, reviewed_at, paid_at, completed_at, paymongo_checkout_session_id, created_at, updated_at')
-          .eq('buyer_id', user.id)
+          .eq('buyer_id', authenticatedUserId)
           .order('created_at', { ascending: false }),
-        userHasActiveDamageHold(user.id),
+        userHasActiveDamageHold(authenticatedUserId),
       ]);
 
       const nextErrors = [];
@@ -878,7 +877,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
       new Set(
         rawBookings
           .flatMap((booking) => [booking.borrower_id, booking.owner_id])
-          .filter((id) => id && id !== user.id)
+          .filter((id) => id && id !== authenticatedUserId)
       )
     );
     const bookingIds = rawBookings.map((booking) => booking.id);
@@ -909,7 +908,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
           .from('item_daily_view_counts')
           .select('item_id, viewed_date, total_views, unique_viewers')
           .in('item_id', itemIds)
-          .eq('owner_id', user.id)
+          .eq('owner_id', authenticatedUserId)
           .eq('viewed_date', manilaToday)
       : { data: [], error: null };
     const itemWeeklyViewsResult = itemIds.length
@@ -917,7 +916,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
           .from('item_weekly_view_counts')
           .select('item_id, week_start, total_views, unique_viewers')
           .in('item_id', itemIds)
-          .eq('owner_id', user.id)
+          .eq('owner_id', authenticatedUserId)
           .eq('week_start', currentWeekStart)
       : { data: [], error: null };
     const bookingItemsResult = bookingItemIds.length
@@ -942,7 +941,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
           .in('id', counterPartyIds)
       : { data: [], error: null };
     const myReviewsResult = bookingIds.length
-      ? await supabase.from('reviews').select('id, booking_id, reviewer_id').eq('reviewer_id', user.id).in('booking_id', bookingIds)
+      ? await supabase.from('reviews').select('id, booking_id, reviewer_id').eq('reviewer_id', authenticatedUserId).in('booking_id', bookingIds)
       : { data: [], error: null };
     const bookingAddonsResult = bookingIds.length
       ? await supabase
@@ -1123,13 +1122,13 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
       const bookingItemImages = (bookingImagesByItemId.get(booking.item_id) || [])
         .slice()
         .sort((left, right) => Number(right.is_primary) - Number(left.is_primary) || left.sort_order - right.sort_order);
-      const counterPartyId = booking.owner_id === user.id ? booking.borrower_id : booking.owner_id;
+      const counterPartyId = booking.owner_id === authenticatedUserId ? booking.borrower_id : booking.owner_id;
 
       return {
         ...booking,
         counterpart: bookingProfilesById.get(counterPartyId) || null,
         hasMyReview: reviewedBookingIds.has(booking.id),
-        isBorrowerBooking: booking.borrower_id === user.id,
+        isBorrowerBooking: booking.borrower_id === authenticatedUserId,
         addons: bookingAddonsByBookingId.get(booking.id) || [],
         damageClaim: damageClaimsByBookingId.get(booking.id) || null,
         item: bookingItem
@@ -1162,7 +1161,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
     } finally {
       loadListingsInFlightRef.current = false;
     }
-  }, [authenticatedUser]);
+  }, [authenticatedUserId]);
 
   useEffect(() => {
     loadListings();
