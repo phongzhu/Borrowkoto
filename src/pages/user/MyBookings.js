@@ -3460,20 +3460,18 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
     setMessage('');
 
     try {
-      const { error: updateError } = await supabase
-        .from('item_purchase_requests')
-        .update({
-          completed_at: new Date().toISOString(),
-          status: 'completed',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', request.id)
-        .eq('buyer_id', userId)
-        .in('status', ['paid', 'ready_for_pickup']);
+      const { data: claimed, error: claimError } = await supabase.rpc('claim_item_purchase_request', {
+        p_request_id: request.id,
+      });
 
-      if (updateError) {
-        throw new Error(updateError.message);
-      }
+      if (claimError) throw new Error(claimError.message);
+      if (claimed !== true) throw new Error('The purchase status was not updated. Please refresh and try again.');
+
+      setPurchaseRequests((current) => current.map((purchase) => (
+        purchase.id === request.id
+          ? { ...purchase, completed_at: purchase.completed_at || new Date().toISOString(), status: 'completed' }
+          : purchase
+      )));
 
       await loadListings(false);
       setActiveBookingFilter('purchase-requests');
