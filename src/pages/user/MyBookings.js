@@ -2968,151 +2968,18 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
       setBookingActionBusyId(`purchase:${purchaseRequestId}`);
 
       try {
-        const { data: purchaseRequest, error: purchaseFetchError } = await supabase
-          .from('item_purchase_requests')
-          .select(
-            'id, item_id, buyer_id, seller_id, buyer_requested_quantity, seller_approved_quantity, sale_price_snapshot, addon_total_amount_snapshot, commission_fee_snapshot, sale_total_amount_snapshot, status, payment_transaction_id'
-          )
-          .eq('id', purchaseRequestId)
-          .eq('buyer_id', userId)
-          .limit(1)
-          .maybeSingle();
-
-        if (purchaseFetchError) {
-          throw new Error(purchaseFetchError.message);
-        }
-
-        if (!purchaseRequest?.id) {
-          throw new Error('Purchase request was not found for this account.');
-        }
-
-        const purchaseQuantity = Number(purchaseRequest.seller_approved_quantity || purchaseRequest.buyer_requested_quantity || 1);
-        const purchaseAmount = toMoneyAmount(
-          purchaseRequest.sale_total_amount_snapshot || (Number(purchaseRequest.sale_price_snapshot) || 0) * (purchaseQuantity > 0 ? purchaseQuantity : 1)
-        );
-        const purchaseCommissionAmount = toMoneyAmount(purchaseRequest.commission_fee_snapshot);
-        const sellerPurchaseAmount = toMoneyAmount(Math.max(0, purchaseAmount - purchaseCommissionAmount));
-        let purchasePaymentRecordError = '';
-        let purchasePaymentTransactionId = purchaseRequest.payment_transaction_id || null;
-
-        if (purchaseAmount > 0 && !purchasePaymentTransactionId) {
-          try {
-            const { transaction } = await insertPaymentTransactionWithTypeFallback(
-              {
-                amount: sellerPurchaseAmount,
-                booking_id: null,
-                notes: `Purchase payment for item request ${purchaseRequest.id}.`,
-                payee_id: purchaseRequest.seller_id || null,
-                payer_id: purchaseRequest.buyer_id || userId,
-                payment_method: PAYMONGO_PAYMENT_METHOD,
-                reference_number: `paymongo:purchase:${purchaseRequest.id}`,
-                status: DEFAULT_PAYMENT_STATUS,
-                transaction_at: new Date().toISOString(),
-              },
-              PAYMENT_TYPE_CANDIDATES.purchase
-            );
-
-            purchasePaymentTransactionId = transaction?.id || null;
-          } catch (recordError) {
-            const normalizedRecordError = String(recordError?.message || '').toLowerCase();
-
-            if (normalizedRecordError.includes('booking_id') && normalizedRecordError.includes('null')) {
-              const { data: fallbackBooking, error: fallbackBookingError } = await supabase
-                .from('bookings')
-                .select('id')
-                .eq('borrower_id', userId)
-                .eq('item_id', purchaseRequest.item_id)
-                .order('created_at', { ascending: false })
-                .limit(1)
-                .maybeSingle();
-
-              if (fallbackBookingError) {
-                purchasePaymentRecordError = fallbackBookingError.message || 'Unable to load fallback booking reference for purchase payment.';
-              } else if (fallbackBooking?.id) {
-                try {
-                  const { transaction } = await insertPaymentTransactionWithTypeFallback(
-                    {
-                      amount: sellerPurchaseAmount,
-                      booking_id: fallbackBooking.id,
-                      notes: `Purchase payment for item request ${purchaseRequest.id}.`,
-                      payee_id: purchaseRequest.seller_id || null,
-                      payer_id: purchaseRequest.buyer_id || userId,
-                      payment_method: PAYMONGO_PAYMENT_METHOD,
-                      reference_number: `paymongo:purchase:${purchaseRequest.id}`,
-                      status: DEFAULT_PAYMENT_STATUS,
-                      transaction_at: new Date().toISOString(),
-                    },
-                    PAYMENT_TYPE_CANDIDATES.purchase
-                  );
-                  purchasePaymentTransactionId = transaction?.id || null;
-                } catch (fallbackInsertError) {
-                  purchasePaymentRecordError = fallbackInsertError.message || 'Unable to create purchase payment transaction.';
-                }
-              } else {
-                purchasePaymentRecordError = recordError.message || 'Unable to create purchase payment transaction.';
-              }
-            } else {
-              purchasePaymentRecordError = recordError.message || 'Unable to create purchase payment transaction.';
-            }
-          }
-        }
-
-        if (purchaseCommissionAmount > 0) {
-          try {
-            const adminPayeeId = await resolveAdminPayeeId();
-            await insertPaymentTransactionWithTypeFallback(
-              {
-                amount: purchaseCommissionAmount,
-                booking_id: null,
-                notes: `Platform commission fee for item purchase request ${purchaseRequest.id}.`,
-                payee_id: adminPayeeId,
-                payer_id: purchaseRequest.buyer_id || userId,
-                payment_method: PAYMONGO_PAYMENT_METHOD,
-                reference_number: `paymongo:purchase:platform_fee:${purchaseRequest.id}`,
-                status: DEFAULT_PAYMENT_STATUS,
-                transaction_at: new Date().toISOString(),
-              },
-              PAYMENT_TYPE_CANDIDATES.platformFee
-            );
-          } catch (commissionRecordError) {
-            purchasePaymentRecordError = [purchasePaymentRecordError, commissionRecordError.message || 'Unable to record the purchase commission fee.']
-              .filter(Boolean)
-              .join(' ');
-          }
-        }
-
-        const purchaseUpdatePayload = {
-          paid_at: new Date().toISOString(),
-          status: 'paid',
-          updated_at: new Date().toISOString(),
-        };
-
-        if (purchasePaymentTransactionId) {
-          purchaseUpdatePayload.payment_transaction_id = purchasePaymentTransactionId;
-        }
-
-        const { error: purchaseUpdateError } = await supabase
-          .from('item_purchase_requests')
-          .update(purchaseUpdatePayload)
-          .eq('id', purchaseRequestId)
-          .eq('buyer_id', userId)
-          .in('status', ['awaiting_payment', 'approved', 'pending']);
-
-        if (purchaseUpdateError) {
-          throw new Error(purchaseUpdateError.message);
-        }
+        const { data: paymentResult, error: paymentError } = await supabase.functions.invoke('purchase-payment', {
+          body: { purchase_request_id: purchaseRequestId },
+        });
+        if (paymentError) throw new Error(paymentError.message || 'Unable to verify the PayMongo payment.');
+        if (!paymentResult?.paid) throw new Error(paymentResult?.error || 'PayMongo has not confirmed this payment yet.');
 
         await loadListings(false);
 
         if (!ignore) {
           setActiveBookingFilter('purchase-requests');
-          if (purchasePaymentRecordError) {
-            setMessage(`Purchase payment completed, but transaction recording failed: ${purchasePaymentRecordError}`);
-            setMessageTone('warning');
-          } else {
-            setMessage('Purchase payment completed. You can now mark the item as claimed after pickup.');
-            setMessageTone('success');
-          }
+          setMessage('Purchase payment completed. You can now mark the item as claimed after pickup.');
+          setMessageTone('success');
           setBookingActionBusyId('');
           window.history.replaceState({}, '', window.location.pathname);
         }
@@ -3131,7 +2998,7 @@ export default function MyBookings({ viewMode = 'all', listingMode = '' }) {
     return () => {
       ignore = true;
     };
-  }, [loading, userId, loadListings, resolveAdminPayeeId]);
+  }, [loading, userId, loadListings]);
 
   useEffect(() => {
     if (loading || !userId) {

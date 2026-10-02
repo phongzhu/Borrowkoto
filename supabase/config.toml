@@ -10,6 +10,10 @@ entrypoint = "./functions/promotion-checkout/index.ts"
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/promotion-checkout/*.html" ]
 
+[functions.purchase-payment]
+enabled = true
+verify_jwt = true
+
 [functions.earnings-payout]
 enabled = true
 verify_jwt = true

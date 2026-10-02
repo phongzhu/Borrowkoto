@@ -396,11 +396,17 @@ export default function BuyItem() {
           source: 'purchase_request_payment',
           terms_document_id: termsDocument.id,
         },
+        referenceNumber: createdRequestId,
         showLineItems: true,
         successUrl,
       });
 
-      if (!checkoutSession?.attributes?.checkout_url) throw new Error('PayMongo did not return a checkout URL.');
+      if (!checkoutSession?.id || !checkoutSession?.attributes?.checkout_url) throw new Error('PayMongo did not return a checkout session.');
+      const { error: checkoutLinkError } = await supabase.rpc('set_item_purchase_checkout_session', {
+        p_checkout_session_id: checkoutSession.id,
+        p_request_id: createdRequestId,
+      });
+      if (checkoutLinkError) throw new Error(checkoutLinkError.message || 'Unable to link the PayMongo checkout to this purchase.');
       window.location.href = checkoutSession.attributes.checkout_url;
     } catch (error) {
       if (createdRequestId) {
